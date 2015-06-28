@@ -643,9 +643,12 @@ static void key_i2c_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 		}
 		else if ((status & 0x800000FF) == 0x8000003A) {
 			wheel_value = status & 0x800000FF;
-		}
-		else if (status == 0xffffffff) {
-			opto_i2c_init();
+		} else {
+			int v = (unsigned)status >> 4;
+			if ((v == 0xfffffff) || (v == 0x5555555) || (v == 0xaaaaaaa)) {
+				// this happens after a Hold switch release (status is then fffffffx, aaaaaaax, 5555555x)
+				opto_i2c_init();
+			}
 		}
 	}
 
