@@ -438,27 +438,27 @@ int blk_grow_request_list(request_queue_t *q, int nr_requests, int max_queue_sec
 			break;
 		memset(rq, 0, sizeof(*rq));
 		rq->rq_status = RQ_INACTIVE;
- 		list_add(&rq->queue, &q->rq.free);
- 		q->rq.count++;
+		list_add(&rq->queue, &q->rq.free);
+		q->rq.count++;
 
 		q->nr_requests++;
 	}
 
- 	/*
- 	 * Wakeup waiters after both one quarter of the
- 	 * max-in-fligh queue and one quarter of the requests
- 	 * are available again.
- 	 */
+	/*
+	 * Wakeup waiters after both one quarter of the
+	 * max-in-fligh queue and one quarter of the requests
+	 * are available again.
+	 */
 
 	q->batch_requests = q->nr_requests / 4;
 	if (q->batch_requests > 32)
 		q->batch_requests = 32;
- 	q->batch_sectors = max_queue_sectors / 4;
- 
- 	q->max_queue_sectors = max_queue_sectors;
- 
- 	BUG_ON(!q->batch_sectors);
- 	atomic_set(&q->nr_sectors, 0);
+	q->batch_sectors = max_queue_sectors / 4;
+
+	q->max_queue_sectors = max_queue_sectors;
+
+	BUG_ON(!q->batch_sectors);
+	atomic_set(&q->nr_sectors, 0);
 
 	spin_unlock_irqrestore(&io_request_lock, flags);
 	return q->nr_requests;
@@ -468,27 +468,29 @@ static void blk_init_free_list(request_queue_t *q)
 {
 	struct sysinfo si;
 	int megs;		/* Total memory, in megabytes */
- 	int nr_requests, max_queue_sectors = MAX_QUEUE_SECTORS;
-  
- 	INIT_LIST_HEAD(&q->rq.free);
+	int nr_requests, max_queue_sectors = MAX_QUEUE_SECTORS;
+
+	INIT_LIST_HEAD(&q->rq.free);
 	q->rq.count = 0;
 	q->rq.pending[READ] = q->rq.pending[WRITE] = 0;
 	q->nr_requests = 0;
 
 	si_meminfo(&si);
 	megs = si.totalram >> (20 - PAGE_SHIFT);
- 	nr_requests = MAX_NR_REQUESTS;
- 	if (megs < 30) {
-  		nr_requests /= 2;
- 		max_queue_sectors /= 2;
- 	}
- 	/* notice early if anybody screwed the defaults */
- 	BUG_ON(!nr_requests);
- 	BUG_ON(!max_queue_sectors);
- 
- 	blk_grow_request_list(q, nr_requests, max_queue_sectors);
+	nr_requests = (megs * 2) & ~15;	/* One per half-megabyte */
+	if (megs < 30)
+		nr_requests /= 2;
+	if (nr_requests < 32)
+		nr_requests = 32;
+	if (nr_requests > 1024)
+		nr_requests = 1024;
+	/* notice early if anybody screwed the defaults */
+	BUG_ON(!nr_requests);
+	BUG_ON(!max_queue_sectors);
 
- 	init_waitqueue_head(&q->wait_for_requests);
+	blk_grow_request_list(q, nr_requests, max_queue_sectors);
+
+	init_waitqueue_head(&q->wait_for_requests);
 
 	spin_lock_init(&q->queue_lock);
 }
