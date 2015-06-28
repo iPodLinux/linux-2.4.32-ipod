@@ -113,6 +113,16 @@
 #include <asm/io.h>
 #include <asm/uaccess.h>
 
+#ifdef CONFIG_LEDMAN
+#include <linux/ledman.h>
+#endif
+
+#ifdef CONFIG_FAST_TIMER
+#define FAST_POLL 1
+#include <linux/fast_timer.h>
+static void fast_poll_8139too(void *arg);
+#endif
+
 #define RTL8139_DRIVER_NAME   DRV_NAME " Fast Ethernet driver " DRV_VERSION
 #define PFX DRV_NAME ": "
 
@@ -223,6 +233,10 @@ enum {
 #define RTL8129_CAPS	HAS_MII_XCVR
 #define RTL8139_CAPS	HAS_CHIP_XCVR|HAS_LNK_CHNG
 
+#ifdef CONFIG_8139TOO_8129
+#define CONFIG_8139TOO_EXTERNAL_PHY
+#endif
+
 typedef enum {
 	RTL8139 = 0,
 	RTL8129,
@@ -260,7 +274,7 @@ static struct pci_device_id rtl8139_pci_tbl[] = {
 	{0x1743, 0x8139, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RTL8139 },
 	{0x021b, 0x8139, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RTL8139 },
 
-#ifdef CONFIG_SH_SECUREEDGE5410
+#if defined(CONFIG_MTD_NETtel) || defined(CONFIG_SH_SECUREEDGE5410)
 	/* Bogus 8139 silicon reports 8129 without external PROM :-( */
 	{0x10ec, 0x8129, PCI_ANY_ID, PCI_ANY_ID, 0, 0, RTL8139 },
 #endif
@@ -327,6 +341,7 @@ enum RTL8139_registers {
 	CSCR = 0x74,		/* Chip Status and Configuration Register. */
 	PARA78 = 0x78,
 	PARA7c = 0x7c,		/* Magic transceiver parameter register. */
+	PARA80 = 0x80,
 	Config5 = 0xD8,		/* absent on RTL-8139A */
 };
 
@@ -592,6 +607,9 @@ struct rtl8139_private {
 	int time_to_die;
 	struct mii_if_info mii;
 	unsigned int regs_len;
+#ifdef FAST_POLL
+	unsigned int rx_poll_incomplete;
+#endif
 };
 
 MODULE_AUTHOR ("Jeff Garzik <jgarzik@pobox.com>");
@@ -609,7 +627,16 @@ MODULE_PARM_DESC (max_interrupt_work, "8139too maximum events handled per interr
 MODULE_PARM_DESC (media, "8139too: Bits 4+9: force full duplex, bit 5: 100Mbps");
 MODULE_PARM_DESC (full_duplex, "8139too: Force full duplex for board(s) (1)");
 
+#if !defined(CONFIG_MTD_NETtel) && !defined(CONFIG_SH_SECUREEDGE5410)
 static int read_eeprom (void *ioaddr, int location, int addr_len);
+#endif
+#if 0
+static int  read_eeprom (void *ioaddr, int location, int addr_len);
+
+void serial_eeprom_write(char *ioaddr, int location, int addr_len,
+		int data);
+#endif
+
 static int rtl8139_open (struct net_device *dev);
 static int mdio_read (struct net_device *dev, int phy_id, int location);
 static void mdio_write (struct net_device *dev, int phy_id, int location,
@@ -746,6 +773,10 @@ static void rtl8139_chip_reset (void *ioaddr)
 			break;
 		udelay (10);
 	}
+#if 1
+	if (i <= 0)
+		printk("%s(%d): chip reset timeout??\n", __FILE__, __LINE__);
+#endif
 }
 
 
@@ -923,10 +954,13 @@ static int __devinit rtl8139_init_one (struct pci_dev *pdev,
 {
 	struct net_device *dev = NULL;
 	struct rtl8139_private *tp;
-	int i, addr_len, option;
+	int i, option;
 	void *ioaddr;
 	static int board_idx = -1;
 	u8 pci_rev;
+#if !defined(CONFIG_MTD_NETtel) && !defined(CONFIG_SH_SECUREEDGE5410)
+	int addr_len;
+#endif
 
 	assert (pdev != NULL);
 	assert (ent != NULL);
@@ -963,10 +997,29 @@ static int __devinit rtl8139_init_one (struct pci_dev *pdev,
 	ioaddr = tp->mmio_addr;
 	assert (ioaddr != NULL);
 
+#if defined(CONFIG_MTD_NETtel) || defined(CONFIG_SH_SECUREEDGE5410)
+	/* Don't rely on the eeprom, get MAC from chip. */
+	for (i = 0; (i < 6); i++)
+		dev->dev_addr[i] = readb(ioaddr + MAC0 + i);
+#else
 	addr_len = read_eeprom (ioaddr, 0, 8) == 0x8129 ? 8 : 6;
 	for (i = 0; i < 3; i++)
 		((u16 *) (dev->dev_addr))[i] =
 		    le16_to_cpu (read_eeprom (ioaddr, i + 7, addr_len));
+#endif
+
+#if 0
+
+	printk(KERN_INFO "****Setting eeprom to 8139 - %x\n", 
+			read_eeprom(ioaddr, 2, 6));
+	if (read_eeprom(ioaddr, 2, 16) != cpu_to_le16(0x8139)) {
+		printk(KERN_INFO "****Setting eeprom to 8129\n");
+		serial_eeprom_write(ioaddr, 2, 6, cpu_to_le16(0x8139));
+		printk(KERN_INFO "new eeprom - 0x%x\n", read_eeprom(ioaddr, 2, 16));
+	} else {
+		printk(KERN_INFO "\neeprom already 8129\n");
+	}
+#endif
 
 	/* The Rtl8139-specific entries in the device structure. */
 	dev->open = rtl8139_open;
@@ -1028,6 +1081,7 @@ static int __devinit rtl8139_init_one (struct pci_dev *pdev,
 	/* Find the connected MII xcvrs.
 	   Doing this in open() would allow detecting external xcvrs later, but
 	   takes too much time. */
+	tp->phys[0] = 32;
 #ifdef CONFIG_8139TOO_8129
 	if (tp->drv_flags & HAS_MII_XCVR) {
 		int phy, phy_idx = 0;
@@ -1047,9 +1101,21 @@ static int __devinit rtl8139_init_one (struct pci_dev *pdev,
 				   dev->name);
 			tp->phys[0] = 32;
 		}
-	} else
+	}
+#elif defined(CONFIG_8139TOO_EXTERNAL_PHY)
+	{
+		/* Check if external phy exists. */
+		int mii_status = mdio_read(dev, CONFIG_8139TOO_PHY_NUM, 1);
+		if (mii_status != 0xffff  &&  mii_status != 0x0000) {
+			tp->phys[0] = CONFIG_8139TOO_PHY_NUM;
+			printk(KERN_INFO "%s: Using external PHY %d\n",
+					dev->name, tp->phys[0]);
+		} else {
+			printk(KERN_INFO "%s: External PHY not found\n",
+					dev->name);
+		}
+	}
 #endif
-		tp->phys[0] = 32;
 	tp->mii.phy_id = tp->phys[0];
 
 	/* The lower four bits are the media type. */
@@ -1104,6 +1170,7 @@ static void __devexit rtl8139_remove_one (struct pci_dev *pdev)
 }
 
 
+#if !defined(CONFIG_MTD_NETtel) && !defined(CONFIG_SH_SECUREEDGE5410)
 /* Serial EEPROM section. */
 
 /*  EEPROM_Ctrl bits. */
@@ -1115,6 +1182,10 @@ static void __devexit rtl8139_remove_one (struct pci_dev *pdev)
 #define EE_DATA_READ	0x01	/* EEPROM chip data out. */
 #define EE_ENB			(0x80 | EE_CS)
 
+
+#define EE_TWP_MAX	(15000)
+
+
 /* Delay between EEPROM clock transitions.
    No extra delay is needed with 33Mhz PCI, but 66Mhz may change this.
  */
@@ -1125,6 +1196,8 @@ static void __devexit rtl8139_remove_one (struct pci_dev *pdev)
 #define EE_WRITE_CMD	(5)
 #define EE_READ_CMD		(6)
 #define EE_ERASE_CMD	(7)
+#define EE_WEN_CMD	(4)
+#define EE_WDS_CMD	(4)
 
 static int __devinit read_eeprom (void *ioaddr, int location, int addr_len)
 {
@@ -1164,6 +1237,7 @@ static int __devinit read_eeprom (void *ioaddr, int location, int addr_len)
 
 	return retval;
 }
+#endif
 
 /* MII serial management: mostly bogus for now. */
 /* Read and write the MII management registers using software-generated
@@ -1171,6 +1245,10 @@ static int __devinit read_eeprom (void *ioaddr, int location, int addr_len)
    The maximum data clock rate is 2.5 Mhz.  The minimum timing is usually
    met by back-to-back PCI I/O cycles, but we insert a delay to avoid
    "overclocking" issues. */
+
+#ifdef CONFIG_8139TOO_8129
+
+#define MDIO_REG		Config4
 #define MDIO_DIR		0x80
 #define MDIO_DATA_OUT	0x04
 #define MDIO_DATA_IN	0x02
@@ -1178,7 +1256,26 @@ static int __devinit read_eeprom (void *ioaddr, int location, int addr_len)
 #define MDIO_WRITE0 (MDIO_DIR)
 #define MDIO_WRITE1 (MDIO_DIR | MDIO_DATA_OUT)
 
-#define mdio_delay(mdio_addr)	readb(mdio_addr)
+#define mdio_delay(mdio_addr)		readb(mdio_addr)
+#define mdio_out(val, mdio_addr)	writeb((val), (mdio_addr))
+#define mdio_in(mdio_addr)		readb(mdio_addr)
+
+#elif defined(CONFIG_8139TOO_EXTERNAL_PHY)
+
+/* Hack in the MII support for C+ chips. */
+#define MDIO_REG		0xFC
+#define MDIO_DIR		(1 << 27)
+#define MDIO_DATA_OUT		(1 << 26)
+#define MDIO_DATA_IN		(1 << 25)
+#define MDIO_CLK		(1 << 24)
+#define MDIO_WRITE0 (MDIO_DIR)
+#define MDIO_WRITE1 (MDIO_DIR | MDIO_DATA_OUT)
+
+#define mdio_delay(mdio_addr)		readl(mdio_addr)
+#define mdio_out(val, mdio_addr)	writel((val), (mdio_addr))
+#define mdio_in(mdio_addr)		readl(mdio_addr)
+
+#endif
 
 
 static char mii_2_8139_map[8] = {
@@ -1193,16 +1290,16 @@ static char mii_2_8139_map[8] = {
 };
 
 
-#ifdef CONFIG_8139TOO_8129
+#ifdef CONFIG_8139TOO_EXTERNAL_PHY
 /* Syncronize the MII management interface by shifting 32 one bits out. */
 static void mdio_sync (void *mdio_addr)
 {
 	int i;
 
 	for (i = 32; i >= 0; i--) {
-		writeb (MDIO_WRITE1, mdio_addr);
+		mdio_out (MDIO_WRITE1, mdio_addr);
 		mdio_delay (mdio_addr);
-		writeb (MDIO_WRITE1 | MDIO_CLK, mdio_addr);
+		mdio_out (MDIO_WRITE1 | MDIO_CLK, mdio_addr);
 		mdio_delay (mdio_addr);
 	}
 }
@@ -1212,8 +1309,8 @@ static int mdio_read (struct net_device *dev, int phy_id, int location)
 {
 	struct rtl8139_private *tp = dev->priv;
 	int retval = 0;
-#ifdef CONFIG_8139TOO_8129
-	void *mdio_addr = tp->mmio_addr + Config4;
+#ifdef CONFIG_8139TOO_EXTERNAL_PHY
+	void *mdio_addr = tp->mmio_addr + MDIO_REG;
 	int mii_cmd = (0xf6 << 10) | (phy_id << 5) | location;
 	int i;
 #endif
@@ -1223,24 +1320,24 @@ static int mdio_read (struct net_device *dev, int phy_id, int location)
 		    readw (tp->mmio_addr + mii_2_8139_map[location]) : 0;
 	}
 
-#ifdef CONFIG_8139TOO_8129
+#ifdef CONFIG_8139TOO_EXTERNAL_PHY
 	mdio_sync (mdio_addr);
 	/* Shift the read command bits out. */
 	for (i = 15; i >= 0; i--) {
 		int dataval = (mii_cmd & (1 << i)) ? MDIO_DATA_OUT : 0;
 
-		writeb (MDIO_DIR | dataval, mdio_addr);
+		mdio_out (MDIO_DIR | dataval, mdio_addr);
 		mdio_delay (mdio_addr);
-		writeb (MDIO_DIR | dataval | MDIO_CLK, mdio_addr);
+		mdio_out (MDIO_DIR | dataval | MDIO_CLK, mdio_addr);
 		mdio_delay (mdio_addr);
 	}
 
 	/* Read the two transition, 16 data, and wire-idle bits. */
 	for (i = 19; i > 0; i--) {
-		writeb (0, mdio_addr);
+		mdio_out (0, mdio_addr);
 		mdio_delay (mdio_addr);
-		retval = (retval << 1) | ((readb (mdio_addr) & MDIO_DATA_IN) ? 1 : 0);
-		writeb (MDIO_CLK, mdio_addr);
+		retval = (retval << 1) | ((mdio_in (mdio_addr) & MDIO_DATA_IN) ? 1 : 0);
+		mdio_out (MDIO_CLK, mdio_addr);
 		mdio_delay (mdio_addr);
 	}
 #endif
@@ -1253,8 +1350,8 @@ static void mdio_write (struct net_device *dev, int phy_id, int location,
 			int value)
 {
 	struct rtl8139_private *tp = dev->priv;
-#ifdef CONFIG_8139TOO_8129
-	void *mdio_addr = tp->mmio_addr + Config4;
+#ifdef CONFIG_8139TOO_EXTERNAL_PHY
+	void *mdio_addr = tp->mmio_addr + MDIO_REG;
 	int mii_cmd = (0x5002 << 16) | (phy_id << 23) | (location << 18) | value;
 	int i;
 #endif
@@ -1270,23 +1367,23 @@ static void mdio_write (struct net_device *dev, int phy_id, int location,
 		return;
 	}
 
-#ifdef CONFIG_8139TOO_8129
+#ifdef CONFIG_8139TOO_EXTERNAL_PHY
 	mdio_sync (mdio_addr);
 
 	/* Shift the command bits out. */
 	for (i = 31; i >= 0; i--) {
 		int dataval =
 		    (mii_cmd & (1 << i)) ? MDIO_WRITE1 : MDIO_WRITE0;
-		writeb (dataval, mdio_addr);
+		mdio_out (dataval, mdio_addr);
 		mdio_delay (mdio_addr);
-		writeb (dataval | MDIO_CLK, mdio_addr);
+		mdio_out (dataval | MDIO_CLK, mdio_addr);
 		mdio_delay (mdio_addr);
 	}
 	/* Clear out extra bits. */
 	for (i = 2; i > 0; i--) {
-		writeb (0, mdio_addr);
+		mdio_out (0, mdio_addr);
 		mdio_delay (mdio_addr);
-		writeb (MDIO_CLK, mdio_addr);
+		mdio_out (MDIO_CLK, mdio_addr);
 		mdio_delay (mdio_addr);
 	}
 #endif
@@ -1296,19 +1393,24 @@ static void mdio_write (struct net_device *dev, int phy_id, int location,
 static int rtl8139_open (struct net_device *dev)
 {
 	struct rtl8139_private *tp = dev->priv;
-	int retval;
 	void *ioaddr = tp->mmio_addr;
+	
+#ifndef FAST_POLL
+	int retval;
 
 	retval = request_irq (dev->irq, rtl8139_interrupt, SA_SHIRQ, dev->name, dev);
 	if (retval)
 		return retval;
+#endif
 
 	tp->tx_bufs = pci_alloc_consistent(tp->pci_dev, TX_BUF_TOT_LEN,
 					   &tp->tx_bufs_dma);
 	tp->rx_ring = pci_alloc_consistent(tp->pci_dev, RX_BUF_TOT_LEN,
 					   &tp->rx_ring_dma);
 	if (tp->tx_bufs == NULL || tp->rx_ring == NULL) {
+#ifndef FAST_POLL
 		free_irq(dev->irq, dev);
+#endif
 
 		if (tp->tx_bufs)
 			pci_free_consistent(tp->pci_dev, TX_BUF_TOT_LEN,
@@ -1335,6 +1437,16 @@ static int rtl8139_open (struct net_device *dev)
 			tp->mii.full_duplex ? "full" : "half");
 
 	rtl8139_start_thread(dev);
+
+#ifdef CONFIG_LEDMAN
+	ledman_cmd((RTL_R16 (CSCR) & CSCR_LinkOKBit) ?
+		LEDMAN_CMD_ON : LEDMAN_CMD_OFF,
+		(dev->name[3] == '0') ? LEDMAN_LAN1_LINK : LEDMAN_LAN2_LINK);
+#endif
+
+#ifdef FAST_POLL
+	fast_timer_add(fast_poll_8139too, dev);
+#endif /* FAST_POLL */
 
 	return 0;
 }
@@ -1365,9 +1477,12 @@ static void rtl8139_hw_start (struct net_device *dev)
 
 	/* unlock Config[01234] and BMCR register writes */
 	RTL_W8_F (Cfg9346, Cfg9346_Unlock);
+
+#if !defined(CONFIG_MTD_NETtel) && !defined(CONFIG_SH_SECUREEDGE5410)
 	/* Restore our idea of the MAC address. */
 	RTL_W32_F (MAC0 + 0, cpu_to_le32 (*(u32 *) (dev->dev_addr + 0)));
 	RTL_W32_F (MAC0 + 4, cpu_to_le32 (*(u32 *) (dev->dev_addr + 4)));
+#endif
 
 	/* Must enable Tx/Rx before setting transfer thresholds! */
 	RTL_W8 (ChipCmd, CmdRxEnb | CmdTxEnb);
@@ -1413,8 +1528,10 @@ static void rtl8139_hw_start (struct net_device *dev)
 	if ((!(tmp & CmdRxEnb)) || (!(tmp & CmdTxEnb)))
 		RTL_W8 (ChipCmd, CmdRxEnb | CmdTxEnb);
 
+#ifndef FAST_POLL
 	/* Enable all known interrupts by setting the interrupt mask. */
 	RTL_W16 (IntrMask, rtl8139_intr_mask);
+#endif
 
 	netif_start_queue (dev);
 }
@@ -1706,13 +1823,22 @@ static int rtl8139_start_xmit (struct sk_buff *skb, struct net_device *dev)
 	unsigned int entry;
 	unsigned int len = skb->len;
 
+#ifdef CONFIG_LEDMAN
+	ledman_cmd(LEDMAN_CMD_SET,
+		(dev->name[3] == '0') ? LEDMAN_LAN1_TX : LEDMAN_LAN2_TX);
+#endif
+
 	/* Calculate the next Tx descriptor entry. */
 	entry = tp->cur_tx % NUM_TX_DESC;
 
 	if (likely(len < TX_BUF_SIZE)) {
 		if (len < ETH_ZLEN)
 			memset(tp->tx_buf[entry], 0, ETH_ZLEN);
+#if 0
 		skb_copy_and_csum_dev(skb, tp->tx_buf[entry]);
+#else
+		memcpy(tp->tx_buf[entry], skb->data, len);
+#endif
 		dev_kfree_skb(skb);
 	} else {
 		dev_kfree_skb(skb);
@@ -1898,14 +2024,21 @@ static void rtl8139_rx_err (u32 rx_status, struct net_device *dev,
 }
 
 static void rtl8139_rx_interrupt (struct net_device *dev,
-				  struct rtl8139_private *tp, void *ioaddr)
+				  struct rtl8139_private *tp, void *ioaddr,
+				  int *boguscnt)
 {
 	unsigned char *rx_ring;
 	u16 cur_rx;
+	int cng_level;
 
 	assert (dev != NULL);
 	assert (tp != NULL);
 	assert (ioaddr != NULL);
+
+#ifdef CONFIG_LEDMAN
+	ledman_cmd(LEDMAN_CMD_SET,
+		(dev->name[3] == '0') ? LEDMAN_LAN1_RX : LEDMAN_LAN2_RX);
+#endif
 
 	rx_ring = tp->rx_ring;
 	cur_rx = tp->cur_rx;
@@ -1979,11 +2112,15 @@ static void rtl8139_rx_interrupt (struct net_device *dev,
 			skb->dev = dev;
 			skb_reserve (skb, 2);	/* 16 byte align the IP fields. */
 
+#if 0
 			eth_copy_and_sum (skb, &rx_ring[ring_offset + 4], pkt_size, 0);
+#else
+			memcpy(skb->data, &rx_ring[ring_offset + 4], pkt_size);
+#endif
 			skb_put (skb, pkt_size);
 
 			skb->protocol = eth_type_trans (skb, dev);
-			netif_rx (skb);
+			cng_level = netif_rx(skb);
 			dev->last_rx = jiffies;
 			tp->stats.rx_bytes += pkt_size;
 			tp->stats.rx_packets++;
@@ -1992,6 +2129,7 @@ static void rtl8139_rx_interrupt (struct net_device *dev,
 				"%s: Memory squeeze, dropping packet.\n",
 				dev->name);
 			tp->stats.rx_dropped++;
+			cng_level = NET_RX_DROP;
 		}
 
 		cur_rx = (cur_rx + rx_size + 4 + 3) & ~3;
@@ -1999,7 +2137,19 @@ static void rtl8139_rx_interrupt (struct net_device *dev,
 
 		if (RTL_R16 (IntrStatus) & RxAckBits)
 			RTL_W16_F (IntrStatus, RxAckBits);
+
+		if (cng_level == NET_RX_DROP || cng_level == NET_RX_CN_HIGH
+				|| cng_level == NET_RX_CN_MOD)
+			(*boguscnt) = 0;
+		else
+			(*boguscnt)--;
+		if (*boguscnt <= 0)
+			break;
 	}
+
+#ifdef FAST_POLL
+	tp->rx_poll_incomplete = ((RTL_R8 (ChipCmd) & RxBufEmpty) == 0);
+#endif
 
 	DPRINTK ("%s: Done rtl8139_rx(), current %4.4x BufAddr %4.4x,"
 		 " free to %4.4x, Cmd %2.2x.\n", dev->name, cur_rx,
@@ -2030,6 +2180,12 @@ static void rtl8139_weird_interrupt (struct net_device *dev,
 	    (tp->drv_flags & HAS_LNK_CHNG)) {
 		rtl_check_media(dev, 0);
 		status &= ~RxUnderrun;
+#ifdef CONFIG_LEDMAN
+		ledman_cmd((RTL_R16 (CSCR) & CSCR_LinkOKBit) ?
+			LEDMAN_CMD_ON : LEDMAN_CMD_OFF,
+			(dev->name[3] == '0') ?
+					LEDMAN_LAN1_LINK : LEDMAN_LAN2_LINK);
+#endif
 	}
 
 	/* XXX along with rtl8139_rx_err, are we double-counting errors? */
@@ -2042,14 +2198,30 @@ static void rtl8139_weird_interrupt (struct net_device *dev,
 	if (status & (RxUnderrun | RxFIFOOver))
 		tp->stats.rx_fifo_errors++;
 	if (status & PCIErr) {
-		u16 pci_cmd_status;
+		u16 pci_cmd_status, s;
 		pci_read_config_word (tp->pci_dev, PCI_STATUS, &pci_cmd_status);
 		pci_write_config_word (tp->pci_dev, PCI_STATUS, pci_cmd_status);
+		pci_read_config_word (tp->pci_dev, PCI_STATUS, &s);
 
-		printk (KERN_ERR "%s: PCI Bus error %4.4x.\n",
-			dev->name, pci_cmd_status);
+		printk (KERN_ERR "%s: PCI Bus error %4.4x (%04x).\n",
+			dev->name, pci_cmd_status, s);
+
+		printk (KERN_ERR "%s: reseting interface...\n", dev->name);
+		rtl8139_hw_start (dev);
 	}
 }
+
+
+#ifdef FAST_POLL
+/*
+ *	Fast poll interrupt simulator.
+ */
+static void
+fast_poll_8139too(void *arg)
+{
+	rtl8139_interrupt(0, arg, NULL);
+}
+#endif /* FAST_POLL */
 
 
 /* The interrupt handler does all of the Rx thread work and cleans up
@@ -2097,13 +2269,20 @@ static irqreturn_t rtl8139_interrupt (int irq, void *dev_instance,
 				dev->name, status, ackstat, RTL_R16 (IntrStatus));
 
 		if (netif_running (dev) && (status & RxAckBits))
-			rtl8139_rx_interrupt (dev, tp, ioaddr);
+			rtl8139_rx_interrupt (dev, tp, ioaddr, &boguscnt);
+#ifdef FAST_POLL
+		else if (netif_running (dev) && tp->rx_poll_incomplete)
+			rtl8139_rx_interrupt (dev, tp, ioaddr, &boguscnt);
+#endif
 
 		/* Check uncommon events with one test. */
 		if (status & (PCIErr | PCSTimeout | RxUnderrun | RxOverflow |
-		  	      RxFIFOOver | RxErr))
+		  	      RxFIFOOver | RxErr)) {
 			rtl8139_weird_interrupt (dev, tp, ioaddr,
 						 status, link_changed);
+			if (status & (RxOverflow | RxFIFOOver))
+				RTL_W16 (IntrStatus, RxOverflow | RxFIFOOver);
+		}
 
 		if (netif_running (dev) && (status & (TxOK | TxErr))) {
 			rtl8139_tx_interrupt (dev, tp, ioaddr);
@@ -2114,13 +2293,19 @@ static irqreturn_t rtl8139_interrupt (int irq, void *dev_instance,
 		boguscnt--;
 	} while (boguscnt > 0);
 
+	/* Don't clear interrupts for polled mode so that we
+	 * can immediately continue reading on the next poll,
+	 * even if no more packets have been received. */
+#ifndef FAST_POLL
 	if (boguscnt <= 0) {
-		printk (KERN_WARNING "%s: Too much work at interrupt, "
-			"IntrStatus=0x%4.4x.\n", dev->name, status);
+		if (net_ratelimit())
+			printk (KERN_WARNING "%s: Too much work at interrupt, "
+				"IntrStatus=0x%4.4x.\n", dev->name, status);
 
 		/* Clear all interrupt sources. */
 		RTL_W16 (IntrStatus, 0xffff);
 	}
+#endif
 
 	spin_unlock (&tp->lock);
 
@@ -2169,7 +2354,11 @@ static int rtl8139_close (struct net_device *dev)
 	spin_unlock_irqrestore (&tp->lock, flags);
 
 	synchronize_irq ();		/* racy, but that's ok here */
+#ifndef FAST_POLL
 	free_irq (dev->irq, dev);
+#else
+	fast_timer_remove(fast_poll_8139too, dev);
+#endif
 
 	rtl8139_tx_clear (tp);
 
@@ -2185,6 +2374,11 @@ static int rtl8139_close (struct net_device *dev)
 
 	if (rtl_chip_info[tp->chipset].flags & HasHltClk)
 		RTL_W8 (HltClk, 'H');	/* 'R' would leave the clock running. */
+
+#ifdef CONFIG_LEDMAN
+	ledman_cmd(LEDMAN_CMD_OFF,
+		(dev->name[3] == '0') ? LEDMAN_LAN1_LINK : LEDMAN_LAN2_LINK);
+#endif
 
 	return 0;
 }
@@ -2553,6 +2747,144 @@ static void __exit rtl8139_cleanup_module (void)
 {
 	pci_unregister_driver (&rtl8139_pci_driver);
 }
+
+#if 0
+void serial_eeprom_write(char *ioaddr, int location, int addr_len,
+		int data)
+/*
+ * ioaddr - the base address of the ethernet device.
+ * location - the location in the serial eeprom to be over written.
+ * addr_len - the length of the address that this eeprom accepts.
+ * data - the data to write to the eeprom.
+ *
+ */
+{
+	int i;
+	char *ee_addr = ioaddr + Cfg9346;
+	int write_cmd = location | (EE_WRITE_CMD << addr_len);
+	int write_en_cmd = 0 | (EE_WEN_CMD << addr_len) | 
+		(0x3 << (addr_len - 2));
+	int write_dis_cmd = 0 | (EE_WDS_CMD << addr_len) |
+		(0x0 << (addr_len - 2));
+
+	/* Allow access to eeprom bits */
+	writeb (EE_ENB & ~EE_CS, ee_addr);
+	eeprom_delay(); 
+
+	/*********
+	 * WRITE ENABLE
+	 */
+ 
+#if DEBUG
+	printf("\nWEN\n");
+#endif
+	/* Initiate WEN command by raising CS */
+	writeb (EE_ENB, ee_addr);
+	eeprom_delay ();
+
+	/* shift out the write enable command */
+	for (i = 4 + addr_len; i >= 0;i --) {
+		int dataval = (write_en_cmd & (1 << i)) ? EE_DATA_WRITE : 0;
+#if DEBUG
+		printf("%d", (write_en_cmd & (1 << i)) ? 1 : 0);
+#endif
+		writeb (EE_ENB | dataval, ee_addr);
+		eeprom_delay ();
+		writeb (EE_ENB | dataval | EE_SHIFT_CLK, ee_addr);
+		eeprom_delay ();
+	}
+
+	/* CS low to complete the command. */
+	writeb(EE_ENB & ~EE_CS, ee_addr);
+	eeprom_delay();
+
+	/********
+	 * WRITE COMMAND
+	 */
+
+#if DEBUG
+	printf("\nwrite command\n");
+#endif
+	/* Initiate write by raising CS */
+	writeb(EE_ENB , ee_addr);
+	eeprom_delay();
+
+	/* Shift the write command bits out. */
+	/*
+	 * DEBUG: i >= 0 correct spot wrong val for odds
+	 */
+	for (i = 3 + addr_len; i >= 0; i--) {
+		int dataval = (write_cmd & (1 << i)) ? EE_DATA_WRITE : 0;
+#if DEBUG
+		printf("%d", (write_cmd & (1<< i)) ? 1 : 0);
+#endif
+		writeb (EE_ENB | dataval, ee_addr);
+		eeprom_delay ();
+		writeb (EE_ENB | dataval | EE_SHIFT_CLK, ee_addr);
+		eeprom_delay ();
+	}
+
+#if DEBUG
+	printf("\ndata\n");
+#endif
+	/* shift out the actual data. */
+	for (i = 15; i >= 0; i--) {
+		int dataval = (data & (1 << i)) ? EE_DATA_WRITE : 0;
+#if DEBUG
+		printf("%d", (data & (1<< i)) ? 1 : 0);
+#endif
+		writeb(EE_ENB | dataval, ee_addr);
+		eeprom_delay ();
+		writeb (EE_ENB | dataval | EE_SHIFT_CLK, ee_addr);
+		eeprom_delay ();
+	}
+
+	/* 
+	 * Complete the command and then Poll to determine when the write cycle 
+	 * finishes. 
+	 */
+	writeb(EE_ENB & ~EE_CS, ee_addr);
+	eeprom_delay();
+	udelay(EE_TWP_MAX);
+
+	/* Complete command by dropping CS */
+	writeb(EE_ENB & ~EE_CS, ee_addr);
+	eeprom_delay();
+
+	/*******
+	 * WRITE DISABLE
+	 */
+#if DEBUG
+	printf("\nWDS\n");
+#endif
+
+	/* Start write disable command  */
+	writeb (EE_ENB, ee_addr);
+	eeprom_delay ();
+
+	/*
+	 * shift out the write disable command.
+	 */
+	for (i = 4 + addr_len; i >= 0;i --) {
+		int dataval = (write_dis_cmd & (1 << i)) ? EE_DATA_WRITE : 0;
+#if DEBUG
+		printf("%d", (write_dis_cmd & (1<< i)) ? 1 : 0);
+#endif
+		writeb (EE_ENB | dataval, ee_addr);
+		eeprom_delay ();
+		writeb (EE_ENB | dataval | EE_SHIFT_CLK, ee_addr);
+		eeprom_delay ();
+	}
+
+	/* Terminate the EEPROM cmd */
+	writeb (~EE_CS, ee_addr);
+	eeprom_delay();
+
+	/* and access. */
+	writeb (~EE_CS, ee_addr);
+	eeprom_delay ();
+}
+#endif
 
 
 module_init(rtl8139_init_module);

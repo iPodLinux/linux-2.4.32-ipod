@@ -133,6 +133,15 @@ fi
 dep_tristate '  VIA 82C686 Audio Codec' CONFIG_SOUND_VIA82CXXX $CONFIG_PCI
 dep_mbool    '  VIA 82C686 MIDI' CONFIG_MIDI_VIA82CXXX $CONFIG_SOUND_VIA82CXXX
 
+
+if [ "$CONFIG_ARCH_EP7212" = "y" -o "$CONFIG_ARCH_EP7312" = "y" ]; then
+   dep_tristate '  edb7312/7212 DAI audio support' CONFIG_SOUND_7212 $CONFIG_SOUND
+   if [ "$CONFIG_ARCH_EP7212" = "y" ]; then
+      bool '    select external PLL clock (default is internal)' CONFIG_SOUND_EP7312_EXTCLK
+   fi
+fi
+
+
 dep_tristate '  OSS sound modules' CONFIG_SOUND_OSS $CONFIG_SOUND
 
 if [ "$CONFIG_SOUND_OSS" = "y" -o "$CONFIG_SOUND_OSS" = "m" ]; then
@@ -147,6 +156,21 @@ if [ "$CONFIG_SOUND_OSS" = "y" -o "$CONFIG_SOUND_OSS" = "m" ]; then
    dep_tristate '    Adlib Cards' CONFIG_SOUND_ADLIB $CONFIG_SOUND_OSS
    dep_tristate '    ACI mixer (miroSOUND PCM1-pro/PCM12/PCM20)' CONFIG_SOUND_ACI_MIXER $CONFIG_SOUND_OSS
    dep_tristate '    Crystal CS4232 based (PnP) cards' CONFIG_SOUND_CS4232 $CONFIG_SOUND_OSS
+
+   if [ "$CONFIG_ARCH_EP93XX" = "y" ]; then
+      dep_tristate '    Cirrus EP93xx sound support' CONFIG_SOUND_EP93XX $CONFIG_SOUND_OSS
+      if [ "$CONFIG_SOUND_EP93XX" != "n" ]; then
+         choice '      Cirrus EP93xx sound interface' \
+                "AC97 CONFIG_SOUND_EP93XX_AC97 \
+                 I2S CONFIG_SOUND_EP93XX_I2S" AC97
+         if [ "$CONFIG_SOUND_EP93XX_I2S" = "y" ]; then
+            choice '      Cirrus I2S codec support' \
+                   "CS4271 CONFIG_CODEC_CS4271 \
+                    CS4228A CONFIG_CODEC_CS4228A" CS4228A
+         fi
+      fi
+   fi
+
    dep_tristate '    Ensoniq SoundScape support' CONFIG_SOUND_SSCAPE $CONFIG_SOUND_OSS
    dep_tristate '    Gravis Ultrasound support' CONFIG_SOUND_GUS $CONFIG_SOUND_OSS
    if [ "$CONFIG_SOUND_GUS" != "n" ]; then
@@ -246,4 +270,8 @@ if [ "$CONFIG_INPUT_GAMEPORT" != "n" ]; then
   if [ "$CONFIG_SOUND_ESSSOLO1" = "y" -o "$CONFIG_SOUND_ES1370" = "y" -o "$CONFIG_SOUND_ES1371" = "y" -o "$CONFIG_SOUND_SONICVIBES" = "y" ]; then
     define_tristate CONFIG_INPUT_GAMEPORT y
   fi
+fi
+
+if [ "$CONFIG_FUJITSU_MB93493" = "y" ]; then
+   dep_tristate '  MB93493 Audio driver' CONFIG_FUJITSU_MB93493_AUDIO $CONFIG_FUJITSU_MB93493_I2S $CONFIG_SOUND
 fi

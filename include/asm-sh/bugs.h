@@ -32,11 +32,23 @@ static void __init check_bugs(void)
 		break;
 	case CPU_SH7750:
 		*p++ = '4';
-		printk("CPU: SH7750/SH7751\n");
+		printk("CPU: SH7750\n");
 		break;
-	case CPU_ST40:
+	case CPU_ST40RA:
 		*p++ = '4';
-		printk("CPU: ST40STB1/GX1\n");
+		printk("CPU: ST40RA\n");
+		break;
+	case CPU_ST40GX1:
+		*p++ = '4';
+		printk("CPU: ST40GX1\n");
+		break;
+	case CPU_SH7751:
+		*p++ = '4';
+		printk("CPU: SH7751\n");
+		break;
+	case CPU_SH7751R:
+		*p++ = '4';
+		printk("CPU: SH7751R\n");
 		break;
 	default:
 		printk("CPU: ??????\n");

@@ -360,7 +360,7 @@ int ip_queue_xmit(struct sk_buff *skb, int ipfragok)
 
 	/* Make sure we can route this packet. */
 	rt = (struct rtable *)__sk_dst_check(sk, 0);
-	if (rt == NULL) {
+	if (rt == NULL || rt->u.dst.obsolete) {
 		u32 daddr;
 
 		/* Use correct destination address if we have options. */
@@ -404,7 +404,6 @@ packet_routed:
 		iph->ihl += opt->optlen >> 2;
 		ip_options_build(skb, opt, sk->daddr, rt, 0);
 	}
-
 	return NF_HOOK(PF_INET, NF_IP_LOCAL_OUT, skb, NULL, rt->u.dst.dev,
 		       ip_queue_xmit2);
 
@@ -463,6 +462,8 @@ static int ip_build_xmit_slow(struct sock *sk,
 
 	length -= sizeof(struct iphdr);
 
+	id = sk->protinfo.af_inet.id++;
+
 	if (opt) {
 		fragheaderlen = sizeof(struct iphdr) + opt->optlen;
 		maxfraglen = ((mtu-sizeof(struct iphdr)-opt->optlen) & ~7) + fragheaderlen;
@@ -519,9 +520,6 @@ static int ip_build_xmit_slow(struct sock *sk,
 	/*
 	 *	Begin outputting the bytes.
 	 */
-
-	id = sk->protinfo.af_inet.id++;
-
 	do {
 		char *data;
 		struct sk_buff * skb;
@@ -672,7 +670,7 @@ int ip_build_xmit(struct sock *sk,
 		/*
 		 * 	Check for slow path.
 		 */
-		if (length > rt->u.dst.pmtu || ipc->opt != NULL)  
+		if (length > rt->u.dst.pmtu || ipc->opt != NULL)
 			return ip_build_xmit_slow(sk,getfrag,frag,length,ipc,rt,flags); 
 	} else {
 		if (length > rt->u.dst.dev->mtu) {
@@ -890,6 +888,10 @@ int ip_fragment(struct sk_buff *skb, int (*output)(struct sk_buff*))
 		/* Connection association is same as pre-frag packet */
 		skb2->nfct = skb->nfct;
 		nf_conntrack_get(skb2->nfct);
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+		skb2->nf_bridge = skb->nf_bridge;
+		nf_bridge_get(skb2->nf_bridge);
+#endif
 #ifdef CONFIG_NETFILTER_DEBUG
 		skb2->nf_debug = skb->nf_debug;
 #endif

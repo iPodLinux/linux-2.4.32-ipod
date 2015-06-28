@@ -16,6 +16,7 @@
 #include <linux/time.h>
 #include <linux/rtc.h>
 #include <linux/mc146818rtc.h>
+#include <linux/delay.h>
 
 #include <asm/io.h>
 #include <asm/rtc.h>
@@ -49,8 +50,8 @@ static int use_ds1302 = 0;
 
 #define set_dirp(x)
 #define get_dirp(x) 0
-#define set_dp(x)	SECUREEDGE_WRITE_IOPORT(x, 0x1c00)
-#define get_dp(x)	SECUREEDGE_READ_IOPORT()
+#define set_dp(x)	({ udelay(2); SECUREEDGE_WRITE_IOPORT(x, 0x1c00); })
+#define get_dp(x)	({ udelay(2); SECUREEDGE_READ_IOPORT(); })
 
 static void ds1302_sendbits(unsigned int val)
 {
@@ -230,7 +231,7 @@ int snapgear_rtc_settimeofday(const struct timeval *tv)
 
 	nowtime = tv->tv_sec;
 
-#if 1
+#if 0
 	printk("SnapGear RTC: snapgear_rtc_settimeofday(nowtime=%ld)\n", nowtime);
 #endif
 

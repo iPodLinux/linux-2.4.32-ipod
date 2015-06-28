@@ -8,9 +8,12 @@
  *
  * February 2000: Modified by James Morris to have 1 queue per protocol.
  * 15-Mar-2000:   Added NF_REPEAT --RR.
+ * 08-May-2003:	  Internal logging interface added by Jozsef Kadlecsik.
  */
 #include <linux/config.h>
+#include <linux/kernel.h>
 #include <linux/netfilter.h>
+#include <linux/netfilter_logging.h>
 #include <net/protocol.h>
 #include <linux/init.h>
 #include <linux/skbuff.h>
@@ -342,10 +345,15 @@ static unsigned int nf_iterate(struct list_head *head,
 			       const struct net_device *indev,
 			       const struct net_device *outdev,
 			       struct list_head **i,
-			       int (*okfn)(struct sk_buff *))
+			       int (*okfn)(struct sk_buff *),
+			       int hook_thresh)
 {
 	for (*i = (*i)->next; *i != head; *i = (*i)->next) {
 		struct nf_hook_ops *elem = (struct nf_hook_ops *)*i;
+
+		if (hook_thresh > elem->priority)
+			continue;
+
 		switch (elem->hook(hook, skb, indev, outdev, okfn)) {
 		case NF_QUEUE:
 			return NF_QUEUE;
@@ -413,6 +421,10 @@ static void nf_queue(struct sk_buff *skb,
 {
 	int status;
 	struct nf_info *info;
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+	struct net_device *physindev = NULL;
+	struct net_device *physoutdev = NULL;
+#endif
 
 	if (!queue_handler[pf].outfn) {
 		kfree_skb(skb);
@@ -435,11 +447,24 @@ static void nf_queue(struct sk_buff *skb,
 	if (indev) dev_hold(indev);
 	if (outdev) dev_hold(outdev);
 
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+	if (skb->nf_bridge) {
+		physindev = skb->nf_bridge->physindev;
+		if (physindev) dev_hold(physindev);
+		physoutdev = skb->nf_bridge->physoutdev;
+		if (physoutdev) dev_hold(physoutdev);
+	}
+#endif
+
 	status = queue_handler[pf].outfn(skb, info, queue_handler[pf].data);
 	if (status < 0) {
 		/* James M doesn't say fuck enough. */
 		if (indev) dev_put(indev);
 		if (outdev) dev_put(outdev);
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+		if (physindev) dev_put(physindev);
+		if (physoutdev) dev_put(physoutdev);
+#endif
 		kfree(info);
 		kfree_skb(skb);
 		return;
@@ -449,7 +474,8 @@ static void nf_queue(struct sk_buff *skb,
 int nf_hook_slow(int pf, unsigned int hook, struct sk_buff *skb,
 		 struct net_device *indev,
 		 struct net_device *outdev,
-		 int (*okfn)(struct sk_buff *))
+		 int (*okfn)(struct sk_buff *),
+		 int hook_thresh)
 {
 	struct list_head *elem;
 	unsigned int verdict;
@@ -481,7 +507,7 @@ int nf_hook_slow(int pf, unsigned int hook, struct sk_buff *skb,
 
 	elem = &nf_hooks[pf][hook];
 	verdict = nf_iterate(&nf_hooks[pf][hook], &skb, hook, indev,
-			     outdev, &elem, okfn);
+			     outdev, &elem, okfn, hook_thresh);
 	if (verdict == NF_QUEUE) {
 		NFDEBUG("nf_hook: Verdict = QUEUE.\n");
 		nf_queue(skb, elem, pf, hook, indev, outdev, okfn);
@@ -510,6 +536,14 @@ void nf_reinject(struct sk_buff *skb, struct nf_info *info,
 
 	/* We don't have BR_NETPROTO_LOCK here */
 	br_read_lock_bh(BR_NETPROTO_LOCK);
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+	if (skb->nf_bridge) {
+		if (skb->nf_bridge->physindev)
+			dev_put(skb->nf_bridge->physindev);
+		if (skb->nf_bridge->physoutdev)
+			dev_put(skb->nf_bridge->physoutdev);
+	}
+#endif
 	for (i = nf_hooks[info->pf][info->hook].next; i != elem; i = i->next) {
 		if (i == &nf_hooks[info->pf][info->hook]) {
 			/* The module which sent it to userspace is gone. */
@@ -530,7 +564,7 @@ void nf_reinject(struct sk_buff *skb, struct nf_info *info,
 		verdict = nf_iterate(&nf_hooks[info->pf][info->hook],
 				     &skb, info->hook, 
 				     info->indev, info->outdev, &elem,
-				     info->okfn);
+				     info->okfn, INT_MIN);
 	}
 
 	switch (verdict) {
@@ -621,6 +655,75 @@ int ip_route_me_harder(struct sk_buff **pskb)
 	return 0;
 }
 #endif /*CONFIG_INET*/
+
+/* Internal logging interface, which relies on the real 
+   LOG target modules */
+
+#define NF_LOG_PREFIXLEN		128
+
+static struct nf_logging_t nf_logging[NPROTO] = {};
+static int reported = 0;
+
+void nf_log_register(int pf, const struct nf_logging_t *logging)
+{
+	br_write_lock_bh(BR_NETPROTO_LOCK);
+	if (!nf_logging[pf].nf_log_packet) {
+		nf_logging[pf].nf_log_packet = logging->nf_log_packet;
+		nf_logging[pf].nf_log = logging->nf_log;
+	}
+	br_write_unlock_bh(BR_NETPROTO_LOCK);
+}		
+
+void nf_log_unregister(int pf, const struct nf_logging_t *logging)
+{
+	br_write_lock_bh(BR_NETPROTO_LOCK);
+	if (nf_logging[pf].nf_log_packet == logging->nf_log_packet) {
+		nf_logging[pf].nf_log_packet = NULL;
+		nf_logging[pf].nf_log = NULL;
+	}
+	br_write_unlock_bh(BR_NETPROTO_LOCK);
+}		
+
+void nf_log_packet(int pf,
+		   struct sk_buff **pskb,
+		   unsigned int hooknum,
+		   const struct net_device *in,
+		   const struct net_device *out,
+		   const char *fmt, ...)
+{
+	va_list args;
+	char prefix[NF_LOG_PREFIXLEN];
+	
+	if (nf_logging[pf].nf_log_packet) {
+		va_start(args, fmt);
+		vsnprintf(prefix, sizeof(prefix), fmt, args);
+		va_end(args);
+		nf_logging[pf].nf_log_packet(pskb, hooknum, in, out, prefix);
+	} else if (!reported) {
+		printk(KERN_WARNING "nf_log_packet: can\'t log yet, "
+		       "no backend logging module loaded in!\n");
+		reported++;
+	}
+}
+
+void nf_log(int pf,
+	    char *pfh, size_t len,
+	    const char *fmt, ...)
+{
+	va_list args;
+	char prefix[NF_LOG_PREFIXLEN];
+	
+	if (nf_logging[pf].nf_log) {
+		va_start(args, fmt);
+		vsnprintf(prefix, sizeof(prefix), fmt, args);
+		va_end(args);
+		nf_logging[pf].nf_log(pfh, len, prefix);
+	} else if (!reported) {
+		printk(KERN_WARNING "nf_log: can\'t log yet, "
+		       "no backend logging module loaded in!\n");
+		reported++;
+	}
+}
 
 /* This does not belong here, but locally generated errors need it if connection
    tracking in use: without this, connection may not be in hash table, and hence

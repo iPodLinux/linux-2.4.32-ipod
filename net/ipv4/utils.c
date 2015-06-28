@@ -1,3 +1,5 @@
+/* $USAGI: utils.c,v 1.10 2003/08/24 01:16:44 yoshfuji Exp $ */
+
 /*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
@@ -22,7 +24,22 @@
  */
 
 #include <linux/types.h>
+#include <linux/socket.h>
+#include <linux/in.h>
 #include <asm/byteorder.h>
+#include <linux/kernel.h>
+
+/*
+ *	Display an IP address in readable format. 
+ */
+ 
+char *in_ntop(struct in_addr *in, char *buff)
+{
+	char *p = (char *)in;
+	sprintf(buff, "%d.%d.%d.%d", 
+		(p[0] & 255), (p[1] & 255), (p[2] & 255), (p[3] & 255));
+	return buff;
+}
 
 /*
  *	Convert an ASCII string to binary IP. 

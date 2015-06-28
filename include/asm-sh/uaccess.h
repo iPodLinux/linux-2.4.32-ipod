@@ -98,6 +98,7 @@ switch (size) { \
 case 1: __get_user_asm("b"); break; \
 case 2: __get_user_asm("w"); break; \
 case 4: __get_user_asm("l"); break; \
+case 8: __copy_user(&__gu_val, ptr, size); break; \
 default: __get_user_unknown(); break; \
 } x = (__typeof__(*(ptr))) __gu_val; __gu_err; })
 
@@ -112,6 +113,7 @@ switch (size) { \
 case 1: __get_user_asm("b"); break; \
 case 2: __get_user_asm("w"); break; \
 case 4: __get_user_asm("l"); break; \
+case 8: __copy_user(&__gu_val, ptr, size); break; \
 default: __get_user_unknown(); break; \
 } } x = (__typeof__(*(ptr))) __gu_val; __gu_err; })
 

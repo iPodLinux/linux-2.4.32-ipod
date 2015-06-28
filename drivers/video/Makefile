@@ -14,7 +14,7 @@ export-objs    := fbmem.o fbcmap.o fbcon.o fbmon.o modedb.o \
 		  fbcon-vga.o fbcon-iplan2p2.o fbcon-iplan2p4.o \
 		  fbcon-iplan2p8.o fbcon-vga-planes.o fbcon-cfb16.o \
 		  fbcon-cfb2.o fbcon-cfb24.o fbcon-cfb32.o fbcon-cfb4.o \
-		  fbcon-cfb8.o fbcon-mac.o fbcon-mfb.o \
+		  fbcon-cfb8.o fbcon-mac.o fbcon-mfb.o fbcon-cfb12.o \
 		  cyber2000fb.o sa1100fb.o fbcon-hga.o fbgen.o
 
 # Each configuration option enables a list of files.
@@ -32,6 +32,8 @@ obj-$(CONFIG_FONT_8x16)           += font_8x16.o
 obj-$(CONFIG_FONT_6x11)           += font_6x11.o
 obj-$(CONFIG_FONT_PEARL_8x8)      += font_pearl_8x8.o
 obj-$(CONFIG_FONT_ACORN_8x8)      += font_acorn_8x8.o
+obj-$(CONFIG_FONT_VTX_6x8)        += font_vtx_6x8.o
+obj-$(CONFIG_FONT_VTX_4x8)        += font_vtx_4x8.o
 
 # Add fbmon.o back into obj-$(CONFIG_FB) in 2.5.x
 obj-$(CONFIG_FB)                  += fbmem.o fbcmap.o modedb.o fbcon.o fonts.o
@@ -40,6 +42,8 @@ ifeq ($(CONFIG_FB),y)
 obj-$(CONFIG_PPC)                 += macmodes.o
 endif
 
+obj-$(CONFIG_FB_IPOD)             += fbgen.o
+obj-$(CONFIG_FB_EP93XX)           += ep93xxfb.o
 obj-$(CONFIG_FB_ACORN)            += acornfb.o
 obj-$(CONFIG_FB_AMIGA)            += amifb.o
 obj-$(CONFIG_FB_PM2)              += pm2fb.o fbgen.o
@@ -55,6 +59,8 @@ obj-$(CONFIG_FB_CONTROL)          += controlfb.o
 obj-$(CONFIG_FB_PLATINUM)         += platinumfb.o
 obj-$(CONFIG_FB_VALKYRIE)         += valkyriefb.o
 obj-$(CONFIG_FB_CT65550)          += chipsfb.o
+obj-$(CONFIG_FB_CLPS711X)         += clps711xfb.o
+obj-$(CONFIG_FB_EDB7312)          += edb7312fb.o
 obj-$(CONFIG_FB_CYBER)            += cyberfb.o
 obj-$(CONFIG_FB_CYBER2000)        += cyber2000fb.o
 obj-$(CONFIG_FB_SGIVW)            += sgivwfb.o
@@ -85,9 +91,12 @@ obj-$(CONFIG_FB_PMAG_AA)          += pmag-aa-fb.o
 obj-$(CONFIG_FB_PMAG_BA)          += pmag-ba-fb.o
 obj-$(CONFIG_FB_PMAGB_B)          += pmagb-b-fb.o
 obj-$(CONFIG_FB_MAXINE)           += maxinefb.o
+obj-$(CONFIG_FB_EP93XX)		  += ep93xxfb.o
 obj-$(CONFIG_FB_TX3912)           += tx3912fb.o
 obj-$(CONFIG_FB_AU1100)		  += au1100fb.o fbgen.o
+obj-$(CONFIG_FB_S3C44B0X)	  += s3c44b0xfb.o fbgen.o
 obj-$(CONFIG_FB_IT8181)		  += it8181fb.o fbgen.o
+obj-$(CONFIG_FB_MB93493)	  += mb93493fb.o fbgen.o
 
 subdir-$(CONFIG_STI_CONSOLE)      += sti
 ifeq ($(CONFIG_STI_CONSOLE),y)
@@ -128,12 +137,27 @@ obj-$(CONFIG_FB_SUN3)             += sun3fb.o
 obj-$(CONFIG_FB_BWTWO)            += bwtwofb.o
 obj-$(CONFIG_FB_HGA)              += hgafb.o  
 obj-$(CONFIG_FB_SA1100)           += sa1100fb.o
+obj-$(CONFIG_FB_DRAGON)           += dragonfb.o
+obj-$(CONFIG_FB_XILINX)           += xilinxfb.o fbgen.o
 obj-$(CONFIG_FB_VIRTUAL)          += vfb.o  
+obj-$(CONFIG_FB_VIRTUAL_SMALL)    += vfb_small.o
 obj-$(CONFIG_FB_HIT)              += hitfb.o fbgen.o
 obj-$(CONFIG_FB_E1355)            += epson1355fb.o fbgen.o
+obj-$(CONFIG_FB_EPSONS1D15705FB)  += epsons1d15705fb.o fbgen.o
+obj-$(CONFIG_FB_MQ200)            += mq200fb.o fbgen.o
 obj-$(CONFIG_FB_E1356)            += epson1356fb.o
 obj-$(CONFIG_FB_PVR2)             += pvr2fb.o
 obj-$(CONFIG_FB_VOODOO1)          += sstfb.o
+obj-$(CONFIG_FB_MC68X328)         += mc68x328fb.o
+obj-$(CONFIG_FB_MQ1100)           += mq1100.o fbgen.o
+
+# ATTENTION! The implementation of the driver for the EPSON S1D13706
+# on uClinux is _really_ experimental, currently! Be warned!
+ifeq ($(CONFIG_FB_COBRA5272),y)
+obj-$(CONFIG_FB_S1D13706)         += s1d13706fb.o fbgen.o
+obj-$(CONFIG_FB_S1D13806)         += s1d13806fb.o fbgen.o
+endif
+
 
 # Generic Low Level Drivers
 
@@ -141,6 +165,7 @@ obj-$(CONFIG_FBCON_AFB)           += fbcon-afb.o
 obj-$(CONFIG_FBCON_CFB2)          += fbcon-cfb2.o
 obj-$(CONFIG_FBCON_CFB4)          += fbcon-cfb4.o
 obj-$(CONFIG_FBCON_CFB8)          += fbcon-cfb8.o
+obj-$(CONFIG_FBCON_CFB12)         += fbcon-cfb12.o
 obj-$(CONFIG_FBCON_CFB16)         += fbcon-cfb16.o
 obj-$(CONFIG_FBCON_CFB24)         += fbcon-cfb24.o
 obj-$(CONFIG_FBCON_CFB32)         += fbcon-cfb32.o

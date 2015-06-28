@@ -326,14 +326,35 @@
 
 #define RX_FRAME_PORT	0x0000
 #define TX_FRAME_PORT RX_FRAME_PORT
+
+#ifdef CONFIG_EXCALIBUR
+#define TX_CMD_PORT	0x0008
+#elif defined(CONFIG_ARCH_TA7S)
+#define TX_CMD_PORT	(0x0004*2)
+#else
 #define TX_CMD_PORT	0x0004
+#endif
+
 #define TX_NOW		0x0000       /*  Tx packet after   5 bytes copied */
 #define TX_AFTER_381	0x0040       /*  Tx packet after 381 bytes copied */
 #define TX_AFTER_ALL	0x00c0       /*  Tx packet after all bytes copied */
+
+#ifdef CONFIG_EXCALIBUR
+#define TX_LEN_PORT	0x000C
+#define ISQ_PORT	0x0010
+#define ADD_PORT	0x0014
+#define DATA_PORT	0x0018
+#elif defined(CONFIG_ARCH_TA7S)
+#define ADD_PORT	(0x000A*2)
+#define DATA_PORT	(0x000C*2)
+#define TX_LEN_PORT	(0x0006*2)
+#define ISQ_PORT	(0x0008*2)
+#else
 #define TX_LEN_PORT	0x0006
 #define ISQ_PORT	0x0008
 #define ADD_PORT	0x000A
 #define DATA_PORT	0x000C
+#endif
 
 #define EEPROM_WRITE_EN		0x00F0
 #define EEPROM_WRITE_DIS	0x0000
@@ -437,8 +458,10 @@
 #define IRQ_MAP_EEPROM_DATA 0x0046 /*  Offset into eeprom for the IRQ map */
 #define IRQ_MAP_LEN 0x0004 /*  No of bytes to read for the IRQ map */
 #define PNP_IRQ_FRMT 0x0022 /*  PNP small item IRQ format */
-#ifdef CONFIG_SH_HICOSH4
+#if defined(CONFIG_SH_HICOSH4)
 #define CS8900_IRQ_MAP 0x0002 /* HiCO-SH4 board has its IRQ on #1 */
+#elif defined(CONFIG_ARCH_EDB7312)
+#define CS8900_IRQ_MAP 0x0080 /*  EDB7312 board has it's IRQ on */
 #else
 #define CS8900_IRQ_MAP 0x1c20 /*  This IRQ map is fixed */
 #endif

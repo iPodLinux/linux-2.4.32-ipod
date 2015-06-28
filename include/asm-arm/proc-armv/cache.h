@@ -30,6 +30,38 @@
 /*
  * Generic I + D cache
  */
+#ifdef CONFIG_ARM_FASS
+
+#define flush_cache_all()						\
+	do {								\
+		cpd_cache_flush_all();					\
+	} while (0)
+
+/* This is always called for current->mm */
+#define flush_cache_mm(_mm)						\
+	do {								\
+		if ((_mm) == current->active_mm)			\
+			cpd_cache_flush_mm((_mm));			\
+	} while (0)
+
+#define flush_cache_range(_mm,_start,_end)				\
+	do {								\
+		if ((_mm) == current->active_mm)			\
+			cpd_cache_flush_range((_mm), (_start) & PAGE_MASK, \
+					      PAGE_ALIGN(_end)); 	\
+	} while (0)
+
+#define flush_cache_page(_vma,_vmaddr)					\
+	do {								\
+		if ((_vma)->vm_mm == current->active_mm) {		\
+			unsigned long _addr = (_vmaddr) & PAGE_MASK;	\
+			cpd_cache_flush_page((_vma), _addr);		\
+		}							\
+	} while (0)
+
+
+#else
+
 #define flush_cache_all()						\
 	do {								\
 		cpu_cache_clean_invalidate_all();			\
@@ -58,6 +90,8 @@
 				((_vma)->vm_flags & VM_EXEC));		\
 		} \
 	} while (0)
+
+#endif /* CONFIG_ARM_FASS */
 
 /*
  * This flushes back any buffered write data.  We have to clean the entries
@@ -97,6 +131,9 @@ static __inline__ void flush_page_to_ram(struct page *page)
 
 /*
  * D cache only
+ *
+ * Note: FASS doesn't touch these since they seem to be for keeping kernel memory
+ *       consistent with the caches.
  */
 
 #define invalidate_dcache_range(_s,_e)	cpu_dcache_invalidate_range((_s),(_e))
@@ -186,6 +223,52 @@ static inline void flush_dcache_page(struct page *page)
  * are really up to date.  It is more efficient to do this here...
  */
 
+#ifdef CONFIG_ARM_FASS
+/*
+ * Notes:
+ *  current->active_mm is the currently active memory description.
+ *  current->mm == NULL iff we are lazy.
+ */
+#define flush_tlb_all()							\
+	do {								\
+		cpd_tlb_flush_all();					\
+	} while (0)
+
+/*
+ * Flush all user virtual address space translations described by `_mm'.
+ *
+ * Currently, this is always called for current->mm, which should be
+ * the same as current->active_mm.  This is currently not be called for
+ * the lazy TLB case.
+ */
+#define flush_tlb_mm(_mm)						\
+	do {								\
+		if ((_mm) == current->active_mm)			\
+			cpd_tlb_flush_mm((_mm));			\
+	} while (0)
+
+/*
+ * Flush the specified range of user virtual address space translations.
+ *
+ * _mm may not be current->active_mm, but may not be NULL.
+ */
+#define flush_tlb_range(_mm,_start,_end)				\
+	do {								\
+		if ((_mm) == current->active_mm)			\
+			cpd_tlb_flush_range((_mm), (_start), (_end));	\
+	} while (0)
+
+/*
+ * Flush the specified user virtual address space translation.
+ */
+#define flush_tlb_page(_vma,_page)					\
+	do {								\
+		if ((_vma)->vm_mm == current->active_mm)		\
+			cpd_tlb_flush_page((_vma), (_page));		\
+	} while (0)
+
+#else
+
 /*
  * Notes:
  *  current->active_mm is the currently active memory description.
@@ -227,8 +310,11 @@ static inline void flush_dcache_page(struct page *page)
 	do {								\
 		if ((_vma)->vm_mm == current->active_mm)		\
 			cpu_tlb_invalidate_page((_page),		\
-				 ((_vma)->vm_flags & VM_EXEC));		\
+				((_vma)->vm_flags & VM_EXEC));		\
 	} while (0)
+
+
+#endif /* CONFIG_ARM_FASS */
 
 /*
  * if PG_dcache_dirty is set for the page, we need to ensure that any

@@ -62,17 +62,20 @@
  *
  * Returns:
  *  r0 = address of abort
- *  r1 != 0 if writing
- *  r3 = FSR
+ *  r1 = FSR, bit 11 set if writing
+ *  r3 = corrupted
  */
 	.align	5
 ENTRY(cpu_arm922_data_abort)
-	ldr	r1, [r0]			@ read aborted instruction
+	mrc	p15, 0, r1, c5, c0, 0		@ get FSR
 	mrc	p15, 0, r0, c6, c0, 0		@ get FAR
-	tst	r1, r1, lsr #21			@ C = bit 20
-	mrc	p15, 0, r3, c5, c0, 0		@ get FSR
-	sbc	r1, r1, r1			@ r1 = C - 1
-	and	r3, r3, #255
+	tst	r3, #PSR_T_BIT
+	ldrneh	r3, [r2]			@ read aborted thumb instruction
+	ldreq	r3, [r2]			@ read aborted ARM instruction
+	bic	r1, r1, #1 << 11 | 1 << 10	@ clear bits 11 and 10 of FSR
+	movne	r3, r3, lsl #(21 - 12)		@ move thumb bit 11 to ARM bit 20
+	tst	r3, #1 << 20			@ check write
+	orreq	r1, r1, #1 << 11
 	mov	pc, lr
 	
 /*
@@ -185,7 +188,7 @@ ENTRY(cpu_arm922_cache_clean_invalidate_range)
 	bic	r1, r1, #DCACHELINESIZE - 1     @ && added by DHM
 	sub	r3, r1, r0
 	cmp	r3, #MAX_AREA_SIZE
-	bgt	cpu_arm922_cache_clean_invalidate_all_r2
+	bhi	cpu_arm922_cache_clean_invalidate_all_r2
 1:	teq	r2, #0
 #ifdef CONFIG_CPU_DCACHE_WRITETHROUGH
 	mcr	p15, 0, r0, c7, c6, 1		@ invalidate D entry
@@ -203,7 +206,7 @@ ENTRY(cpu_arm922_cache_clean_invalidate_range)
 	add	r0, r0, #DCACHELINESIZE
 #endif
 	cmp	r0, r1
-	blt	1b
+	blo	1b
 
 	mcr	p15, 0, r1, c7, c10, 4		@ drain WB
 	mov	pc, lr
@@ -260,7 +263,7 @@ ENTRY(cpu_arm922_dcache_invalidate_range)
 1:	mcr	p15, 0, r0, c7, c6, 1		@ invalidate D entry
 	add	r0, r0, #DCACHELINESIZE
 	cmp	r0, r1
-	blt	1b
+	blo	1b
 	mov	pc, lr
 
 /*
@@ -280,7 +283,7 @@ ENTRY(cpu_arm922_dcache_clean_range)
 	sub	r1, r1, r0
 	cmp	r1, #MAX_AREA_SIZE
 	mov	r2, #0
-	bgt	cpu_arm922_cache_clean_invalidate_all_r2
+	bhi	cpu_arm922_cache_clean_invalidate_all_r2
 
 	bic	r1, r1, #DCACHELINESIZE -1
 	add	r1, r1, #DCACHELINESIZE
@@ -361,7 +364,7 @@ ENTRY(cpu_arm922_icache_invalidate_range)
 	bic	r0, r0, #ICACHELINESIZE - 1	@ Safety check
 	sub	r1, r1, r0
 	cmp	r1, #MAX_AREA_SIZE
-	bgt	cpu_arm922_cache_clean_invalidate_all_r2
+	bhi	cpu_arm922_cache_clean_invalidate_all_r2
 
 	bic	r1, r1, #ICACHELINESIZE - 1
 	add	r1, r1, #ICACHELINESIZE
@@ -420,7 +423,7 @@ ENTRY(cpu_arm922_tlb_invalidate_range)
 	mcr	p15, 0, r0, c8, c5, 1		@ invalidate I TLB entry
 	add	r0, r0, #PAGESIZE
 	cmp	r0, r1
-	blt	1b
+	blo	1b
 	mov	pc, lr
 
 /*
@@ -510,7 +513,7 @@ ENTRY(cpu_arm922_set_pte)
 	bic	r2, r2, #3
 	orr	r2, r2, #HPTE_TYPE_SMALL
 
-	tst	r1, #LPTE_USER | LPTE_EXEC	@ User or Exec?
+	tst	r1, #LPTE_USER			@ User?
 	orrne	r2, r2, #HPTE_AP_READ
 
 	tst	r1, #LPTE_WRITE | LPTE_DIRTY	@ Write and Dirty?

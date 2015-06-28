@@ -11,7 +11,9 @@ if [ "$CONFIG_INET_AH" = "y" -o \
      "$CONFIG_INET6_AH" = "y" -o \
      "$CONFIG_INET6_AH" = "m" -o \
      "$CONFIG_INET6_ESP" = "y" -o \
-     "$CONFIG_INET6_ESP" = "m" ]; then
+     "$CONFIG_INET6_ESP" = "m" -o \
+     "$CONFIG_IPV6_PRIVACY" = "y" -o \
+     "$CONFIG_IPV6_NODEINFO" = "y" ]; then
   define_bool CONFIG_CRYPTO y
 else
   bool 'Cryptographic API' CONFIG_CRYPTO
@@ -39,7 +41,9 @@ if [ "$CONFIG_CRYPTO" = "y" ]; then
        "$CONFIG_INET6_AH" = "y" -o \
        "$CONFIG_INET6_AH" = "m" -o \
        "$CONFIG_INET6_ESP" = "y" -o \
-       "$CONFIG_INET6_ESP" = "m" ]; then
+       "$CONFIG_INET6_ESP" = "m" -o \
+       "$CONFIG_IPV6_PRIVACY" = "y" -o \
+       "$CONFIG_IPV6_NODEINFO" = "y" ]; then
     define_bool CONFIG_CRYPTO_MD5 y
   else
     tristate       '  MD5 digest algorithm' CONFIG_CRYPTO_MD5

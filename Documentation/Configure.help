@@ -1,3 +1,4 @@
+# $USAGI: Configure.help,v 1.104 2004/01/26 06:00:08 yoshfuji Exp $
 # Maintained by:
 #	Eric S. Raymond <mailto:esr@thyrsus.com>
 #	Steven Cole <mailto:elenstev@mesatop.com>
@@ -456,6 +457,11 @@ Support for PowerMac floppy
 CONFIG_MAC_FLOPPY
   If you have a SWIM-3 (Super Woz Integrated Machine 3; from Apple)
   floppy controller, say Y here. Most commonly found in PowerMacs.
+
+Support for romfs appended to kernel
+CONFIG_UC5272_ROMFS
+  This option enables support for the image.bin format, in which the
+  root filesystem, in romfs format, is appended to the kernel.
 
 RAM disk support
 CONFIG_BLK_DEV_RAM
@@ -2697,6 +2703,13 @@ CONFIG_CPU_LITTLE_ENDIAN
   byte order. These modes require different kernels. Say Y if your
   machine is little endian, N if it's a big endian machine.
 
+Generate big endian code
+CONFIG_CPU_BIG_ENDIAN
+  Some ARM machines can be configured for either little or big endian
+  byte order. These modes require different kernels. Say Y if your
+  machine is big endian (like the ARM7TDMI based S3C3410x from 
+  Samsung), N if it's a little endian machine.
+
 Use power LED as a heartbeat
 CONFIG_HEARTBEAT
   Use the power-on LED on your machine as a load meter.  The exact
@@ -2831,6 +2844,41 @@ CONFIG_IP_NF_IRC
   If you want to compile it as a module, say 'M' here and read
   Documentation/modules.txt.  If unsure, say 'N'.
 
+PPTP conntrack and NAT support
+CONFIG_IP_NF_PPTP
+  This module adds support for PPTP (Point to Point Tunnelling Protocol, 
+  RFC2637) conncection tracking and NAT. 
+
+  If you are running PPTP sessions over a stateful firewall or NAT box,
+  you may want to enable this feature.  
+
+  Please note that not all PPTP modes of operation are supported yet.
+  For more info, read top of the file net/ipv4/netfilter/ip_conntrack_pptp.c
+
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `N'.
+
+GRE protocol conntrack and NAT support
+CONFIG_IP_NF_CT_PROTO_GRE
+  This module adds generic support for connection tracking and NAT of the
+  GRE protocol (RFC1701, RFC2784).  Please note that this will only work
+  with GRE connections using the key field of the GRE header.
+
+  You will need GRE support to enable PPTP support.
+
+  If you want to compile it as a module, say `M' here and read
+  Documentation/modules.txt.  If unsire, say `N'.
+
+H.323 (netmeeting) support
+CONFIG_IP_NF_H323
+  H.323 is a standard signalling protocol used by teleconferencing
+  softwares like netmeeting. With the ip_conntrack_h323 and
+  the ip_nat_h323 modules you can support the protocol on a connection
+  tracking/NATing firewall.
+
+  If you want to compile it as a module, say 'M' here and read
+  Documentation/modules.txt.  If unsure, say 'N'.
+
 TFTP protocol support
 CONFIG_IP_NF_TFTP
   TFTP connection tracking helper, this is required depending
@@ -2840,6 +2888,28 @@ CONFIG_IP_NF_TFTP
 
   If you want to compile it as a module, say M here and read
   Documentation/modules.txt.  If unsure, say `Y'.
+
+Per connection mark support
+CONFIG_IP_NF_CONNTRACK_MARK
+  This option enables support for connection marks, used by the
+  `CONNMARK' target and `connmark' match. Similar to the mark value
+  of packets, but this mark value is kept in the conntrack session
+  instead of the individual packets.
+
+CONNMARK target support
+CONFIG_IP_NF_TARGET_CONNMARK
+  This option adds a `CONNMARK' target, which allows one to manipulate
+  the connection mark value.  Similar to the MARK target, but
+  affects the connection mark value rather than the packet mark value.
+
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  The module will be called
+  ipt_CONNMARK.o.  If unsure, say `N'.
+
+connmark match support
+CONFIP_IP_NF_MATCH_CONNMARK
+  This option adds a `connmark' match, which allows you to match the
+  connection mark value previously set for the session by `CONNMARK'. 
 
 FTP protocol support
 CONFIG_IP_NF_FTP
@@ -2857,6 +2927,14 @@ CONFIG_IP_NF_QUEUE
 
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
+
+Connection tracking events
+CONFIG_IP_NF_CONNTRACK_EVENTS
+  If this option is enabled, the connection tracking code will
+  provide a notifier chain that can be used by other kernel code
+  to get notified about changes in the connection tracking state.
+
+  If unsure, say `N'.
 
 IP tables support (required for filtering/masq/NAT)
 CONFIG_IP_NF_IPTABLES
@@ -2971,6 +3049,28 @@ CONFIG_IP_NF_MATCH_ECN
 
  
 
+iprange match support
+CONFIG_IP_NF_MATCH_IPRANGE
+  This option makes possible to match IP addresses against
+  IP address ranges.
+
+  If you want to compile it as a module, say M here and read
+  <file:Documentation/modules.txt>.  If unsure, say `N'.
+
+
+TIME patch support
+CONFIG_IP_NF_MATCH_TIME
+  This option adds a `time' match, which allows you
+  to matchbased on the packet arrival time
+  (arrival time at the machine which the netfilter is running on) or
+  departure time (for locally generated packets).
+
+  If you say Y here, try iptables -m time --help for more information.
+ 
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `N'.
+
+
 TOS match support
 CONFIG_IP_NF_MATCH_TOS
   TOS matching allows you to match packets based on the Type Of
@@ -2999,6 +3099,14 @@ CONFIG_IP_NF_MATCH_STATE
 
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
+
+String match support (EXPERIMENTAL)
+CONFIG_IP_NF_MATCH_STRING
+  String matching alows you to match packets which contain a
+  specified string of characters.
+
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `N'.
 
 Unclean match support
 CONFIG_IP_NF_MATCH_UNCLEAN
@@ -3076,6 +3184,17 @@ CONFIG_IP_NF_NAT_SNMP_BASIC
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
 
+NETMAP target support
+CONFIG_IP_NF_TARGET_NETMAP
+  NETMAP is an implementation of static 1:1 NAT mapping of network
+  addresses. It maps the network address part, while keeping the
+  host address part intact. It is similar to Fast NAT, except that
+  Netfilter's connection tracking doesn't work well with Fast NAT.
+
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  The module will be called
+  ipt_NETMAP.o.  If unsure, say `N'.
+
 REDIRECT target support
 CONFIG_IP_NF_TARGET_REDIRECT
   REDIRECT is a special case of NAT: all incoming connections are
@@ -3130,6 +3249,22 @@ CONFIG_IP_NF_TARGET_TOS
   This option adds a `TOS' target, which allows you to create rules in
   the `mangle' table which alter the Type Of Service field of an IP
   packet prior to routing.
+
+  If you want to compile it as a module, say M here and read
+  <file:Documentation/modules.txt>.  If unsure, say `N'.
+
+IMQ target support
+CONFIG_IP_NF_TARGET_IMQ
+  This option adds a `IMQ' target which is used to specify if and
+  to which imq device packets should get enqueued/dequeued.
+
+  If you want to compile it as a module, say M here and read
+  <file:Documentation/modules.txt>.  If unsure, say `N'.
+
+IMQ target support
+CONFIG_IP6_NF_TARGET_IMQ
+  This option adds a `IMQ' target which is used to specify if and
+  to which imq device packets should get enqueued/dequeued.
 
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
@@ -3209,6 +3344,14 @@ CONFIG_IP_NF_TARGET_LOG
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
 
+CONNLOG target support
+CONFIG_IP_NF_TARGET_CONNLOG
+  This option adds a `CONNLOG' target, which allows one to request
+  logging of the creation and destruction of a connnection tracking entry.
+
+  If you want to compile it as a module, say M here and read
+  <file:Documentation/modules.txt>.  If unsure, say `N'.
+
 ipchains (2.2-style) support
 CONFIG_IP_NF_COMPAT_IPCHAINS
   This option places ipchains (with masquerading and redirection
@@ -3231,6 +3374,20 @@ CONFIG_IP_NF_COMPAT_IPFWADM
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
 
+Increase default conntrack table size
+CONFIG_IP_NF_BIG_CONNTRACK
+  Increase default hash table and conntrack table size for dedicated
+  routers.  Allows all of memory to be used; since that's just as bad
+  as having a full conntrack table.
+
+IPv6 Extension Headers Match (EXPERIMENTAL)
+CONFIG_IP6_NF_MATCH_IPV6HEADER
+  extension header matching allows you to controll the packets based
+  on their extension headers.
+
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `N'.
+
 EUI64 address check (EXPERIMENTAL)
 CONFIG_IP6_NF_MATCH_EUI64
   This module performs checking on the IPv6 source address
@@ -3239,6 +3396,42 @@ CONFIG_IP6_NF_MATCH_EUI64
 
   If you want to compile it as a module, say M here and read
   Documentation/modules.txt.  If unsure, say `N'.
+
+AH/ESP match support (EXPERIMENTAL)
+CONFIG_IP6_NF_MATCH_AHESP
+  These two match extensions (`ah' and `esp') allow you to match a
+  range of SPIs inside AH or ESP headers of IPv6 packets.
+ 
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `N'.
+
+
+Fragmentation header match support (EXPERIMENTAL)
+CONFIG_IP6_NF_MATCH_FRAG
+  This match extension (`frag') allow you to select the packet based on the
+  fileds of the fragmentation header of the IPv6 packets.
+ 
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `N'.
+
+
+Fragmentation header match support (EXPERIMENTAL)
+CONFIG_IP6_NF_MATCH_OPTS
+  These match extensions (`hbh' and `dst') allow you to select the packet 
+  based on the fileds of the option header of the IPv6 packets.
+ 
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `N'.
+
+
+Fragmentation header match support (EXPERIMENTAL)
+CONFIG_IP6_NF_MATCH_RT
+  This match extension (`rt') allow you to select the packet based on the
+  fileds of the routing header of the IPv6 packets.
+ 
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `N'.
+
 
 MAC address match support
 CONFIG_IP6_NF_MATCH_MAC
@@ -3261,6 +3454,14 @@ CONFIG_IP6_NF_MATCH_MARK
   Netfilter mark matching allows you to match packets based on the
   `nfmark' value in the packet.  This can be set by the MARK target
   (see below).
+
+  If you want to compile it as a module, say M here and read
+  <file:Documentation/modules.txt>.  If unsure, say `N'.
+
+length match support
+CONFIG_IP6_NF_MATCH_LENGTH
+  This option allows you to match the length of a packet against a
+  specific value or range of values.
 
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
@@ -3308,6 +3509,16 @@ CONFIG_IP6_NF_FILTER
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>.  If unsure, say `N'.
 
+REJECT target support
+CONFIG_IP6_NF_TARGET_REJECT
+  The REJECT target allows a filtering rule to specify that an ICMPv6
+  error should be issued in response to an incoming packet, rather
+  than silently being dropped.
+
+  If you want to compile it as a module, say M here and read
+  Documentation/modules.txt.  If unsure, say `N'.
+
+ULOG target support
 Packet mangling
 CONFIG_IP6_NF_MANGLE
   This option adds a `mangle' table to iptables: see the man page for
@@ -5345,6 +5556,11 @@ CONFIG_FB_E1355
   framebuffer.  Product specs at
   <http://www.erd.epson.com/vdc/html/products.htm>.
 
+Epson S1D15705 framebuffer support
+CONFIG_FB_EPSONS1D15705FB
+  Support for the EPSON S1D15705 and compatible LCD controllers.
+  These controllers only support 1bpp formats.
+  
 Dreamcast Frame Buffer support
 CONFIG_FB_DC
   Say Y here to enable support for the framebuffer on the Sega
@@ -6127,6 +6343,11 @@ CONFIG_IP_ROUTE_NAT
   can be gotten from the document
   <http://www.csn.tu-chemnitz.de/~mha/linux-ip-nat/diplom/nat.html>.
 
+Increase default route cache size
+CONFIG_IP_ROUTE_BIG_RT_CACHE
+  Increase default maximum route cache size for dedicated routers.
+  Uses mem>>11 as the goal for rt_max_size rather than mem>>14.
+
 Kernel level IP autoconfiguration
 CONFIG_IP_PNP
   This enables automatic configuration of IP addresses of devices and
@@ -6176,6 +6397,15 @@ CONFIG_IP_PNP_RARP
   operating on your network. Read <file:Documentation/nfsroot.txt> for
   details.
 
+ARP Limiting
+CONFIG_NET_ARP_LIMIT
+  Limits the maximum number of active MAC addresses in the kernel ARP
+  cache.
+  This is to restrict the number of clients that can use the computer
+  as a gateway.  This solution is not entirely exact, as it will still
+  respond to different ARP requests in different circumstances, but
+  will only reliably talk to the specified maximum number
+
 IP tunneling
 CONFIG_NET_IPIP
   Tunneling means encapsulating data of one protocol type within
@@ -6196,6 +6426,12 @@ CONFIG_NET_IPIP
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>. The module will be called
   ipip.o
+
+IPv6 over IPv4 tunneling support (replaces sitXX devices)
+CONFIG_NET_IPIP_IPV6
+  If you say Y here, you can transport IPv6 packet over the tunlXX 
+  devices;  The sitXX devices will be dissappeared with this option.
+  Note: tunnel manipulation commands such as iptunnel should be updated.
 
 GRE tunnels over IP
 CONFIG_NET_IPGRE
@@ -6251,6 +6487,12 @@ CONFIG_IP_PIMSM_V2
   gated-5). This routing protocol is not used widely, so say N unless
   you want to play with it.
 
+Restrict SO_REUSEADDR only for same user
+CONFIG_NET_RESTRICTED_REUSE
+  With this option, kernel restrict effect of SO_REUSEADDR to prevent 
+  other users from performing 'binding closer' type attacks like NFS 
+  theft.  Say Y.
+
 Unix domain sockets
 CONFIG_UNIX
   If you say Y here, you will include support for Unix domain sockets;
@@ -6294,7 +6536,165 @@ CONFIG_IPV6
   want). The module will be called ipv6.o. If you want to compile it
   as a module, say M here and read <file:Documentation/modules.txt>.
 
-  It is safe to say N here for now.
+  Say Y. :-)
+
+IPv6: Verbose debugging messages
+CONFIG_IPV6_DEBUG
+  Verbose kernel message for debugging IPv6 stack.
+  If unsure, it is safe to say N.
+
+IPv6: inter-module support.
+CONFIG_IPV6_IM
+  Export some interface via the inter-module feature.
+  This is needed if you want to use generic tunnel (CONFIG_NET_IPGRE)
+  with modulized ipv6.  Say Y in such case, otherwise say N.
+
+IPv6: enable gre tunnel support with modulized ipv6
+CONFIG_IPV6_MODULE_IP_GRE
+  Use generic tunnel support with modulized ipv6 via
+  inter-module interface.
+ 
+IPv6: drop packets with fake ipv4-mapped address(es)
+CONFIG_IPV6_DROP_FAKE_V4MAPPED
+  Drop incoming packets with fake ipv4-mapped address(es) that
+  may cause security problems.  It is safe and recommended to 
+  say Y.
+
+IPv6: Anycast support
+  Anycast support for IPv6.  If unsure, say N.
+
+IPv6: 6to4 Address in NextHop Support
+CONFIG_IPV6_6TO4_NEXTHOP
+   It is a transition mechanism which is defined by RFC2529.
+   It configures dynamic IPv6 over IPv4 tunnel according to 6to4
+   addresses which are registerd in DNS. If you want to use 6to4
+   protocol, Say Y. If unsure, Say N.
+
+IPv6: Privacy Extensions (RFC 3041) support
+CONFIG_IPV6_PRIVACY
+  Privacy Extensions for Stateless Address Autoconfiguration in IPv6
+  support.  With this option, additional periodically-alter 
+  pseudo-random global-scope unicast address(es) will assigned to
+  your interface(s).
+
+  By default, kernel generates temporary addresses but it won't use 
+  them unless application explicitly bind them.  To prefer temporary 
+  address, do
+
+    echo 2 >/proc/sys/net/ipv6/conf/all/use_tempaddr 
+
+  This option depends on Cryptograpghic API (CONFIG_CRYPTO) and MD5 
+  message digest algorithm (CONFIG_CRYPTO_MD5).
+
+IPv6: Anycast Address support (EXPERIMENTAL)
+CONFIG_IPV6_ANYCAST
+  Supporting anycast address in kernel. Say N.
+
+IPv6: Loose scope_id
+CONFIG_IPV6_LOOSE_SCOPE_ID
+  It is recommended to say N.
+  NOTE: This option is disabled by default.
+
+IPv6: Restrict "double binding" only for same user
+CONFIG_IPV6_RESTRICTED_DOUBLE_BIND
+  With this option, kernel doesn't allow bind the same port 
+  number of socket which already binded by other user with
+  other protocol.  For example, If user A binds #8000 port with
+  IPv6 protocol kernel doesn't allow to bind #8000 port with IPv4
+  protocol other than user A. For security reason, we recommend
+  say Y.
+
+  If you say Y here, note that "double binding" restriction is not
+  enabled by default; you can enable this by setting net.ipv6.conf.all.
+  binv6only_restriction to 1.
+
+  If you want to compile IPv6 as a module, you also need to say Y
+  to "inter-module support" to enable this option.
+
+IPv6: IPv6 over IPv6 Tunneling (EXPERIMENTAL)
+CONFIG_IPV6_IPV6_TUNNEL
+  Experimental IP6-IP6 tunneling.
+
+  If you don't want IP6-IP6 tunnels, say N.
+
+IPv6: Prefix List support
+CONFIG_IPV6_PREFIXLIST
+  Added Prefix List described as a conceptual data structure in RFC2461.
+  Say N at this moment.
+
+IPv6: Neighbor Discovery debugging
+CONFIG_IPV6_NDISC_DEBUG
+  Verbose kernel message to debug Neighbor Discovery Protocol for 
+  IPv6.  Say N.
+
+IPv6: Stateless Address Autoconfiguration debugging
+CONFIG_IPV6_ACONF_DEBUG
+  Verbose kernel message to debug the IPv6 Stateless Address 
+  Autoconfiguration.  Say N.
+
+IPv6: IPv6: Debug on source address selection
+CONFIG_IPV6_ACONF_DEBUG_SADDR
+  Verbose kernel messages for debugging IPv6 Source Address Selection
+  Algorithm. Say N.
+
+IPv6: ignore too small Valid Lifetime for Address Autoconfiguration
+CONFIG_IPV6_ACONF_MIN_VALID_LFT
+  Do not update valid-lifetime with small value to avoid particular 
+  DoS attack.  See RFC 2461 section 6.3.6 and RFC 2462 section 5.5.3.
+  Say Y.
+
+IPv6: Routing Information debugging
+CONFIG_IPV6_RT6_DEBUG
+  Verbose kernel messages for debugging IPv6 routing.  Say N.
+
+IPv6: sub-tree in routing table support (just for testing)
+CONFIG_IPV6_SUBTREES
+  Sub-tree in IPv6 routing table to have routes by source
+  address.  This is just for testing.  Say N.
+
+IPv6: Default Router Preference support
+CONFIG_IPV6_ROUTER_PREF
+  Default Router Preferences support.
+  See <draft-ietf-ipv6-router-selection-02.txt> for details.
+
+IPv6: Route Information Option support
+CONFIG_IPV6_ROUTE_INFO
+  Route Information Option is RA message support.
+  If unsure, say N.
+
+IPv6: Multicast Listener Discovery debugging
+CONFIG_IPV6_MLD6_DEBUG
+  Verbose kernel message to debug Multicast Listeners
+  Discovery for IPv6.  Say N.
+
+IPv6: Disable optimization of MLD6 Done message
+CONFIG_IPV6_MLD6_ALL_DONE
+  When a node ceases to listen to a multicast address on an
+  interface, it should send a single Done message.  If its recent
+  Report was suppressed by hearing another Report, it MAY send 
+  nothing.  You can turn off this optimization by 
+  CONFIG_IPV6_MLD6_ALL_DONE.  See RFC 2710.
+  Say N.  
+
+IPv6: enable Node Information Queries
+CONFIG_IPV6_NODEINFO
+  Support ICMPv6 Node Information Queries defined in 
+  draft-ietf-ipngwg-icmp-name-lookups-07.txt.
+
+  This option depends on Cryptograpghic API (CONFIG_CRYPTO) and MD5 
+  message digest algorithm (CONFIG_CRYPTO_MD5).
+
+IPv6: regard NIS domain as DNS domain
+CONFIG_IPV6_NODEINFO_USE_UTS_DOMAIN
+  When the NI DNS Query requests FQDN of your Linux box, it will 
+  try to add the (NIS) domain to your hostname.  Generally, this is 
+  not a good idea, so say N; your box will reply as FQDN if its
+  hostname includes two or more dots, otherwise it will reply
+  as hostname.
+
+IPv6: ICMPv6 NI debug message (very verbose)
+CONFIG_IPV6_NODEINFO_DEBUG
+  Very verbose debug message.  Say N.
 
 The SCTP Protocol (EXPERIMENTAL)
 CONFIG_IP_SCTP
@@ -6381,6 +6781,10 @@ CONFIG_KHTTPD
 
   The kHTTPd is experimental. Be careful when using it on a production
   machine. Also note that kHTTPd doesn't support virtual servers yet.
+
+Use IPv6 socket for khttpd
+CONFIG_KHTTPD_IPV6
+  Use IPv6 socket for khttpd module.
 
 The IPX protocol
 CONFIG_IPX
@@ -7182,6 +7586,11 @@ CONFIG_ATM_CLIP_NO_ICMP
   briefly removed during revalidation. If you say Y here, packets to
   such neighbours are silently discarded instead.
 
+IPv6 Enhance for ATM (EXPERIMENTAL)
+CONFIG_ATM_IPV6
+  IPv6 support on a PVC link. To install and for usage, please refer
+  usagi/doc/HOWTO/ATM. If unsure, say N.
+
 RFC1483/2684 Bridged protocols
 CONFIG_ATM_BR2684
   ATM PVCs can carry ethernet PDUs according to rfc2684 (formerly 1483)
@@ -7624,6 +8033,59 @@ CONFIG_ATM_FORE200E_DEBUG
   When active, these messages can have a significant impact on
   the performances of the driver, and the size of your syslog files!
   Keep the debugging level to 0 during normal operations.
+
+IP Security Protocol (IPSEC) (EXPERIMENTAL)
+CONFIG_IPSEC
+  This unit is experimental code.
+  Pick 'y' for static linking, 'm' for module support or 'n' for none.
+  This option adds support for network layer packet encryption and/or
+  authentication with participating hosts.  The standards start with:
+  RFCs 2411, 2407 and 2401.  Others are mentioned where they refer to
+  specific features below.  There are more pending which can be found
+  at:  ftp://ftp.ietf.org/internet-drafts/draft-ietf-ipsec-*.
+  A description of each document can also be found at: 
+  http://ietf.org/ids.by.wg/ipsec.html.
+  Their charter can be found at: 
+  http://www.ietf.org/html.charters/ipsec-charter.html
+  Snapshots and releases of the current work can be found at: 
+  http://www.freeswan.org/
+
+IPSEC: IP-in-IP encapsulation
+CONFIG_IPSEC_IPIP
+  This option provides support for tunnel mode IPSEC.  It is recommended
+  to enable this.
+
+IPSEC: Authentication Header
+CONFIG_IPSEC_AH
+  This option provides support for the IPSEC Authentication Header
+  (IP protocol 51) which provides packet layer sender and content
+  authentication.  It is recommended to enable this.  RFC2402
+
+HMAC-MD5 algorithm
+CONFIG_IPSEC_AUTH_HMAC_MD5
+  Provides support for authentication using the HMAC MD5
+  algorithm with 96 bits of hash used as the authenticator.  RFC2403
+
+HMAC-SHA1 algorithm
+CONFIG_IPSEC_AUTH_HMAC_SHA1
+  Provides support for Authentication Header using the HMAC SHA1
+  algorithm with 96 bits of hash used as the authenticator.  RFC2404
+
+IPSEC: Encapsulating Security Payload
+CONFIG_IPSEC_ESP
+  This option provides support for the IPSEC Encapsulation Security
+  Payload (IP protocol 50) which provides packet layer content
+  hiding.  It is recommended to enable this.  RFC2406
+
+3DES algorithm
+CONFIG_IPSEC_ENC_3DES
+  Provides support for Encapsulation Security Payload protocol, using
+  the triple DES encryption algorithm.  RFC2451
+
+IPSEC Debugging Option
+CONFIG_IPSEC_DEBUG
+  Enables IPSEC kernel debugging.  It is further controlled by the
+  user space utility 'klipsdebug'.
 
 ForeRunner HE Series
 CONFIG_ATM_HE
@@ -9803,6 +10265,20 @@ CONFIG_BONDING
   say M here and read <file:Documentation/modules.txt>.  The module
   will be called bonding.o.
 
+Intermediate queueing device support
+CONFIG_IMQ
+  The imq device(s) is used as placeholder for QoS queueing disciplines.
+  Every packet entering/leaving the ip stack can be directed through
+  the imq device where it's enqueued/dequeued to the attached qdisc.
+  This allows you to treat network devices as classes and distribute
+  bandwidth among them. Iptables is used to specify through which imq
+  device, if any, packets travel.
+
+  If you want to compile this as a module ( = code which ca be
+  inserted in and removed from the running kernel whenever you want),
+  say M here and read <file:Documentation/modules.txt>.  The module
+  will be called imq.o
+
 SLIP (serial line) support
 CONFIG_SLIP
   Say Y if you intend to use SLIP or CSLIP (compressed SLIP) to
@@ -11923,6 +12399,22 @@ CONFIG_8139CP
   say M here and read Documentation/modules.txt. This is recommended.
   The module will be called 8139cp.o.
 
+Support for external PHY's on RTL-8139C+.
+CONFIG_8139CP_EXTERNAL_PHY
+  If you want to have access to external PHY's, then enable this.  Unless
+  you also change CONFIG_8139CP_PHY_NUM, then you will continue using the
+  internal PHY.
+
+  It is unlikely you want to change this.
+
+Which PHY should the RTL-8139C+ MAC use.
+CONFIG_8139CP_PHY_NUM
+  If you have the MAC hooked up to some external PHY's then you might want
+  to use one besides the internal one.  The internal PHY is 32.
+
+  If you don't know what you are doing, it is unlikely you want to change
+  this.
+
 RealTek RTL-8139 PCI Fast Ethernet Adapter support
 CONFIG_8139TOO
   This is a driver for the Fast Ethernet PCI network cards based on
@@ -12073,6 +12565,8 @@ CONFIG_SK98LIN
   by this driver:
 	    - 3Com 3C940 Gigabit LOM Ethernet Adapter
 	    - 3Com 3C941 Gigabit LOM Ethernet Adapter
+	    - Abocom EFE3K - 10/100 Ethernet Expresscard
+	    - Abocom EGE5K - Giga Ethernet Expresscard
 	    - Allied Telesyn AT-2970LX Gigabit Ethernet Adapter
 	    - Allied Telesyn AT-2970LX/2SC Gigabit Ethernet Adapter
 	    - Allied Telesyn AT-2970SX Gigabit Ethernet Adapter
@@ -12081,30 +12575,72 @@ CONFIG_SK98LIN
 	    - Allied Telesyn AT-2970TX/2TX Gigabit Ethernet Adapter
 	    - Allied Telesyn AT-2971SX Gigabit Ethernet Adapter
 	    - Allied Telesyn AT-2971T Gigabit Ethernet Adapter
+	    - Belkin Gigabit Desktop Card 10/100/1000Base-T Adapter, Copper RJ-45
 	    - DGE-530T Gigabit Ethernet Adapter
 	    - EG1032 v2 Instant Gigabit Network Adapter
 	    - EG1064 v2 Instant Gigabit Network Adapter
-	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Abit)
-	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Albatron)
-	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Asus)
-	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (ECS)
-	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Epox)
-	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Foxconn)
-	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Gigabyte)
-	    - Marvell 88E8001 Gigabit LOM Ethernet Adapter (Iwill)
+	    - Marvell 88E8001 Gigabit Ethernet Controller (Abit)
+	    - Marvell 88E8001 Gigabit Ethernet Controller (Albatron)
+	    - Marvell 88E8001 Gigabit Ethernet Controller (Asus)
+	    - Marvell 88E8001 Gigabit Ethernet Controller (Chaintech)
+	    - Marvell 88E8001 Gigabit Ethernet Controller (ECS)
+	    - Marvell 88E8001 Gigabit Ethernet Controller (Epox)
+	    - Marvell 88E8001 Gigabit Ethernet Controller (Foxconn)
+	    - Marvell 88E8001 Gigabit Ethernet Controller (Gigabyte)
+	    - Marvell 88E8001 Gigabit Ethernet Controller (Iwill)
+	    - Marvell 88E8035 Fast Ethernet Controller (LGE)
+	    - Marvell 88E8035 Fast Ethernet Controller (Toshiba)
+	    - Marvell 88E8036 Fast Ethernet Controller (Arima)
+	    - Marvell 88E8036 Fast Ethernet Controller (Compal)
+	    - Marvell 88E8036 Fast Ethernet Controller (Inventec)
+	    - Marvell 88E8036 Fast Ethernet Controller (LGE)
+	    - Marvell 88E8036 Fast Ethernet Controller (Toshiba)
+	    - Marvell 88E8036 Fast Ethernet Controller (Wistron)
+	    - Marvell 88E8050 Gigabit Ethernet Controller (Intel)
+	    - Marvell 88E8052 Gigabit Ethernet Controller (ASRock)
+	    - Marvell 88E8052 Gigabit Ethernet Controller (Aopen)
+	    - Marvell 88E8052 Gigabit Ethernet Controller (Asus)
+	    - Marvell 88E8052 Gigabit Ethernet Controller (Gigabyte)
+	    - Marvell 88E8052 Gigabit Ethernet Controller (MSI)
+	    - Marvell 88E8052 Gigabit Ethernet Controller (Wistron)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (ASRock)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Albatron)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Aopen)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Arima)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Asus)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Chaintech)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Clevo)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Compal)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (DFI)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Epox)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Gigabyte)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Inventec)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (LGE)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (MSI)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Quanta)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (SOYO)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Shuttle)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Toshiba)
+	    - Marvell 88E8053 Gigabit Ethernet Controller (Trigem)
+	    - Marvell RDK-8001 
 	    - Marvell RDK-8001 Adapter
 	    - Marvell RDK-8002 Adapter
+	    - Marvell RDK-8003 
 	    - Marvell RDK-8003 Adapter
 	    - Marvell RDK-8004 Adapter
 	    - Marvell RDK-8006 Adapter
 	    - Marvell RDK-8007 Adapter
 	    - Marvell RDK-8008 Adapter
 	    - Marvell RDK-8009 Adapter
-	    - Marvell RDK-8010 Adapter
+	    - Marvell RDK-8010 
 	    - Marvell RDK-8011 Adapter
 	    - Marvell RDK-8012 Adapter
-	    - Marvell Yukon Gigabit Ethernet 10/100/1000Base-T Adapter (32 bit)
-	    - Marvell Yukon Gigabit Ethernet 10/100/1000Base-T Adapter (64 bit)
+	    - Marvell RDK-8035 
+	    - Marvell RDK-8036 
+	    - Marvell RDK-8052 
+	    - Marvell RDK-8053 
+	    - Marvell Yukon Gigabit Ethernet 10/100/1000Base-T Controller (32 bit)
+	    - Marvell Yukon Gigabit Ethernet 10/100/1000Base-T Controller (64 bit)
 	    - N-Way PCI-Bus Giga-Card 1000/100/10Mbps(L)
 	    - SK-9521 10/100/1000Base-T Adapter
 	    - SK-9521 V2.0 10/100/1000Base-T Adapter
@@ -12140,6 +12676,9 @@ CONFIG_SK98LIN
   say M here and read Documentation/modules.txt. This is recommended.
   The module will be called sk98lin.o.
 
+CONFIG_SK98LIN_NAPI
+  NAPI is a new driver API designed to reduce CPU and interrupt load
+  when the driver is receiving lots of packets from the card.
 
 Sun GEM support
 CONFIG_SUNGEM
@@ -13985,6 +14524,12 @@ CONFIG_MTD_REDBOOT_PARTS
   <file:Documentation/modules.txt>. The module will be called
   redboot.o
 
+uCbootstrap partitioning support
+CONFIG_MTD_UCBOOTSTRAP_PARTS
+  Retrieve Arcturus Networks uCbootstrap partitioning data
+  to create linux partitions in flash devices on platforms
+  on which uCbootstrap partitioning is supported.
+
 CONFIG_MTD_CMDLINE_PARTS
   Allow generic configuration of the MTD paritition tables via the kernel
   command line. Multiple flash resources are supported for hardware where
@@ -14147,6 +14692,14 @@ CONFIG_NFTL_RW
   <linux-mtd@lists.infradead.org> if you want to help to make it more
   reliable.
 
+INFTL (Inverse Flash Translation Layer) support
+CONFIG_INFTL
+  This provides support for the Inverse NAND Flash Translation Layer which
+  is used on M-Systems' DiskOnChip devices (in particular the newer
+  Millennium Plus parts). It uses a kind of pseudo filesystem on a flash
+  device to emulate a block device with 512-byte sectors, on top of which
+  you put a 'normal' file system.
+ 
 Detect flash chips by Common Flash Interface (CFI) probe
 CONFIG_MTD_CFI
   The Common Flash Interface specification was developed by Intel,
@@ -14639,6 +15192,16 @@ CONFIG_MTD_DOC2001
   If you want to compile it as a module, say M here and read
   <file:Documentation/modules.txt>. The module will be called
   doc2001.o
+
+Millennium Plus support
+CONFIG_MTD_DOC2001PLUS
+  This is a driver for the M-Systems DiskOnChip Millennium Plus
+  devices.
+  
+  If you use this device, you probably also want to enable the NFTL
+  'NAND Flash Translation Layer' option below, which is used to
+  emulate a block device by using a kind of file system on the flash
+  chips.
 
 Probe for DiskOnChip devices
 CONFIG_MTD_DOCPROBE
@@ -19368,6 +19931,34 @@ CONFIG_I2C_VELLEMAN
   <file:Documentation/modules.txt>.
   The module will be called i2c-velleman.o.
 
+Motorla Coldfire GPIO adapter
+CONFIG_I2C_MCF_GPIO
+  This driver supports using a pair of GPIO pins on the Motorola 
+  Coldfire series of microcontrollers as an I2C adapter.  Say Y if 
+  you have need for an I2C interface on such a processor.  You will 
+  be further prompted to select which GPIO pins will be used for 
+  I2C data (SDA) and I2C clock (SCL).
+  
+  Currently, this driver supports the MCF5204, MCF5206, MCF5206e, 
+  MCF5249, MCF5272, MCF5307, and MCF5407 processors.  The MCF5282 
+  is not currently supported.
+
+  This driver has only undergone basic testing on MCF5272 hardware.  
+  Please be aware that issues may be present when attempting to use 
+  this driver with untested processors.
+  
+  This support is also available as a module.  If you want to compile
+  it as a module, say M here and read
+  <file:Documentation/modules.txt>.
+  The module will be called i2c-adap-mcf_gpio.o.
+  
+Motorola Coldfire Watchdog interface
+CONFIG_COLDFIRE_WATCHDOG
+  This driver supports the Motorola Coldfire watchdog mechanism.
+  It implements the common watchdog interface and the configuration
+  makes it mutually exclusive with the other driver, which does
+  not implement an interface to userland.
+
 I2C PCF 8584 interfaces
 CONFIG_I2C_ALGOPCF
   This allows you to use a range of I2C adapters called PCF adapters.
@@ -19546,6 +20137,16 @@ CONFIG_PC110_PAD
   inserted in and removed from the running kernel whenever you want),
   say M here and read <file:Documentation/modules.txt>.  The module
   will be called pc110pad.o.
+
+Aiji (Samsung) MBA44B0 eval board touch screen support
+CONFIG_MBA44B0_TOUCH
+  This driver enables the usage of the touch screen of the MBA44B0
+  evaluation board with S3C44B0X (ARM7TDMI).
+  
+SIEMENS TP 177 touch screen support
+CONFIG_TP177_TOUCH
+  This driver enables the usage of the touch screen of the SIEMENS
+  TP 177 based on a Samsung S3C44B0X.
 
 Microsoft busmouse support
 CONFIG_MS_BUSMOUSE
@@ -20450,6 +21051,24 @@ CONFIG_WATCHDOG_NOWAYOUT
   /dev/watchdog. It's always remotely possible that this process might
   get killed. If you say Y here, the watchdog cannot be stopped once
   it has been started.
+
+SnapGear Watchdog Driver
+CONFIG_SNAPDOG
+  If you have a SnapGear device that is not coldfire based,  there is a good
+  chance you will need this driver to boot.  It is harmless on devices it
+  does not support (unless you have another watchdog configured that is).
+  
+Triscend A7 Watchdog timer
+CONFIG_TA7_WDT
+  If you would like to add support for the Triscend A7 watchdog
+  device, say Y here, otherwise N. The watchdog device remains
+  disabled until the first time data is written to it. The watchdog
+  can be pinged, stopped, started, or have its timeout value changed
+  using ioctl calls. The watchdog timeout specified should be in
+  clock cycles. Reading from the watchdog device returns 4 bytes
+  containing the watchdogs current value. Writing to the watchdog
+  device is the equivalent of pinging it. If the watchdog is not
+  pinged within the timeout period, the A7 is reset.
 
 WDT Watchdog timer
 CONFIG_WDT
@@ -22276,6 +22895,16 @@ CONFIG_MIPS_UNCACHED
   otherwise hard to track bugs.  It can also useful if you're doing
   hardware debugging with a logic analyzer and need to see all traffic
   on the bus.
+
+AU1000 serial console
+CONFIG_AU1000_SERIAL_CONSOLE
+  If you have an Alchemy AU1000 processor (MIPS based) and you want
+  to use a console on a serial port, say Y.  Otherwise, say N.
+
+AU1000 serial support
+CONFIG_AU1000_UART
+  If you have an Alchemy AU1000 processor (MIPS based) and you want
+  to use serial ports, say Y.  Otherwise, say N.
 
 AU1000 ethernet controller on SGI MIPS system
 CONFIG_MIPS_AU1000_ENET
@@ -25934,6 +26563,12 @@ CONFIG_CPU_ARM920T
   Say Y if you want support for the ARM920T processor.
   Otherwise, say N.
 
+Support EP93xx MaverickCrunch
+CONFIG_EP93XX_CRUNCH
+  This option allows you to run MaverickCrunch(tm) powered Linux applications
+  on EP93xx based platforms.  Saying 'Y' here is harmless and will not slow
+  down performance.
+  
 Support ARM1020 processor
 CONFIG_CPU_ARM1020
   The ARM1020 is the cached version of the ARM10 processor,
@@ -25991,6 +26626,57 @@ CONFIG_CPU_SA110
 
   Say Y if you want support for the SA-110 processor.
   Otherwise, say N.
+
+NET+ARM Processor type
+CONFIG_NETARM_NET15
+  The NET+ARM(tm) processor family by NETsilicon(R) is an
+  implementation of the ARM7TDMI architecture, with some integrated
+  peripherals for serial, parallel and ethernet interfaces. These
+  chips differ in cache, speed and other capabilities.
+  Please select your processor type.
+
+NET+ARM NET+40 board Rev2
+CONFIG_NETARM_NET40_REV2
+  This refers to the NET+40 board revision, not processor version.
+  The board can have different DRAM configurations, Rev. 2 uses one
+  bank of SDRAM.
+  If unsure, say N.
+
+NET+ARM NET+40 board Rev4
+CONFIG_NETARM_NET40_REV4
+  This refers to the NET+40 board revision, not processor version.
+  The board can have different DRAM configurations, Rev. 4 uses two
+  banks of FastPage or EDO DRAM.
+  If unsure, say Y.
+
+NET+ARM PLL Bypass Patch
+CONFIG_NETARM_PLL_BYPASS
+  Say Y here if your NetARM is set to PLL bypass mode, i.e. the
+  PLLTST* input is driven low and the system clock is provided
+  by an external TTL oscillator.
+  This was necessary for some early revisions of the Net+40 chip,
+  where the internal PLL did not work properly. It is also used
+  on the NETsilicon NET+40 development board (at least on the
+  one I know).
+  If unsure, say N.
+
+NET+ARM EMLIN Board
+CONFIG_NETARM_EMLIN
+  The EMLIN is an in-house prototype of a NetARM board with
+  additional peripherals and slightly different memory layout.
+  Say Y here if you are using one. If unsure, say N.
+
+System uses an external crystal oscillator
+CONFIG_USE_OSC
+  If the system clock is derived from an external crystal oscillator,
+  say Y here, otherwise N. If you say Y here, you will be required to
+  specify the frequency of the oscillator in Hz.
+
+Set flash/sdram size and base addr
+CONFIG_SET_MEM_PARAM
+  If you want to use a memory configuration that differs from
+  the default values, say Y here and enter the parameters in
+  the next 4 fields. If unsure, say N.
 
 Tulsa
 CONFIG_SA1100_PFS168
@@ -26177,6 +26863,10 @@ CONFIG_CMDLINE
   time by entering them here. As a minimum, you should specify the
   memory size and the root device (e.g., mem=64M root=/dev/nfs).
 
+CONFIG_CMDLINE_FORCE
+  Set this to have arguments from the default kernel command string
+  override those passed by the boot loader.
+
 Kernel-mode alignment trap handler
 CONFIG_ALIGNMENT_TRAP
   ARM processors can not fetch/store information which is not
@@ -26187,6 +26877,24 @@ CONFIG_ALIGNMENT_TRAP
   correct operation of some network protocols. With an IP-only
   configuration it is safe to say N, otherwise say Y.
 
+Attached romfs in RAM
+CONFIG_RAM_ATTACHED_ROMFS
+  Attempts to properly handle an attached romfs by moving it from the
+  start of the bss region to the end of the bss and then reserving it
+  with the rest of kernel memory. This allows it to be used with the
+  Generic uClinux RAM/ROM filesystem support MTD driver selectable via
+  CONFIG_MTD_UCLINUX. This requires support in the entry code in order
+  to work right. 
+  
+  Only implemented for NetARM thus far.
+
+RAM Kernel self loades from ROM
+CONFIG_RELOCATE
+  The kernel runs from RAM,  but is started from ROM.  It copies itself
+  to it's final destination and then starts running from RAM.
+
+  This allows a RAM kernel to be booted from flash on a uCdimm for example.
+  
 DC21285 serial port support
 CONFIG_SERIAL_21285
   If you have a machine based on a 21285 (Footbridge) StrongARM(R)/
@@ -27735,6 +28443,64 @@ CONFIG_IA64_PALINFO
   To use this option, you have to check that the "/proc file system
   support" (CONFIG_PROC_FS) is enabled, too.
 
+C5471 serial port support
+CONFIG_SERIAL_C5471
+  If you are using a C5471, and want to use /dev/ttyS*, then say Y here.
+  Also, turn off CONFIG_SERIAL. The C5471 does not employ a 16550
+  compatible UART, so the standard Linux serial driver won't work.
+
+C5471 watchdog support
+CONFIG_C5471_WDT
+  If you want watchdog functionality (see CONFIG_WATCHDOG) and you
+  have a C5471 EVM, say Y here, otherwise N.  This will build in
+  watchdog functionality using a C5471 timer.
+
+C5471 general purpose I/O Support
+CONFIG_C5471_GIO
+  If you want support for user-space access to the C5471 general
+  purpose I/O (GIO) pins, say Y here, otherwise N.
+  This will build in the GIO device driver (for /dev/gio[n])
+
+DSC21 serial port support
+CONFIG_SERIAL_DSC21
+  If you are using a DSC21, and want to use /dev/ttyS*, then say Y here.
+  Also, turn off CONFIG_SERIAL. The dsc21 does not employ a 16550
+  compatible UART, so the standard Linux serial driver won't work.
+
+DSC21 serial console support
+CONFIG_SERIAL_DSC21_CONSOLE
+  If you want to have a printk/login console over the DSC21's serial
+  port then say Y here. Note that if you do this, you won't be able
+  to use that port for anything else.
+
+Disable BDM signals
+CONFIG_BDM_DISABLE
+  This option turns off the ColdFire debug module early in the boot process.
+  This helps to reduce the electromagnetic emmissions from the BDM header.
+  Since this is a software disable, it can be prevented via the BDM.
+
+Alternative kernel page allocator
+CONFIG_CONTIGUOUS_PAGE_ALLOC
+  On systems with very little memory,  a power of 2 allocator can
+  rapidly reduce the amount of free memory leaving a lot of that allocated
+  memory unused.  Say you nneed to allocate 34K,  you would actually
+  allocate 64K and waste 28K doing so.  This allocator allocates on 4K
+  boundaries reducing this wastage significantly.  It is perhaps a little
+  slower and can suffer a little more from fragmentation, although in
+  practice it is still better than uses a power of two.  Contact
+  davidm@snapgear.com with any problems usesing this allocator.
+
+Look at memory allocation
+CONFIG_MEM_MAP
+  Provides and entry "/proc/mem_map" that gives you an ascii representation
+  of the page allocations in the kernel,  and what they are being used for.
+
+Reduce kernel task size
+CONFIG_SMALL_TASKS
+  By default,  8K is used for a task in the m68k kernel.  This option
+  reduces it to 4K,  of which approximately 3.2K is kernel stack.  Be
+  warned,  this substantially reduces the kernel stack.
+
 PPC4xx DMA controller support
 CONFIG_PPC4xx_DMA
   Select this to enable support for the PPC4xx general purpose DMA
@@ -28556,6 +29322,15 @@ CONFIG_TULIP_MWI
   This is experimental code, not yet tested on many boards.
 
   If unsure, say N.
+
+Printk debugging info on coredump
+CONFIG_COREDUMP_PRINTK
+  When a user process coredumps then we printk a whole lot of information.
+  This is v. useful for debugging.
+
+  If you select this option and the build complains about not being able to
+  find user_stack, then you need to define it in you
+  include/arch/asm-arch/ptrace.h file.
 
 Hotplug firmware loading support (EXPERIMENTAL)
 CONFIG_FW_LOADER

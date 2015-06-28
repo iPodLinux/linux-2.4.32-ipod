@@ -107,17 +107,31 @@ EXPORT_SYMBOL(unplugged_hwif_iops);
 
 static u8 ide_inb (unsigned long port)
 {
+#if defined( CONFIG_ARCH_EDB7312 )
+	return IN_BYTE(port);
+#elif defined( CONFIG_ARCH_EP93XX )
+	return (u8) ep93xx_pcmcia_ide_inb(port);
+#else
 	return (u8) inb(port);
+#endif
 }
 
 static u16 ide_inw (unsigned long port)
 {
+#ifdef CONFIG_ARCH_EP93XX
+	return (u16) ep93xx_pcmcia_ide_inw(port);
+#else
 	return (u16) inw(port);
+#endif
 }
 
 static void ide_insw (unsigned long port, void *addr, u32 count)
 {
+#ifdef CONFIG_ARCH_EP93XX
+	return ep93xx_pcmcia_ide_insw(port, addr, count);
+#else
 	return insw(port, addr, count);
+#endif
 }
 
 static u32 ide_inl (unsigned long port)
@@ -132,22 +146,40 @@ static void ide_insl (unsigned long port, void *addr, u32 count)
 
 static void ide_outb (u8 addr, unsigned long port)
 {
+#if defined( CONFIG_ARCH_EDB7312 )
+	OUT_BYTE(addr, port);
+#elif defined( CONFIG_ARCH_EP93XX )
+	ep93xx_pcmcia_ide_outb(addr, port);
+#else
 	outb(addr, port);
+#endif
 }
 
 static void ide_outbsync (ide_drive_t *drive, u8 addr, unsigned long port)
 {
+#ifdef CONFIG_ARCH_EP93XX
+	ep93xx_pcmcia_ide_outb(addr, port);
+#else
 	outb(addr, port);
+#endif
 }
 
 static void ide_outw (u16 addr, unsigned long port)
 {
+#ifdef CONFIG_ARCH_EP93XX
+	ep93xx_pcmcia_ide_outw(addr, port);
+#else
 	outw(addr, port);
+#endif
 }
 
 static void ide_outsw (unsigned long port, void *addr, u32 count)
 {
+#ifdef CONFIG_ARCH_EP93XX
+	ep93xx_pcmcia_ide_outsw(port, addr, count);
+#else
 	outsw(port, addr, count);
+#endif
 }
 
 static void ide_outl (u32 addr, unsigned long port)
@@ -431,8 +463,10 @@ void ide_fix_driveid (struct hd_driveid *id)
 	u16 *stringcast;
 
 #ifdef __mc68000__
+#ifndef NO_MM
 	if (!MACH_IS_AMIGA && !MACH_IS_MAC && !MACH_IS_Q40 && !MACH_IS_ATARI)
 		return;
+#endif
 
 #ifdef M68K_IDE_SWAPW
 	if (M68K_IDE_SWAPW) {	/* fix bus byteorder first */

@@ -60,7 +60,7 @@ match(const struct sk_buff *skb,
        len = skb->len - ptr;
        temp = 0;
 
-        while (ip6t_ext_hdr(nexthdr)) {
+        while (ipv6_ext_hdr(nexthdr)) {
                struct ipv6_opt_hdr *hdr;
 
               DEBUGP("ipv6_frag header iteration \n");

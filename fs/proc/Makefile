@@ -17,5 +17,8 @@ obj-y    := inode.o root.o base.o generic.o array.o \
 ifeq ($(CONFIG_PROC_DEVICETREE),y)
 obj-y += proc_devtree.o
 endif
+ifeq ($(CONFIG_UCLINUX),y)
+obj-y += nommu.o
+endif
 
 include $(TOPDIR)/Rules.make

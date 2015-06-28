@@ -61,7 +61,7 @@ match(const struct sk_buff *skb,
        len = skb->len - ptr;
        temp = 0;
 
-        while (ip6t_ext_hdr(nexthdr)) {
+        while (ipv6_ext_hdr(nexthdr)) {
                struct ipv6_opt_hdr *hdr;
 
               DEBUGP("ipv6_rt header iteration \n");
@@ -152,8 +152,8 @@ match(const struct sk_buff *skb,
                            ((rtinfo->hdrlen == hdrlen) ^
                            !!(rtinfo->invflags & IP6T_RT_INV_LEN))));
        DEBUGP("res %02X %02X %02X ", 
-       		(rtinfo->flags & IP6T_RT_RES), ((struct rt0_hdr *)route)->bitmap,
-       		!((rtinfo->flags & IP6T_RT_RES) && (((struct rt0_hdr *)route)->bitmap)));
+       		(rtinfo->flags & IP6T_RT_RES), ((struct rt0_hdr *)route)->reserved,
+       		!((rtinfo->flags & IP6T_RT_RES) && (((struct rt0_hdr *)route)->reserved)));
 
        ret = (route != NULL)
        		&&
@@ -169,7 +169,7 @@ match(const struct sk_buff *skb,
                            ((rtinfo->rt_type == route->type) ^
                            !!(rtinfo->invflags & IP6T_RT_INV_TYP)))
 		&&
-       		!((rtinfo->flags & IP6T_RT_RES) && (((struct rt0_hdr *)route)->bitmap));
+       		!((rtinfo->flags & IP6T_RT_RES) && (((struct rt0_hdr *)route)->reserved));
 
 	DEBUGP("#%d ",rtinfo->addrnr);
        temp = len = ptr = 0;

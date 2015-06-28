@@ -33,6 +33,7 @@ dep_bool 'Support for Alchemy Hydrogen3 board' CONFIG_MIPS_HYDROGEN3 $CONFIG_MIP
 dep_bool 'Support for Alchemy PB1550 board' CONFIG_MIPS_PB1550 $CONFIG_MIPS32
 dep_bool 'Support for MyCable XXS1500 board' CONFIG_MIPS_XXS1500 $CONFIG_MIPS32
 dep_bool 'Support for 4G Systems MTX-1 board' CONFIG_MIPS_MTX1 $CONFIG_MIPS32
+dep_bool 'Support for Velseis Vegas board' CONFIG_MIPS_VEGAS $CONFIG_MIPS32
 dep_bool 'Support for Cogent CSB250 board' CONFIG_COGENT_CSB250 $CONFIG_MIPS32
 dep_bool 'Support for BAGET MIPS series (EXPERIMENTAL)' CONFIG_BAGET_MIPS $CONFIG_MIPS32 $CONFIG_EXPERIMENTAL
 bool 'Support for CASIO CASSIOPEIA E-10/15/55/65' CONFIG_CASIO_E55
@@ -345,6 +346,19 @@ if [ "$CONFIG_DECSTATION" = "y" ]; then
    define_bool CONFIG_IRQ_CPU y
    define_int CONFIG_L1_CACHE_SHIFT 4
    define_bool CONFIG_NONCOHERENT_IO y
+fi
+if [ "$CONFIG_MIPS_VEGAS" = "y" ]; then
+   define_bool CONFIG_SOC_AU1X00 y
+   define_bool CONFIG_SOC_AU1100 y
+   define_bool CONFIG_PCI n
+   define_bool CONFIG_PCI_AUTO n
+   define_bool CONFIG_NEW_PCI n
+   define_bool CONFIG_NONCOHERENT_IO y
+   define_bool CONFIG_PC_KEYB n
+   define_bool CONFIG_SWAP_IO_SPACE_W y
+   define_bool CONFIG_SWAP_IO_SPACE_L y
+   define_bool CONFIG_AU1X00_USB_DEVICE n
+   define_bool CONFIG_NEW_TIME_C n
 fi
 if [ "$CONFIG_MIPS_EV64120" = "y" ]; then
    define_bool CONFIG_MIPS_GT64120 y
@@ -729,6 +743,7 @@ if [ "$CONFIG_ACER_PICA_61" = "y" -o \
      "$CONFIG_MIPS_PB1000" = "y" -o \
      "$CONFIG_MIPS_PB1100" = "y" -o \
      "$CONFIG_MIPS_PB1500" = "y" -o \
+     "$CONFIG_MIPS_VEGAS" = "y" -o \
      "$CONFIG_NEC_OSPREY" = "y" -o \
      "$CONFIG_NEC_EAGLE" = "y" -o \
      "$CONFIG_NINO" = "y" -o \

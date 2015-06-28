@@ -1,3 +1,5 @@
+/* $USAGI: ip_options.c,v 1.5 2002/11/29 10:36:28 yoshfuji Exp $ */
+
 /*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
@@ -220,6 +222,8 @@ void ip_options_fragment(struct sk_buff * skb)
 			optptr++;
 			continue;
 		}
+		if (l < 2)
+		  return;
 		optlen = optptr[1];
 		if (optlen<2 || optlen>l)
 		  return;
@@ -277,6 +281,10 @@ int ip_options_compile(struct ip_options * opt, struct sk_buff * skb)
 			l--;
 			optptr++;
 			continue;
+		}
+		if (l < 2) {
+			pp_ptr = optptr;
+			goto error;
 		}
 		optlen = optptr[1];
 		if (optlen<2 || optlen>l) {

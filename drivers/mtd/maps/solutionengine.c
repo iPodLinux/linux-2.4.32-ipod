@@ -18,7 +18,7 @@
 #include <linux/config.h>
 
 
-extern int parse_redboot_partitions(struct mtd_info *master, struct mtd_partition **pparts);
+extern int parse_redboot_partitions(struct mtd_info *master, struct mtd_partition **pparts, unsigned long fis_origin);
 
 __u32 soleng_read32(struct map_info *map, unsigned long ofs)
 {
@@ -110,7 +110,7 @@ static int __init init_soleng_maps(void)
 	}
 
 #ifdef CONFIG_MTD_REDBOOT_PARTS
-	nr_parts = parse_redboot_partitions(flash_mtd, &parsed_parts);
+	nr_parts = parse_redboot_partitions(flash_mtd, &parsed_parts, 0);
 	if (nr_parts > 0)
 		printk(KERN_NOTICE "Found RedBoot partition table.\n");
 	else if (nr_parts < 0)

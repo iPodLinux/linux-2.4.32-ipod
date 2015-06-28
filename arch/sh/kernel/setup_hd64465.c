@@ -199,7 +199,7 @@ static int __init setup_hd64465(void)
 	outw(smscr & (~HD64465_SMSCR_UARTST), HD64465_REG_SMSCR);
 
 	/* remap IO ports for first ISA serial port to HD64465 UART */
-	hd64465_port_map(0x3f8, 8, CONFIG_HD64465_IOBASE + 0x8000, 1);
+	mach_port_map(0x3f8, 8, CONFIG_HD64465_IOBASE + 0x8000, 1);
 #endif
 
 	return 0;

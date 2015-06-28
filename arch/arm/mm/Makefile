@@ -17,11 +17,12 @@ obj-y		:= init.o extable.o fault-common.o
 obj-m		:=
 obj-n		:=
 obj-		:=
-export-objs	:= proc-syms.o discontig.o
+export-objs	:= proc-syms.o discontig.o cpd.o
 
 ifeq ($(CONFIG_CPU_32),y)
 obj-y		+= consistent.o fault-armv.o ioremap.o mm-armv.o
 obj-$(CONFIG_MODULES) += proc-syms.o
+obj-$(CONFIG_ARM_FASS) += cpd.o pid.o
 endif
 
 obj-$(CONFIG_CPU_26) += fault-armo.o mm-armo.o small_page.o
@@ -42,6 +43,7 @@ p-$(CONFIG_CPU_ARM1020)	+= proc-arm1020.o
 p-$(CONFIG_CPU_ARM1026)	+= proc-arm1026.o
 p-$(CONFIG_CPU_SA110)	+= proc-sa110.o
 p-$(CONFIG_CPU_SA1100)	+= proc-sa110.o
+p-$(CONFIG_CPU_XSCALE)	+= proc-xscale.o xscale-lock.o
 
 # Integrator follows "new style"
 # Soon, others will do too, and we can get rid of this

@@ -1,3 +1,5 @@
+/* $USAGI: dev.c,v 1.24 2003/11/12 05:12:00 yoshfuji Exp $ */
+
 /*
  * 	NET3	Protocol independent device support routines.
  *
@@ -1426,7 +1428,7 @@ static void net_tx_action(struct softirq_action *h)
 
 
 #if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
-void (*br_handle_frame_hook)(struct sk_buff *skb) = NULL;
+int (*br_handle_frame_hook)(struct sk_buff *skb) = NULL;
 #endif
 
 static __inline__ int handle_bridge(struct sk_buff *skb,
@@ -1443,7 +1445,6 @@ static __inline__ int handle_bridge(struct sk_buff *skb,
 		}
 	}
 
-	br_handle_frame_hook(skb);
 	return ret;
 }
 
@@ -1503,8 +1504,13 @@ int netif_receive_skb(struct sk_buff *skb)
 #if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
 	if (skb->dev->br_port != NULL && br_handle_frame_hook != NULL &&
 	    skb->pkt_type != PACKET_LOOPBACK) {
-		return handle_bridge(skb, pt_prev);
-	}
+		int ret;
+
+		ret = handle_bridge(skb, pt_prev);
+		if (br_handle_frame_hook(skb) == 0)
+			return ret;
+		pt_prev = NULL;
+ 	}
 #endif
 
 	type = skb->protocol;
@@ -2105,7 +2111,8 @@ static int dev_ifsioc(struct ifreq *ifr, unsigned int cmd)
 			return err;
 
 		case SIOCGIFHWADDR:
-			memcpy(ifr->ifr_hwaddr.sa_data,dev->dev_addr, MAX_ADDR_LEN);
+			memcpy(ifr->ifr_hwaddr.sa_data, dev->dev_addr, 
+			       min(sizeof ifr->ifr_hwaddr.sa_data, (size_t) dev->addr_len));
 			ifr->ifr_hwaddr.sa_family=dev->type;
 			return 0;
 				
@@ -2120,11 +2127,20 @@ static int dev_ifsioc(struct ifreq *ifr, unsigned int cmd)
 			if (!err)
 				notifier_call_chain(&netdev_chain, NETDEV_CHANGEADDR, dev);
 			return err;
-			
+
+#ifdef SIOCGIFHWBROADCAST
+		case SIOCGIFHWBROADCAST:
+			memcpy(ifr->ifr_hwaddr.sa_data, dev->broadcast, 
+			       min(sizeof ifr->ifr_hwaddr.sa_data, (size_t) dev->addr_len));
+			ifr->ifr_hwaddr.sa_family=dev->type;
+			return 0;
+#endif
+
 		case SIOCSIFHWBROADCAST:
 			if (ifr->ifr_hwaddr.sa_family!=dev->type)
 				return -EINVAL;
-			memcpy(dev->broadcast, ifr->ifr_hwaddr.sa_data, MAX_ADDR_LEN);
+			memcpy(dev->broadcast, ifr->ifr_hwaddr.sa_data, 
+			       min(sizeof ifr->ifr_hwaddr.sa_data, (size_t) dev->addr_len));
 			notifier_call_chain(&netdev_chain, NETDEV_CHANGEADDR, dev);
 			return 0;
 

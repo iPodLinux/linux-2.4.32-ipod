@@ -17,7 +17,7 @@
 # Select the object file format to substitute into the linker script.
 #
 ifdef CONFIG_CPU_LITTLE_ENDIAN
-tool-prefix	= mipsel-linux-
+tool-prefix	= mips_fp_le-
 ld-emul		= elf32ltsmip
 else
 tool-prefix	= mips-linux-
@@ -303,6 +303,16 @@ ifdef CONFIG_MIPS_MTX1
 LIBS          += arch/mips/au1000/mtx-1/mtx-1.o \
                  arch/mips/au1000/common/au1000.o
 SUBDIRS       += arch/mips/au1000/mtx-1 arch/mips/au1000/common
+LOADADDR      += 0x80100000
+endif
+
+#
+# Velseis Vegas board
+#
+ifdef CONFIG_MIPS_VEGAS
+LIBS          += arch/mips/au1000/vegas/vegas.o \
+                 arch/mips/au1000/common/au1000.o
+SUBDIRS       += arch/mips/au1000/vegas arch/mips/au1000/common
 LOADADDR      += 0x80100000
 endif
 

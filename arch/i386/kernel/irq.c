@@ -45,7 +45,9 @@
 #include <asm/desc.h>
 #include <asm/irq.h>
 
-
+#ifdef CONFIG_INTLAT
+#include <asm/timepeg.h>
+#endif
 
 /*
  * Linux has a controller-independent x86 interrupt architecture.
@@ -593,6 +595,16 @@ asmlinkage unsigned int do_IRQ(struct pt_regs regs)
 	}
 #endif
 
+#ifdef CONFIG_INTLAT
+	/*
+	 * Use the interrupt entry to _simulate_ the disabling of interrupts
+	 */
+	{
+		TIMEPEG_DEFINE(in, "do_IRQ.in");
+		intlat_enter_isr(&in);
+	}
+#endif
+
 	kstat.irqs[cpu][irq]++;
 	spin_lock(&desc->lock);
 	desc->handler->ack(irq);
@@ -654,6 +666,17 @@ out:
 
 	if (softirq_pending(cpu))
 		do_softirq();
+
+#ifdef CONFIG_INTLAT
+	/*
+	 * Use the interrupt exit to _simulate_ the enabling of interrupts
+	 */
+	{
+		TIMEPEG_DEFINE(out, "do_IRQ.out");
+		intlat_exit_isr(&out);
+	}
+#endif
+
 	return 1;
 }
 

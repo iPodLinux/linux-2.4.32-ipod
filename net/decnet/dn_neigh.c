@@ -488,7 +488,9 @@ static void neigh_elist_cb(struct neighbour *neigh, void *_info)
 
 	dn_dn2eth(s->rs, dn->addr);
 	s->rs += 6;
+	read_lock(&neigh->lock);
 	*(s->rs) = neigh->nud_state & NUD_CONNECTED ? 0x80 : 0x0;
+	read_unlock(&neigh->lock);
 	*(s->rs) |= dn->priority;
 	s->rs++;
 }

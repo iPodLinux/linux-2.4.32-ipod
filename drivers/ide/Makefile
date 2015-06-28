@@ -11,14 +11,14 @@
 
 export-objs := ide-iops.o ide-taskfile.o ide-proc.o ide.o ide-probe.o ide-probe-mini.o ide-dma.o ide-lib.o setup-pci.o ide-io.o ide-disk.o
 
-all-subdirs	:= arm legacy pci ppc raid
-mod-subdirs	:= arm legacy pci ppc raid
+all-subdirs	:= arm legacy pci ppc raid h8300
+mod-subdirs	:= arm legacy pci ppc raid h8300
 
 obj-y		:=
 obj-m		:=
 ide-obj-y	:=
 
-subdir-$(CONFIG_BLK_DEV_IDE) += legacy ppc arm raid pci
+subdir-$(CONFIG_BLK_DEV_IDE) += legacy ppc arm raid pci h8300
 
 # First come modules that register themselves with the core
 
@@ -55,6 +55,7 @@ ifeq ($(CONFIG_BLK_DEV_IDE),y)
   obj-y		+= legacy/idedriver-legacy.o
   obj-y		+= ppc/idedriver-ppc.o
   obj-y		+= arm/idedriver-arm.o
+  obj-y		+= h8300/idedriver-h8300.o
 else
   ifeq ($(CONFIG_BLK_DEV_HD_ONLY),y)
 	subdir-$(CONFIG_BLK_DEV_HD_ONLY) += legacy
@@ -82,8 +83,8 @@ O_TARGET := idedriver.o
 include $(TOPDIR)/Rules.make
 
 ide-core.o:	$(ide-core-objs)
-	$(LD) -r -o $@ $(ide-core-objs)
+	$(LD) $(LDFLAGS) -r -o $@ $(ide-core-objs)
 
 ide-detect.o:	$(ide-detect-objs)
-	$(LD) -r -o $@ $(ide-detect-objs)
+	$(LD) $(LDFLAGS) -r -o $@ $(ide-detect-objs)
 

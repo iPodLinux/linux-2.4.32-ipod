@@ -145,6 +145,10 @@ asmlinkage int sys_ptrace(long request, long pid, long addr, long data)
 	struct user * dummy = NULL;
 	int ret;
 
+#if 0
+	printk("%s(%d): sys_ptrace(request=%d,pid=%d,addr=%x)\n",
+		__FILE__, __LINE__, (int)request, (int)pid, (int) addr);
+#endif
 	lock_kernel();
 	ret = -EPERM;
 	if (request == PTRACE_TRACEME) {

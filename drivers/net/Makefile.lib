@@ -12,6 +12,7 @@ obj-$(CONFIG_DE4X5)		+= crc32.o
 obj-$(CONFIG_DECLANCE)		+= crc32.o
 obj-$(CONFIG_DEPCA)		+= crc32.o
 obj-$(CONFIG_DL2K)		+= crc32.o
+obj-$(CONFIG_DM9000)		+= crc32.o
 obj-$(CONFIG_DM9102)		+= crc32.o
 obj-$(CONFIG_EPIC100)		+= crc32.o
 obj-$(CONFIG_EWRK3)		+= crc32.o

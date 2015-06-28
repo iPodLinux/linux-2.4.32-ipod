@@ -1031,7 +1031,10 @@ ppp_send_frame(struct ppp *ppp, struct sk_buff *skb)
 	/* try to do packet compression */
 	if ((ppp->xstate & SC_COMP_RUN) && ppp->xc_state != 0
 	    && proto != PPP_LCP && proto != PPP_CCP) {
-		new_skb = alloc_skb(ppp->dev->mtu + ppp->dev->hard_header_len,
+		int comp_overhead = (ppp->xcomp->compress_proto == CI_MPPE) ?
+			4 : 0;
+		new_skb = alloc_skb(ppp->dev->mtu + ppp->dev->hard_header_len
+				    + comp_overhead,
 				    GFP_ATOMIC);
 		if (new_skb == 0) {
 			printk(KERN_ERR "PPP: no memory (comp pkt)\n");
@@ -1044,7 +1047,8 @@ ppp_send_frame(struct ppp *ppp, struct sk_buff *skb)
 		/* compressor still expects A/C bytes in hdr */
 		len = ppp->xcomp->compress(ppp->xc_state, skb->data - 2,
 					   new_skb->data, skb->len + 2,
-					   ppp->dev->mtu + PPP_HDRLEN);
+					   ppp->dev->mtu + PPP_HDRLEN + 
+					   comp_overhead);
 		if (len > 0 && (ppp->flags & SC_CCP_UP)) {
 			kfree_skb(skb);
 			skb = new_skb;
@@ -1323,9 +1327,9 @@ ppp_do_recv(struct ppp *ppp, struct sk_buff *skb, struct channel *pch)
 {
 	ppp_recv_lock(ppp);
 	/* ppp->dev == 0 means interface is closing down */
-	if (ppp->dev != 0)
+	if (ppp->dev != 0) {
 		ppp_receive_frame(ppp, skb, pch);
-	else
+	} else
 		kfree_skb(skb);
 	ppp_recv_unlock(ppp);
 }
@@ -2068,6 +2072,25 @@ ppp_ccp_peek(struct ppp *ppp, struct sk_buff *skb, int inbound)
 			if (ppp->xcomp->comp_init(ppp->xc_state, dp, len,
 					ppp->file.index, 0, ppp->debug))
 				ppp->xstate |= SC_COMP_RUN;
+		}
+		break;
+
+	case CCP_RESETREQ:
+		if ((ppp->flags & SC_CCP_UP) == 0)
+			break;
+		/*
+		 * not all MPPE implementations ACK reset requests so we
+		 * have to assume they will,  which is ok as MPPE doesn't
+		 * ever need resetting any way
+		 */
+		if (!inbound && 
+ 		((ppp->xcomp && (ppp->xcomp->compress_proto == CI_MPPE)) 
+ 		|| (ppp->rcomp && (ppp->rcomp->compress_proto == CI_MPPE)))) {
+
+			if (ppp->rc_state && (ppp->rstate & SC_DECOMP_RUN)) {
+				ppp->rcomp->decomp_reset(ppp->rc_state);
+				ppp->rstate &= ~SC_DC_ERROR;
+			}
 		}
 		break;
 

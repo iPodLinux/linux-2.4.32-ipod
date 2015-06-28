@@ -309,6 +309,12 @@ struct fb_ops {
     int (*fb_mmap)(struct fb_info *info, struct file *file, struct vm_area_struct *vma);
     /* switch to/from raster image mode */
     int (*fb_rasterimg)(struct fb_info *info, int start);
+    /* for kernels with no mmu */
+    unsigned long (*get_fb_unmapped_area)(struct file *file,
+					  unsigned long addr, 
+					  unsigned long len,
+					  unsigned long pgoff,
+					  unsigned long flags);
 };
 
 struct fb_info {

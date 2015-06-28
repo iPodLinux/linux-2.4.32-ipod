@@ -254,6 +254,7 @@ static struct dev_name_struct {
 	{ "ftlc", 0x2c10 },
 	{ "ftld", 0x2c18 },
 	{ "mtdblock", 0x1f00 },
+	{ "rom", 0x1f00 },
 	{ "nb", 0x2b00 },
 	{ NULL, 0 }
 };
@@ -527,11 +528,11 @@ identify_ramdisk_image(int fd, int start_block)
 		goto done;
 	}
 
-	if (cramfsb->magic == CRAMFS_MAGIC) {
+	if (cramfsb->magic == CRAMFS_32(CRAMFS_MAGIC)) {
 		printk(KERN_NOTICE
 		       "RAMDISK: cramfs filesystem found at block %d\n",
 		       start_block);
-		nblocks = (cramfsb->size + BLOCK_SIZE - 1) >> BLOCK_SIZE_BITS;
+		nblocks = (CRAMFS_32(cramfsb->size) + BLOCK_SIZE - 1) >> BLOCK_SIZE_BITS;
 		goto done;
 	}
 

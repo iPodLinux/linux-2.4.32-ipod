@@ -19,6 +19,11 @@ ifeq ($(CONFIG_ATM),m)
   obj-m += $(O_TARGET)
 endif
 
+ifeq ($(CONFIG_ATM_IPV6),y)
+obj-y += ipv6atm.o
+NEED_IPCOM = ipcommon.o
+endif
+
 ifneq ($(CONFIG_ATM_CLIP),n)
   NEED_IPCOM = ipcommon.o
 endif

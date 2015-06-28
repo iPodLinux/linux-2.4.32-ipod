@@ -36,11 +36,26 @@ static struct i2c_bus    *busses[I2C_BUS_MAX];
 static struct i2c_driver *drivers[I2C_DRIVER_MAX];
 static int bus_count = 0, driver_count = 0;
 
+extern int saa7111_init(void);
+extern int saa7185_init(void);
+extern int bt819_init(void);
+extern int bt856_init(void);
+
 int i2c_init(void)
 {
 	printk(KERN_INFO "i2c: initialized%s\n",
 		scan ? " (i2c bus scan enabled)" : "");
 
+#if defined(CONFIG_VIDEO_BUZ) || defined(CONFIG_VIDEO_CYBERPRO)
+	saa7111_init();
+#endif
+#ifdef CONFIG_VIDEO_BUZ
+	saa7185_init();
+#endif
+#ifdef CONFIG_VIDEO_LML33
+	bt819_init();
+	bt856_init();
+#endif
 	return 0;
 }
 

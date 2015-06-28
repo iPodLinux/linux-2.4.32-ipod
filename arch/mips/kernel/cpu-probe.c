@@ -5,6 +5,7 @@
 #include <asm/cpu.h>
 #include <asm/fpu.h>
 #include <asm/mipsregs.h>
+#include <asm/processor.h>
 
 /*
  * Not all of the MIPS CPUs have the "wait" instruction available. Moreover,

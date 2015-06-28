@@ -128,6 +128,7 @@ ENTRY(ret_from_fork)
 
 	.align	5
 ENTRY(vector_swi)
+
 	save_user_regs
 	zero_fp
 	get_scno

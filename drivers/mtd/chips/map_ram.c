@@ -34,6 +34,11 @@ static struct mtd_info *map_ram_probe(struct map_info *map)
 
 	/* Check the first byte is RAM */
 #if 0
+	/*
+	 * enabling this code will corrupt the first and last byte of memory
+	 * in the area.  This is particularly bad if you have pre-loaded
+	 * something useful into the area (like a rom filesystem)
+	 */
 	map->write8(map, 0x55, 0);
 	if (map->read8(map, 0) != 0x55)
 		return NULL;

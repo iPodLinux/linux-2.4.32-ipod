@@ -250,7 +250,7 @@ do_load_som_binary(struct linux_binprm * bprm, struct pt_regs * regs)
 
 	set_binfmt(&som_format);
 	compute_creds(bprm);
-	setup_arg_pages(bprm);
+	setup_arg_pages(bprm, STACK_TOP);
 
 	create_som_tables(bprm);
 

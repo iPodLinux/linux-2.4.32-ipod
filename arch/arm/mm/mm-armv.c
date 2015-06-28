@@ -9,7 +9,6 @@
  *
  *  Page table sludge for ARM v3 and v4 processor architectures.
  */
-#include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/init.h>
 #include <linux/bootmem.h>
@@ -123,7 +122,6 @@ pgd_t *get_pgd_slow(struct mm_struct *mm)
 no_pte:
 	spin_unlock(&mm->page_table_lock);
 	pmd_free(new_pmd);
-	check_pgt_cache();
 	free_pages((unsigned long)new_pgd, 2);
 	return NULL;
 
@@ -158,7 +156,6 @@ void free_pgd_slow(pgd_t *pgd)
 	pmd_clear(pmd);
 	pte_free(pte);
 	pmd_free(pmd);
-	check_pgt_cache();
 free:
 	free_pages((unsigned long) pgd, 2);
 }
@@ -207,7 +204,6 @@ alloc_init_page(unsigned long virt, unsigned long phys, int domain, int prot)
 
 /*
  * Clear any PGD mapping.  On a two-level page table system,
- * the clearance is done by the middle-level functions (pmd)
  * rather than the top-level (pgd) functions.
  */
 static inline void clear_mapping(unsigned long virt)
@@ -224,7 +220,7 @@ static inline void clear_mapping(unsigned long virt)
 static void __init create_mapping(struct map_desc *md)
 {
 	unsigned long virt, length;
-	int prot_sect, prot_pte;
+	unsigned int prot_sect, prot_pte;
 	long off;
 
 	if (md->prot_read && md->prot_write &&
@@ -327,7 +323,6 @@ void __init memtable_init(struct meminfo *mi)
 		p->prot_write = 1;
 		p->cacheable  = 1;
 		p->bufferable = 1;
-
 		p ++;
 	}
 
@@ -340,7 +335,6 @@ void __init memtable_init(struct meminfo *mi)
 	p->prot_write = 0;
 	p->cacheable  = 1;
 	p->bufferable = 1;
-
 	p ++;
 #endif
 
@@ -353,7 +347,6 @@ void __init memtable_init(struct meminfo *mi)
 	p->prot_write = 0;
 	p->cacheable  = 1;
 	p->bufferable = 0;
-
 	p ++;
 #endif
 
@@ -383,13 +376,20 @@ void __init memtable_init(struct meminfo *mi)
 	init_maps->physical   = virt_to_phys(init_maps);
 	init_maps->virtual    = vectors_base();
 	init_maps->length     = PAGE_SIZE;
+#ifdef CONFIG_ARM_FASS
+	init_maps->domain     = DOMAIN_KERNEL; /* awiggins for FASS */
+#else
 	init_maps->domain     = DOMAIN_USER;
+#endif
 	init_maps->prot_read  = 0;
 	init_maps->prot_write = 0;
 	init_maps->cacheable  = 1;
 	init_maps->bufferable = 0;
 
 	create_mapping(init_maps);
+
+	flush_cache_all();
+	flush_tlb_all();
 }
 
 /*
@@ -399,8 +399,9 @@ void __init iotable_init(struct map_desc *io_desc)
 {
 	int i;
 
-	for (i = 0; io_desc[i].last == 0; i++)
+	for (i = 0; io_desc[i].last == 0; i++) {
 		create_mapping(io_desc + i);
+	}
 }
 
 static inline void free_memmap(int node, unsigned long start, unsigned long end)

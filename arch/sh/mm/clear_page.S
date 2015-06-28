@@ -1,4 +1,4 @@
-/* $Id: clear_page.S,v 1.1.1.1.2.8 2003/04/18 10:53:25 sugioka Exp $
+/* $Id: clear_page.S,v 1.13 2003/08/25 17:03:10 lethal Exp $
  *
  * __clear_user_page, __clear_user, clear_page implementation of SuperH
  *
@@ -10,7 +10,7 @@
 #include <linux/linkage.h>
 
 /*
- * clear_page
+ * clear_page_slow
  * @to: P1 address
  *
  * void clear_page(void *to)
@@ -28,9 +28,9 @@ ENTRY(clear_page)
 	mov	#0,r0
 	!
 1:
-#if defined(__sh3__)
+#if defined(CONFIG_CPU_SH3)
 	mov.l	r0,@r4
-#elif defined(__SH4__)
+#elif defined(CONFIG_CPU_SH4)
 	movca.l	r0,@r4
 	mov	r4,r1
 #endif
@@ -42,7 +42,7 @@ ENTRY(clear_page)
 	mov.l	r0,@-r4
 	mov.l	r0,@-r4
 	mov.l	r0,@-r4
-#if defined(__SH4__)
+#if defined(CONFIG_CPU_SH4)
 	ocbwb	@r1
 #endif
 	cmp/eq	r5,r4
@@ -92,7 +92,7 @@ ENTRY(__clear_user)
 	bf	.Larea2
 	!
 	! Clear area 1
-#if defined(__SH4__)
+#if defined(CONFIG_CPU_SH4)
 1:	movca.l	r0, @r2
 #else
 1:	mov.l	r0, @r2
@@ -152,10 +152,10 @@ ENTRY(__clear_user)
 	.long	9b, .Lbad_clear_user
 .previous
 
-#if defined(__SH4__)
+#if defined(CONFIG_CPU_SH4)
 /*
  * __clear_user_page
- * @to: P1 address (with same color)
+ * @to: P3 address (with same color)
  * @orig_to: P1 address
  *
  * void __clear_user_page(void *to, void *orig_to)
@@ -350,12 +350,11 @@ ENTRY(__flush_dcache_all)
 
 	.align	2
 2:	.long	0xffffc000
-
 3:	.long	SYMBOL_NAME(empty_zero_page)
 4:	.long	0x10000000	! BL bit
 
-/* flush_cache_4096_all(unsigned long addr) */
-ENTRY(flush_cache_4096_all)
+/* __flush_cache_4096_all(unsigned long addr) */
+ENTRY(__flush_cache_4096_all)
 	mov.l	2f,r0
 	mov.l	3f,r2
 	and	r0,r2
@@ -430,7 +429,7 @@ ENTRY(flush_cache_4096_all)
 
 	.align	2
 2:	.long	0xffffc000
-3:	.long	SYMBOL_NAME(empty_zero_page)
+3:	.long	empty_zero_page
 4:	.long	0x10000000	! BL bit
 	
 #endif

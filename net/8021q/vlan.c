@@ -85,7 +85,7 @@ static int __init vlan_proto_init(void)
 
 	printk(VLAN_INF "%s v%u.%u %s\n",
 	       vlan_fullname, vlan_version, vlan_release, vlan_copyright);
-	printk(VLAN_INF "All bugs added by %s\n",
+	printk(VLAN_INF "Other stuff added by %s\n",
 	       vlan_buggyright);
 
 	/* proc file system initialization */

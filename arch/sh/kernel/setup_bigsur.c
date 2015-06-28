@@ -64,7 +64,7 @@ static void disable_bigsur_l1irq(unsigned int irq)
 	unsigned long flags;
 	unsigned char mask;
 	unsigned int mask_port = ((irq - BIGSUR_IRQ_LOW)/8) ? BIGSUR_IRLMR1 : BIGSUR_IRLMR0;
-	unsigned char bit =  (1 << ((irq - MGATE_IRQ_LOW)%8) );
+	unsigned char bit =  (1 << ((irq - BIGSUR_IRQ_LOW)%8) );
 
 	if(irq >= BIGSUR_IRQ_LOW && irq < BIGSUR_IRQ_HIGH) {	
    		DPRINTK("Disable L1 IRQ %d\n", irq);
@@ -86,7 +86,7 @@ static void enable_bigsur_l1irq(unsigned int irq)
 	unsigned long flags;
 	unsigned char mask;
 	unsigned int mask_port = ((irq - BIGSUR_IRQ_LOW)/8) ? BIGSUR_IRLMR1 : BIGSUR_IRLMR0;
-	unsigned char bit =  (1 << ((irq - MGATE_IRQ_LOW)%8) );
+	unsigned char bit =  (1 << ((irq - BIGSUR_IRQ_LOW)%8) );
 
 	if(irq >= BIGSUR_IRQ_LOW && irq < BIGSUR_IRQ_HIGH) {	
 	   	DPRINTK("Enable L1 IRQ %d\n", irq);

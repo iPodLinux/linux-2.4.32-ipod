@@ -1,3 +1,5 @@
+/* $USAGI: raw.c,v 1.34 2003/08/11 16:54:00 yoshfuji Exp $ */
+
 /*
  *	RAW sockets for IPv6
  *	Linux INET6 implementation 
@@ -29,6 +31,7 @@
 #include <linux/netdevice.h>
 #include <linux/if_arp.h>
 #include <linux/icmpv6.h>
+#include <linux/inet.h>
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
@@ -207,6 +210,10 @@ static int rawv6_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	if (sk->state != TCP_CLOSE)
 		goto out;
 
+	if (addr->sin6_port && 
+	    ntohs(addr->sin6_port) != sk->num)
+		goto out;
+
 	if (addr_type & IPV6_ADDR_LINKLOCAL) {
 		if (addr_len >= sizeof(struct sockaddr_in6) &&
 		    addr->sin6_scope_id) {
@@ -216,9 +223,11 @@ static int rawv6_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 			sk->bound_dev_if = addr->sin6_scope_id;
 		}
 
+#ifndef CONFIG_IPV6_LOOSE_SCOPE_ID
 		/* Binding to link-local address requires an interface */
 		if (sk->bound_dev_if == 0)
 			goto out;
+#endif
 	}
 
 	/* Check if the address belongs to the host. */
@@ -279,26 +288,39 @@ void rawv6_err(struct sock *sk, struct sk_buff *skb,
 
 static inline int rawv6_rcv_skb(struct sock * sk, struct sk_buff * skb)
 {
+	struct inet6_dev *idev = in6_dev_get(skb->dev);
+	struct in6_addr *saddr = &skb->nh.ipv6h->saddr;
+ 	struct in6_addr *daddr = &skb->nh.ipv6h->daddr;
+
 	if ((sk->tp_pinfo.tp_raw.checksum
 #if defined(CONFIG_FILTER)
 	    || sk->filter 
 #endif
 	    ) && skb->ip_summed != CHECKSUM_UNNECESSARY) {
 		if ((unsigned short)csum_fold(skb_checksum(skb, 0, skb->len, skb->csum))) {
-			IP6_INC_STATS_BH(Ip6InDiscards);
-			kfree_skb(skb);
-			return 0;
+			char sbuf[64], dbuf[64];
+			in6_ntop(saddr, sbuf);
+			in6_ntop(daddr, dbuf);
+			if (net_ratelimit())
+				printk(KERN_WARNING "RAWv6 checksum failed [%s > %s]\n",
+					sbuf, dbuf);
+			goto discard_it;
 		}
-		skb->ip_summed = CHECKSUM_UNNECESSARY;
 	}
 	/* Charge it to the socket. */
-	if (sock_queue_rcv_skb(sk,skb)<0) {
-		IP6_INC_STATS_BH(Ip6InDiscards);
-		kfree_skb(skb);
-		return 0;
-	}
+	if (sock_queue_rcv_skb(sk,skb)<0)
+		goto discard_it;
 
-	IP6_INC_STATS_BH(Ip6InDelivers);
+	IP6_INC_STATS_BH(idev,Ip6InDelivers);
+	if (idev)
+		in6_dev_put(idev);
+	return 0;
+
+discard_it:
+	IP6_INC_STATS_BH(idev,Ip6InDiscards);
+	if (idev)
+		in6_dev_put(idev);
+	kfree_skb(skb);
 	return 0;
 }
 
@@ -333,8 +355,11 @@ int rawv6_rcv(struct sock *sk, struct sk_buff *skb)
 	if (sk->protinfo.af_inet.hdrincl) {
 		if (skb->ip_summed != CHECKSUM_UNNECESSARY &&
 		    (unsigned short)csum_fold(skb_checksum(skb, 0, skb->len, skb->csum))) {
-			IP6_INC_STATS_BH(Ip6InDiscards);
+			struct inet6_dev *idev = in6_dev_get(skb->dev);
+			IP6_INC_STATS_BH(idev, Ip6InDiscards);
 			kfree_skb(skb);
+			if (idev)
+				in6_dev_put(idev);
 			return 0;
 		}
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
@@ -355,6 +380,8 @@ int rawv6_recvmsg(struct sock *sk, struct msghdr *msg, int len,
 {
 	struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)msg->msg_name;
 	struct sk_buff *skb;
+	struct net_device *dev = NULL;
+	struct inet6_dev *idev = NULL;
 	int copied, err;
 
 	if (flags & MSG_OOB)
@@ -393,8 +420,8 @@ int rawv6_recvmsg(struct sock *sk, struct msghdr *msg, int len,
 	/* Copy the address. */
 	if (sin6) {
 		sin6->sin6_family = AF_INET6;
-		memcpy(&sin6->sin6_addr, &skb->nh.ipv6h->saddr, 
-		       sizeof(struct in6_addr));
+		ipv6_addr_copy(&sin6->sin6_addr, &skb->nh.ipv6h->saddr);
+		sin6->sin6_port = htons(sk->num);
 		sin6->sin6_flowinfo = 0;
 		sin6->sin6_scope_id = 0;
 		if (ipv6_addr_type(&sin6->sin6_addr) & IPV6_ADDR_LINKLOCAL) {
@@ -435,7 +462,14 @@ csum_copy_err:
 	   as some normal condition.
 	 */
 	err = (flags&MSG_DONTWAIT) ? -EAGAIN : -EHOSTUNREACH;
-	IP6_INC_STATS_USER(Ip6InDiscards);
+	dev = dev_get_by_index(((struct inet6_skb_parm *) skb->cb)->iif);
+	if (dev) {
+		idev = in6_dev_get(dev);
+		IP6_INC_STATS_USER(idev,Ip6InDiscards);
+		if (idev)
+			in6_dev_put(idev);
+		dev_put(dev);
+	}
 	goto out_free;
 }
 
@@ -503,6 +537,7 @@ static int rawv6_frag_cksum(const void *data, struct in6_addr *addr,
 				printk(KERN_DEBUG "icmp: cksum offset too big\n");
 			return -EINVAL;
 		}
+		hdr->cksum = 0;
 	}	
 	return 0; 
 }
@@ -520,6 +555,7 @@ static int rawv6_sendmsg(struct sock *sk, struct msghdr *msg, int len)
 	struct in6_addr *daddr;
 	struct raw6_opt *raw_opt;
 	int hlimit = -1;
+	int tclass = -1;
 	u16 proto;
 	int err;
 
@@ -552,6 +588,8 @@ static int rawv6_sendmsg(struct sock *sk, struct msghdr *msg, int len)
 
 		if (!proto)
 			proto = sk->num;
+		else if (proto != sk->num)
+			return(-EINVAL);
 
 		if (proto > 255)
 			return(-EINVAL);
@@ -601,7 +639,7 @@ static int rawv6_sendmsg(struct sock *sk, struct msghdr *msg, int len)
 		opt = &opt_space;
 		memset(opt, 0, sizeof(struct ipv6_txoptions));
 
-		err = datagram_send_ctl(msg, &fl, opt, &hlimit);
+		err = datagram_send_ctl(msg, &fl, opt, &hlimit, &tclass);
 		if (err < 0) {
 			fl6_sock_release(flowlabel);
 			return err;
@@ -641,12 +679,11 @@ static int rawv6_sendmsg(struct sock *sk, struct msghdr *msg, int len)
 			hdr.daddr = daddr;
 		else
 			hdr.daddr = NULL;
-
 		err = ip6_build_xmit(sk, rawv6_frag_cksum, &hdr, &fl, len,
-				     opt, hlimit, msg->msg_flags);
+				     opt, hlimit, tclass, msg->msg_flags);
 	} else {
 		err = ip6_build_xmit(sk, rawv6_getfrag, msg->msg_iov, &fl, len,
-				     opt, hlimit, msg->msg_flags);
+				     opt, hlimit, tclass, msg->msg_flags);
 	}
 
 	fl6_sock_release(flowlabel);
@@ -725,6 +762,8 @@ static int rawv6_setsockopt(struct sock *sk, int level, int optname,
 
 	switch (optname) {
 		case IPV6_CHECKSUM:
+			if (sk->num == IPPROTO_ICMPV6 && val != 2)
+				return(-EINVAL);
 			/* You may get strange result with a positive odd offset;
 			   RFC2292bis agrees with me. */
 			if (val > 0 && (val&1))

@@ -1048,8 +1048,12 @@ static ide_startstop_t cdrom_read_intr (ide_drive_t *drive)
 	/* Check for errors. */
 	if (dma) {
 		info->dma = 0;
+#ifdef CONFIG_ARCH_EP93XX
+		dma_error = HWIF(drive)->ide_dma_end(drive);
+#else
 		if ((dma_error = HWIF(drive)->ide_dma_end(drive)))
 			HWIF(drive)->ide_dma_off(drive);
+#endif
 	}
 
 	if (cdrom_decode_status (&startstop, drive, 0, &stat))
@@ -1063,7 +1067,11 @@ static ide_startstop_t cdrom_read_intr (ide_drive_t *drive)
 			}
 			return ide_stopped;
 		} else
+#ifdef CONFIG_ARCH_EP93XX
+			return ide_stopped;
+#else
 			return DRIVER(drive)->error(drive, "dma error", stat);
+#endif
 	}
 
 	/* Read the interrupt reason and the transfer length. */

@@ -99,6 +99,7 @@ extern struct sh_machine_vector sh_mv;
 #define MACH_SH2000	(sh_mv.mv_hw_sh2000)
 #define MACH_DREAMCAST	(sh_mv.mv_hw_dreamcast)
 #define MACH_BIGSUR	(sh_mv.mv_hw_bigsur)
+#define MACH_KEYWEST	(sh_mv.mv_hw_keywest)
 #define MACH_HS7729PCI	(sh_mv.mv_hw_hs7729pci)
 #define MACH_7751SE	(sh_mv.mv_hw_7751se)
 #define MACH_ADX	(sh_mv.mv_hw_adx)
@@ -169,6 +170,11 @@ extern struct sh_machine_vector sh_mv;
 #  define MACH_BIGSUR		1
 # else
 #  define MACH_BIGSUR		0
+# endif
+# ifdef CONFIG_SH_KEYWEST
+#  define MACH_KEYWEST		1
+# else
+#  define MACH_KEYWEST		0
 # endif
 # ifdef CONFIG_SH_HS7729PCI
 #  define MACH_HS7729PCI	1

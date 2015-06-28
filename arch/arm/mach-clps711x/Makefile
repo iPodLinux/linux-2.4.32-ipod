@@ -22,10 +22,12 @@ obj-$(CONFIG_ARCH_AUTCPU12) += autcpu12.o
 obj-$(CONFIG_ARCH_CDB89712) += cdb89712.o
 obj-$(CONFIG_ARCH_CLEP7312) += clep7312.o
 obj-$(CONFIG_ARCH_EDB7211) += edb7211-arch.o edb7211-mm.o
+obj-$(CONFIG_ARCH_EDB7312) += edb7312.o
 obj-$(CONFIG_ARCH_GUIDEA07) += guide-a07.o
 obj-$(CONFIG_ARCH_P720T) += p720t.o
 obj-$(CONFIG_ARCH_FORTUNET) += fortunet.o
 leds-$(CONFIG_ARCH_P720T) += p720t-leds.o
 obj-$(CONFIG_LEDS)	+= $(leds-y)
+obj-$(CONFIG_KGDB_SERIAL) += kgdb-serial.o
 
 include $(TOPDIR)/Rules.make

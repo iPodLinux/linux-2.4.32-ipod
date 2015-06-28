@@ -2,6 +2,8 @@
  *
  * Name:	skdrv1st.h
  * Project:	GEnesis, PCI Gigabit Ethernet Adapter
+ * Version:	$Revision: 1.4 $
+ * Date:	$Date: 2004/07/09 13:22:05 $
  * Purpose:	First header file for driver and all other modules
  *
  ******************************************************************************/
@@ -17,20 +19,6 @@
  *	(at your option) any later version.
  *
  *	The information in this file is provided "AS IS" without warranty.
- *
- ******************************************************************************/
-
-/******************************************************************************
- *
- * Description:
- *
- * This is the first include file of the driver, which includes all
- * neccessary system header files and some of the GEnesis header files.
- * It also defines some basic items.
- *
- * Include File Hierarchy:
- *
- *	see skge.c
  *
  ******************************************************************************/
 
@@ -62,7 +50,6 @@ typedef struct s_AC	SK_AC;
 #error You must compile this driver with "-O".
 #endif
 
-#include <linux/version.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
@@ -94,6 +81,10 @@ typedef struct s_AC	SK_AC;
 #include	"h/skdebug.h"
 #include	"h/lm80.h"
 #include	"h/xmac_ii.h"
+
+#ifndef SK_BMU_RX_WM_PEX
+#define SK_BMU_RX_WM_PEX 0x80
+#endif
 
 #ifdef __LITTLE_ENDIAN
 #define SK_LITTLE_ENDIAN
@@ -193,3 +184,8 @@ extern void SkErrorLog(SK_AC*, int, int, char*);
 
 #endif
 
+/*******************************************************************************
+ *
+ * End of file
+ *
+ ******************************************************************************/

@@ -1,6 +1,4 @@
 /*
- * $Id: cmdlinepart.c,v 1.6 2002/11/16 01:37:39 dneuer Exp $
- *
  * Read flash partition table from command line
  *
  * Copyright 2002 SYSGO Real-Time Solutions GmbH
@@ -35,7 +33,7 @@
 #define ERRP "mtd: "
 
 /* debug macro */
-#if 0
+#if 1
 #define dbg(x) do { printk("DEBUG-CMDLINE-PART: "); printk x; } while(0)
 #else
 #define dbg(x)
@@ -79,7 +77,7 @@ static struct mtd_partition * newpart(char *s,
 	unsigned long offset = 0;
 	char *name;
 	int name_len;
-	unsigned char *extra_mem;
+	unsigned char *extra_mem,*pName;
 	char delim;
 	unsigned int mask_flags;
 
@@ -134,7 +132,7 @@ static struct mtd_partition * newpart(char *s,
 	}
    
 	/* record name length for memory allocation later */
-	extra_mem_size += name_len + 1;
+	//xxxx extra_mem_size += name_len + 1;
 
         /* test for options */
         if (strncmp(s, "ro", 2) == 0) 
@@ -153,7 +151,7 @@ static struct mtd_partition * newpart(char *s,
 		}
 		/* more partitions follow, parse them */
 		if ((parts = newpart(s + 1, &s, num_parts, 
-		                     this_part + 1, &extra_mem, extra_mem_size)) == 0)
+		                     this_part + 1, &extra_mem, extra_mem_size+name_len+1)) == 0)
 		  return 0;
 	}
 	else
@@ -162,13 +160,15 @@ static struct mtd_partition * newpart(char *s,
 
 		*num_parts = this_part + 1;
 		alloc_size = *num_parts * sizeof(struct mtd_partition) +
-			     extra_mem_size;
+			     extra_mem_size+name_len+1;
 		parts = kmalloc(alloc_size, GFP_KERNEL);
 		if (!parts)
 		{
 			printk(KERN_ERR ERRP "out of memory\n");
 			return 0;
 		}
+		dbg(("parts=0x%lx *num_parts=0x%lx\n",parts,*num_parts));
+
 		memset(parts, 0, alloc_size);
 		extra_mem = (unsigned char *)(parts + *num_parts);
 	}
@@ -176,17 +176,20 @@ static struct mtd_partition * newpart(char *s,
 	parts[this_part].size = size;
 	parts[this_part].offset = offset;
 	parts[this_part].mask_flags = mask_flags;
+	pName = extra_mem+extra_mem_size;
 	if (name)
 	{
-		strncpy(extra_mem, name, name_len);
-		extra_mem[name_len] = 0;
+		strncpy(pName, name, name_len);
+		pName[name_len] = 0;
+		dbg(("ext. name\n"));
 	}
 	else
 	{
-		sprintf(extra_mem, "Partition_%03d", this_part);
+		dbg(("def. name\n"));
+		sprintf(pName, "Partition_%03d", this_part);
 	}
-	parts[this_part].name = extra_mem;
-	extra_mem += name_len + 1;
+	parts[this_part].name = pName;
+	//extra_mem += name_len + 1;
 
 	dbg(("partition %d: name <%s>, offset %x, size %x, mask flags %x\n",
 	     this_part, 
@@ -230,8 +233,6 @@ static int mtdpart_setup_real(char *s)
 		}
 		mtd_id_len = p - mtd_id;
 
-		dbg(("parsing <%s>\n", p+1));
-
 		/* 
 		 * parse one mtd. have it reserve memory for the
 		 * struct cmdline_mtd_partition and the mtd-id string.
@@ -241,7 +242,7 @@ static int mtdpart_setup_real(char *s)
 				&num_parts,	/* out: number of parts */
 				0,		/* first partition */
 				(unsigned char**)&this_mtd, /* out: extra mem */
-				mtd_id_len + 1 + sizeof(*this_mtd));
+				((mtd_id_len + 4) & ~3) + sizeof(*this_mtd));
 		if(!parts)
 		{
 			/*
@@ -253,6 +254,7 @@ static int mtdpart_setup_real(char *s)
 			 */
 			 return 0;
 		 }
+
 
 		/* enter results */	    
 		this_mtd->parts = parts;
@@ -299,7 +301,7 @@ int parse_cmdline_partitions(struct mtd_info *master,
 	int i;
 	struct cmdline_mtd_partition *part;
 
-	if(!cmdline)
+	if (!cmdline)
 		return -EINVAL;
 
 	/* parse command line */

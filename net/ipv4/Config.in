@@ -1,3 +1,5 @@
+# $USAGI: Config.in,v 1.12 2003/11/12 05:12:00 yoshfuji Exp $
+
 #
 # IP configuration
 #
@@ -5,6 +7,7 @@ bool '  IP: multicasting' CONFIG_IP_MULTICAST
 bool '  IP: advanced router' CONFIG_IP_ADVANCED_ROUTER
 if [ "$CONFIG_IP_ADVANCED_ROUTER" = "y" ]; then
    bool '    IP: policy routing' CONFIG_IP_MULTIPLE_TABLES
+   bool '    IP: increase default route cache size' CONFIG_IP_ROUTE_BIG_RT_CACHE
    if [ "$CONFIG_IP_MULTIPLE_TABLES" = "y" ]; then
       if [ "$CONFIG_NETFILTER" = "y" ]; then
          bool '      IP: use netfilter MARK value as routing key' CONFIG_IP_ROUTE_FWMARK
@@ -12,6 +15,7 @@ if [ "$CONFIG_IP_ADVANCED_ROUTER" = "y" ]; then
       bool '      IP: fast network address translation' CONFIG_IP_ROUTE_NAT
    fi
    bool '    IP: equal cost multipath' CONFIG_IP_ROUTE_MULTIPATH
+   dep_bool '      IP: Use sequential path selection.' CONFIG_IP_ROUTE_MULTIPATH_SEQUENTIAL $CONFIG_IP_ROUTE_MULTIPATH
    bool '    IP: use TOS value as routing key' CONFIG_IP_ROUTE_TOS
    bool '    IP: verbose route monitoring' CONFIG_IP_ROUTE_VERBOSE
 fi
@@ -23,7 +27,16 @@ if [ "$CONFIG_IP_PNP" = "y" ]; then
 # not yet ready..
 #   bool '    IP: ARP support' CONFIG_IP_PNP_ARP		
 fi
+bool 'ARP MAC Limiting' CONFIG_NET_ARP_LIMIT
+if [ "$CONFIG_NET_ARP_LIMIT" = "y" ]; then
+   int 'Maximum number of MAC addresses' CONFIG_ARP_LIMIT 20
+fi
 tristate '  IP: tunneling' CONFIG_NET_IPIP
+if [ "$CONFIG_NET_IPIP" = "y" ]; then
+   if [ "$CONFIG_IPV6" != "n" ]; then
+      bool '    IP: IPv6 over IPv4 tunneling support (replaces sitXX devices)' CONFIG_NET_IPIP_IPV6
+   fi
+fi
 tristate '  IP: GRE tunnels over IP' CONFIG_NET_IPGRE
 if [ "$CONFIG_IP_MULTICAST" = "y" ]; then
    if [ "$CONFIG_NET_IPGRE" != "n" ]; then
@@ -40,6 +53,7 @@ if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
 fi
 bool '  IP: TCP Explicit Congestion Notification support' CONFIG_INET_ECN
 bool '  IP: TCP syncookie support (disabled per default)' CONFIG_SYN_COOKIES
+
 if [ "$CONFIG_NETFILTER" != "n" ]; then
    source net/ipv4/netfilter/Config.in
 fi

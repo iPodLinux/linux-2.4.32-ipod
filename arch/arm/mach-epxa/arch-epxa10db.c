@@ -56,5 +56,5 @@ MACHINE_START(CAMELOT, "Altera Epxa10db")
       	FIXUP(epxa10db_fixup)
 	MAPIO(epxa_map_io)
 	INITIRQ(epxa_init_irq)
-        BOOT_PARAMS(0x100)
+
 MACHINE_END

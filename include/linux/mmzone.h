@@ -13,10 +13,12 @@
  * Free memory management - zoned buddy allocator.
  */
 
-#ifndef CONFIG_FORCE_MAX_ZONEORDER
-#define MAX_ORDER 10
-#else
+#ifdef CONFIG_FORCE_MAX_ZONEORDER
 #define MAX_ORDER CONFIG_FORCE_MAX_ZONEORDER
+#elif defined (CONFIG_NO_MMU_LARGE_ALLOCS)
+#define MAX_ORDER 13
+#else
+#define MAX_ORDER 10
 #endif
 
 #define ZONE_DMA               0
@@ -249,7 +251,12 @@ static inline zone_t *next_zone(zone_t *zone)
 
 /* page->zone is currently 8 bits ... */
 #ifndef MAX_NR_NODES
+#ifndef NO_MM
 #define MAX_NR_NODES		(255 / MAX_NR_ZONES)
+#else
+/* only 4 bits for nomm */
+#define MAX_NR_NODES		(15 / MAX_NR_ZONES)
+#endif
 #endif
 
 #endif /* !CONFIG_DISCONTIGMEM */

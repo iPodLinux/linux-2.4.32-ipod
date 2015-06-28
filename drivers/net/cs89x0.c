@@ -81,8 +81,23 @@
                     : Make `version[]' __initdata
                     : Uninlined the read/write reg/word functions.
 
+  Craig Peacock     : Apr 2001 - Craig.Peacock@senet.com.au
+  Tom Walsh         : May 2001 - tom@openhardware.net
+  David McCullough  : Jun 2001 - davidm@snapgear.com
+                    : Customized for use on uClinux & MC68EZ328 platforms.
+ 
+  Evan Stawnyczy    : Customized for use on MC68VZ328 platform.
+
+  Daniel Potts      : uClinux sleep support, ucDimm
+  Mark McChrystal   : uClinux sleep support, ucSimm
+
   Oskar Schirmer    : oskar@scara.com
                     : HiCO.SH4 (superh) support added (irq#1, cs89x0_media=)
+
+  Craig Hackney     : Added support for Triscend A7S.
+
+  Chee Tim Loh      : cheetim_loh@innomedia.com.sg
+                    : Added support for TI TMS320DM270.
 
 */
 
@@ -98,13 +113,23 @@
  * Note that even if DMA is turned off we still support the 'dma' and  'use_dma'
  * module options so we don't break any startup scripts.
  */
+#ifdef CONFIG_UCLINUX
+#define ALLOW_DMA	0
+#define NO_EPROM
+#else
 #define ALLOW_DMA	1
+#endif
 
 /*
  * Set this to zero to remove all the debug statements via
  * dead code elimination
  */
 #define DEBUGGING	1
+
+#if defined(CONFIG_DRAGEN2) || defined(CONFIG_ARCH_TA7S)
+#undef DEBUGGING
+#define DEBUGGING	0
+#endif
 
 /*
   Sources:
@@ -128,7 +153,11 @@
 #include <linux/init.h>
 #include <asm/system.h>
 #include <asm/bitops.h>
+#ifndef CONFIG_UCCS89x0_HW_SWAP
 #include <asm/io.h>
+#else
+#include <asm/io_hw_swap.h>
+#endif
 #if ALLOW_DMA
 #include <asm/dma.h>
 #endif
@@ -138,8 +167,43 @@
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
+#include <linux/pm.h>
 
 #include "cs89x0.h"
+
+
+#ifdef CONFIG_M68328
+#include <asm/irq.h>
+#include <asm/MC68328.h>
+#endif
+
+#ifdef CONFIG_M68EZ328
+#include <asm/irq.h>
+#include <asm/MC68EZ328.h>
+#endif
+
+#ifdef CONFIG_M68VZ328
+#include <asm/irq.h>
+#include <asm/MC68VZ328.h>
+#endif
+
+#ifdef CONFIG_EXCALIBUR
+#include <asm/nios.h>
+#endif
+
+#ifdef CONFIG_ARCH_TA7S
+#include <asm/arch/arch.h>
+#include <asm/arch/irqs.h>
+#endif
+
+#ifdef CONFIG_ARCH_DM270
+#include <asm/irq.h>
+#endif
+
+#ifdef CONFIG_HYPERSTONE 
+#include <asm/irq.h>
+#include <asm/io.h>
+#endif
 
 static char version[] __initdata =
 "cs89x0.c: v2.4.3-pre1 Russell Nelson <nelson@crynwr.com>, Andrew Morton <andrewm@uow.edu.au>\n";
@@ -155,14 +219,34 @@ static char version[] __initdata =
 /* The cs8900 has 4 IRQ pins, software selectable. cs8900_irq_map maps 
    them to system IRQ numbers. This mapping is card specific and is set to
    the configuration of the Cirrus Eval board for this chip. */
-#ifdef CONFIG_ARCH_CLPS7500
+#if defined(CONFIG_ALMA_ANS)
+static unsigned int netcard_portlist[] __initdata = { 0x10200300, 0 };
+#elif defined(CONFIG_UCSIMM) || defined(CONFIG_UCDIMM)
+static unsigned int netcard_portlist[] __initdata = { 0x10000300, 0 };
+#elif defined(CONFIG_EZ328LCD) || defined(CONFIG_VZ328LCD)
+static unsigned int netcard_portlist[] __initdata = { 0x2000300, 0 };
+#elif defined(CONFIG_ARCH_TA7S)
+static unsigned int netcard_portlist[] __initdata = { 0x10000000, 0 };
+#elif defined(CONFIG_ARCH_DM270)
+static unsigned int netcard_portlist[] __initdata = { 0x07c00300, 0 };
+#elif defined(CONFIG_DRAGONIXVZ) || defined(CONFIG_CWVZ328)
+static unsigned int netcard_portlist[] __initdata = { 0x4000000, 0 };
+#elif defined(CONFIG_ARCH_CLPS7500)
 static unsigned int netcard_portlist[] __initdata =
    { 0x80090303, 0x300, 0x320, 0x340, 0x360, 0x200, 0x220, 0x240, 0x260, 0x280, 0x2a0, 0x2c0, 0x2e0, 0};
 static unsigned int cs8900_irq_map[] = {12,0,0,0};
+#elif defined(CONFIG_EXCALIBUR)
+static unsigned int netcard_portlist[] __initdata = { ((int) (na_enet)), 0 };
 #elif defined(CONFIG_SH_HICOSH4)
 static unsigned int netcard_portlist[] __initdata =
    { 0x0300, 0};
 static unsigned int cs8900_irq_map[] = {1,0,0,0};
+#elif defined(CONFIG_HYPERSTONE_CS89X0)
+static unsigned int netcard_portlist[] __initdata = { 0x01000300, 0 };
+#elif defined(CONFIG_ARCH_EDB7312)
+static unsigned int netcard_portlist[] __initdata =
+   { 0xfc000003, 0 };
+static unsigned int cs8900_irq_map[] = {7,0,0,0};
 #else
 static unsigned int netcard_portlist[] __initdata =
    { 0x300, 0x320, 0x340, 0x360, 0x200, 0x220, 0x240, 0x260, 0x280, 0x2a0, 0x2c0, 0x2e0, 0};
@@ -235,6 +319,9 @@ static void count_rx_errors(int status, struct net_local *lp);
 static void get_dma_channel(struct net_device *dev);
 static void release_dma_buff(struct net_local *lp);
 #endif
+#ifdef CONFIG_UCLINUX
+static void get_dev_addr(struct net_device *dev);
+#endif
 
 /* Example routines you must write ;->. */
 #define tx_done(dev) 1
@@ -253,6 +340,11 @@ static int __init dma_fn(char *str)
 
 __setup("cs89x0_dma=", dma_fn);
 #endif	/* !defined(MODULE) && (ALLOW_DMA != 0) */
+
+
+#ifdef CONFIG_PM
+static int cs89x0_in_use = 0;
+#endif
 
 #ifndef MODULE
 static int g_cs89x0_media__force;
@@ -279,12 +371,23 @@ __setup("cs89x0_media=", media_fn);
 
 int __init cs89x0_probe(struct net_device *dev)
 {
-	int i;
-	int base_addr = dev ? dev->base_addr : 0;
+#ifdef CONFIG_UCLINUX
+	static int i = 0; /* don't probe twice */
+#else
+	int i = 0;
+#endif
+	int base_addr = (dev && dev->base_addr != 0xffe0) ? dev->base_addr : 0;
 
 	SET_MODULE_OWNER(dev);
 
-	if (net_debug)
+#if defined(CONFIG_DRAGEN2)
+	if (dev) {
+		extern int dragen2_cs8900_setup(struct net_device *dev);
+		base_addr = dragen2_cs8900_setup(dev);
+	}
+#endif
+
+	if (net_debug > 1)
 		printk("cs89x0:cs89x0_probe(0x%x)\n", base_addr);
 
 	if (base_addr > 0x1ff)		/* Check a single specified location. */
@@ -292,11 +395,20 @@ int __init cs89x0_probe(struct net_device *dev)
 	else if (base_addr != 0)	/* Don't probe at all. */
 		return -ENXIO;
 
-	for (i = 0; netcard_portlist[i]; i++) {
-		if (cs89x0_probe1(dev, netcard_portlist[i]) == 0)
+	for (; netcard_portlist[i]; i++) {
+		if (cs89x0_probe1(dev, netcard_portlist[i]) == 0) {
+			i++;
 			return 0;
+		}
+#ifdef CONFIG_UCLINUX
+		printk(KERN_WARNING "cs89x0: no cs8900 or cs8920 detected at 0x%x\n",
+				netcard_portlist[i]);
+#endif
 	}
-	printk(KERN_WARNING "cs89x0: no cs8900 or cs8920 detected.  Be sure to disable PnP with SETUP\n");
+#ifndef CONFIG_UCLINUX
+	if (net_debug)
+		printk(KERN_WARNING "cs89x0: no cs8900 or cs8920 detected.  Be sure to disable PnP with SETUP\n");
+#endif
 	return -ENODEV;
 }
 
@@ -325,6 +437,52 @@ writeword(struct net_device *dev, int portno, int value)
 {
 	outw(value, dev->base_addr + portno);
 }
+
+#if 0 
+static int
+readreg(struct net_device *dev, int portno)
+{
+	long lala;
+	
+	printk("Sthn readreg diabazei apo  0x%x, 0x%8x \n",portno, dev->base_addr);
+	//__udelay(5000);
+
+	outw(portno, dev->base_addr + ADD_PORT);
+	lala= inw(dev->base_addr + DATA_PORT);
+	printk("Apo thn readreg epistrefei 0x%x\n",lala);
+	return lala;
+}
+
+static void
+writereg(struct net_device *dev, int portno, int value)
+{
+	printk("Sthn writereg grafei %x, 0x%x\n",portno, value);
+	//__udelay(5000);
+
+	outw(portno, dev->base_addr + ADD_PORT);
+	outw(value, dev->base_addr + DATA_PORT);
+}
+
+static int
+readword(struct net_device *dev, int portno)
+{
+	long lala;
+	printk("Sthn readword diabazei apo  0x%x,\n",portno);
+	//__udelay(5000);
+
+	lala= inw(dev->base_addr + portno);
+	printk("Apo thn readword epistrefei 0x%x\n",lala);
+	return lala;
+}
+
+static void
+writeword(struct net_device *dev, int portno, int value)
+{
+	printk("Sthn writereg grafei %x, 0x%x\n",portno, value);
+	outw(value, dev->base_addr + portno);
+}
+#endif
+#ifndef NO_EPROM
 
 static int __init
 wait_eeprom_ready(struct net_device *dev)
@@ -371,6 +529,56 @@ get_eeprom_cksum(int off, int len, int *buffer)
 	return -1;
 }
 
+#endif /* NO_EPROM */
+
+
+#if defined(CONFIG_PM)
+
+static struct pm_dev *cs89x0_pm;
+
+/* cs89x0_pm_callback():
+ *
+ *  We don't actually suspend or resume here - that is left to the
+ *  net_open/close functions.
+ *  On PM_SUSPEND: we check that the connection is closed down. If it is, we
+ *  return success. PM_RESUME does nothing.
+ *  It is required that the user brings the connection down (perhaps via
+ *  a pm helper daemon)
+ */
+static int cs89x0_pm_callback(struct pm_dev *dev, pm_request_t request, void *data)
+{
+	struct net_device *cs_dev = (struct net_device *)dev->data;
+
+	switch (request) {
+	case PM_SUSPEND:
+		if (cs89x0_in_use) {
+			printk("cs89x00 connection still open, not sleeping\n");
+			return -EBUSY;
+		}
+
+#if defined(CONFIG_UCSIMM)
+		/* set sleep pin low */
+		*(volatile unsigned char *)0xfffff429 &= ~(0x01);
+		writereg(cs_dev, PP_SelfCTL, readreg(dev, PP_SelfCTL) & ~(AUTO_WAKEUP));
+#elif defined(CONFIG_UCDIMM)
+		*(volatile unsigned char *)0xfffff431 &= ~(0x08);
+#endif
+		writereg(cs_dev, PP_SelfCTL, readreg(dev, PP_SelfCTL) | SLEEP_ON);
+		break;
+	case PM_RESUME:
+#if defined (CONFIG_UCSIMM)
+		*(volatile unsigned short *)0xfffff429 |= 0x01; /* not sleeping */
+#elif defined(CONFIG_UCDIMM)
+		*(volatile unsigned char *)0xfffff431 |= (0x08);
+#endif
+		break;
+	}
+
+	return 0;
+}
+
+#endif
+
 /* This is the real probe routine.  Linux has a history of friendly device
    probes on the ISA bus.  A good device probes avoids doing writes, and
    verifies that the correct device exists and functions.
@@ -386,6 +594,84 @@ cs89x0_probe1(struct net_device *dev, int ioaddr)
 	unsigned rev_type = 0;
 	int eeprom_buff[CHKSUM_LEN];
 	int retval;
+
+#ifdef CONFIG_DRAGONIXVZ
+	printk("cs89x0: Setting up DragonixVZ CS8900 Chip Select & IRQ ioaddr = 0x%X\n",ioaddr);
+	/* set up the chip select */
+	*(volatile unsigned  char *)0xfffff41b &= ~0x80; /* input irq6 */
+        *(volatile unsigned  char *)0x04000105= 0x01; /* nSleep=1 */
+#endif
+
+#ifdef CONFIG_CWVZ328
+	printk("cs89x0: Setting up CWVZ328 CS8900 Chip Select & IRQ ioaddr = 0x%X\n",ioaddr);
+	*(volatile unsigned  char *)0xfffff42b |= 0x01; /* output /sleep */
+	*(volatile unsigned short *)0xfffff428 |= 0x0101; /* not sleeping */
+
+	*(volatile unsigned  char *)0xfffff42b &= ~0x02; /* input irq5 */
+	*(volatile unsigned short *)0xfffff428 &= ~0x0202; /* irq5 fcn on */
+
+	*(volatile unsigned short *)0xfffff102 = 0x2000; /* 0x4000000 */
+	*(volatile unsigned short *)0xfffff112 = 0x01e1; /* 128k, 2ws, FLASH, en */
+#endif
+
+#if defined( CONFIG_UCSIMM ) || defined(CONFIG_UCDIMM)
+#ifdef CONFIG_UCSIMM
+	printk("cs89x0: Setting up uCsimm CS8900 Chip Select & IRQ ioaddr = 0x%X\n",ioaddr);
+
+	/* set up the chip select */
+	*(volatile unsigned  char *)0xfffff42b |= 0x01; /* output /sleep */
+	*(volatile unsigned short *)0xfffff428 |= 0x0101; /* not sleeping */
+
+#else   /* UCDIMM */
+	printk("cs89x0: Setting up uCcs8900 Chip Select & IRQ ioaddr = 0x%X\n",ioaddr);
+
+	/* set up the chip select */
+	*(volatile unsigned char *)0xfffff430 |= 0x08;
+	*(volatile unsigned char *)0xfffff433 |= 0x08;
+	*(volatile unsigned char *)0xfffff431 |= (0x08); /* sleep */
+#endif
+	*(volatile unsigned  char *)0xfffff42b &= ~0x02; /* input irq5 */
+	*(volatile unsigned short *)0xfffff428 &= ~0x0202; /* irq5 fcn on */
+
+	*(volatile unsigned short *)0xfffff102 = 0x8000; /* 0x04000000 */
+	*(volatile unsigned short *)0xfffff112 = 0x01e1; /* 128k, 2ws, FLASH, en */
+#endif
+
+#ifdef CONFIG_EXCALIBUR
+	*(char *)ioaddr = 0;			/* Reset the chip to a usable state. */
+	dev->base_addr = ioaddr;
+	if (readreg(dev, PP_ChipID) != CHIP_EISA_ID_SIG) {
+		retval = -ENODEV;
+		goto out;
+	}
+#ifdef na_enet_reset_n
+	*(volatile unsigned char*)na_enet_reset_n=3;
+#endif	
+	printk("cs89x0: Setting up uCcs8900 Chip Select & IRQ ioaddr = 0x%X\n",ioaddr);
+#endif
+
+#ifdef CONFIG_ARCH_DM270
+	printk("cs89x0: Setting up TI TMS320DM270 CS8900A IRQ ioaddr = 0x%X\n",ioaddr);
+	/* Set GIO port to input */
+	outw(inw(DM270_GIO_DIR(DM270_INTERRUPT_EXT4)) | (1<<DM270_GIO_DIR_SHIFT(DM270_INTERRUPT_EXT4)),
+			DM270_GIO_DIR(DM270_INTERRUPT_EXT4));
+
+	/* Set GIO as interrupt port */
+	outw(inw(DM270_GIO_IRQPORT) | (1<<DM270_GIO_IRQPORT_SHIFT(DM270_INTERRUPT_EXT4)),
+			DM270_GIO_IRQPORT);
+
+	/*
+	 * CS8900A INTRQ goes high when an enabled interrupt is triggered
+	 * and goes low after ISQ is read as all 0's
+	 */
+
+	/* Trigger on rising edge */
+	outw(inw(DM270_GIO_INV(DM270_INTERRUPT_EXT4)) | (1<<DM270_GIO_INV_SHIFT(DM270_INTERRUPT_EXT4)),
+			DM270_GIO_INV(DM270_INTERRUPT_EXT4));
+
+	/* Use single-sided edge interrupts */
+	outw(inw(DM270_GIO_IRQEDGE) & ~(1<<DM270_GIO_IRQEDGE_SHIFT(DM270_INTERRUPT_EXT4)), DM270_GIO_IRQEDGE);
+#endif
 
 	/* Initialize the device structure. */
 	if (dev->priv == NULL) {
@@ -410,6 +696,7 @@ cs89x0_probe1(struct net_device *dev, int ioaddr)
         }
 	lp = (struct net_local *)dev->priv;
 
+#ifndef CONFIG_UCLINUX
 	/* Grab the region so we can find another board if autoIRQ fails. */
 	if (!request_region(ioaddr & ~3, NETCARD_IO_EXTENT, dev->name)) {
 		printk(KERN_ERR "%s: request_region(0x%x, 0x%x) failed\n",
@@ -417,6 +704,9 @@ cs89x0_probe1(struct net_device *dev, int ioaddr)
 		retval = -EBUSY;
 		goto out1;
 	}
+#endif /* CONFIG_UCLINUX */
+
+#if !defined(CONFIG_UCLINUX) || defined(CONFIG_DRAGEN2)
 
 #ifdef CONFIG_SH_HICOSH4
 	/* truely reset the chip */
@@ -441,7 +731,7 @@ cs89x0_probe1(struct net_device *dev, int ioaddr)
 		ioaddr &= ~3;
 		outw(PP_ChipID, ioaddr + ADD_PORT);
 	}
-printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
+	if (net_debug) printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
 
 	if (inw(ioaddr + DATA_PORT) != CHIP_EISA_ID_SIG) {
 		printk(KERN_ERR "%s: incorrect signature 0x%x\n",
@@ -449,9 +739,35 @@ printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
   		retval = -ENODEV;
   		goto out2;
 	}
+#endif /* !CONFIG_UCLINUX || CONFIG_DRAGEN2 */
 
 	/* Fill in the 'dev' fields. */
 	dev->base_addr = ioaddr;
+
+#if defined CONFIG_DRAGONIXVZ
+	dev->irq = IRQ6_IRQ_NUM;
+#endif
+
+#if defined( CONFIG_UCSIMM ) || defined( CONFIG_EZ328LCD ) || defined( CONFIG_UCDIMM ) || defined( CONFIG_CWVZ328)
+	dev->irq = IRQ5_IRQ_NUM;
+#endif
+
+#ifdef CONFIG_EXCALIBUR
+	dev->irq = na_enet_irq;
+#endif
+
+#ifdef CONFIG_ARCH_TA7S
+	dev->irq = IRQ_CSL_USER_0;
+#endif
+
+#ifdef CONFIG_ARCH_DM270
+	dev->irq = DM270_INTERRUPT_EXT4;
+#endif
+
+#if defined CONFIG_E132XS_BOARD 
+	dev->irq = CONFIG_HYPERSTONE_CS89X0_IRQ-1;
+	memcpy(dev->dev_addr, "\x48\x79\x4c\x6e\x78\x30", 6); /* FIXME */
+#endif
 
 	/* get the chip type */
 	rev_type = readreg(dev, PRODUCT_ID_ADD);
@@ -460,11 +776,16 @@ printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
 
 	/* Check the chip type and revision in order to set the correct send command
 	CS8920 revision C and CS8900 revision F can use the faster send. */
+#if !defined( CONFIG_UCSIMM ) && !defined(CONFIG_UCDIMM) && !defined(CONFIG_DRAGEN2) && !defined(CONFIG_DRAGONIXVZ) && !defined(CONFIG_CWVZ328)
 	lp->send_cmd = TX_AFTER_381;
 	if (lp->chip_type == CS8900 && lp->chip_revision >= 'F')
 		lp->send_cmd = TX_NOW;
 	if (lp->chip_type != CS8900 && lp->chip_revision >= 'C')
 		lp->send_cmd = TX_NOW;
+#else
+	/* uCsimm has trouble keeping up */
+	lp->send_cmd = TX_AFTER_ALL;
+#endif
 
 	if (net_debug  &&  version_printed++ == 0)
 		printk(version);
@@ -477,7 +798,8 @@ printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
 	       dev->base_addr);
 
 	reset_chip(dev);
-   
+
+#ifndef NO_EPROM
         /* Here we read the current configuration of the chip. If there
 	   is no Extended EEPROM then the idea is to not disturb the chip
 	   configuration, it should have been correctly setup by automatic
@@ -517,8 +839,12 @@ printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
 	} else
 #endif
 
+#if defined(CONFIG_ARCH_EDB7312)
+	if (1) { /* boot rom set up chip correctly */
+#else
         if ((readreg(dev, PP_SelfST) & (EEPROM_OK | EEPROM_PRESENT)) == 
 	      (EEPROM_OK|EEPROM_PRESENT)) {
+#endif
 	        /* Load the MAC. */
 		for (i=0; i < ETH_ALEN/2; i++) {
 	                unsigned int Addr;
@@ -564,7 +890,12 @@ printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
 		if (lp->chip_type == CS8900) 
 			lp->isa_config = readreg(dev, PP_CS8900_ISAINT) & INT_NO_MASK;
 	   
+#if defined(CONFIG_ARCH_EDB7312)
+		lp->isa_config = 0;
+		printk( "[bootrom] ");
+#else
 		printk( "[Cirrus EEPROM] ");
+#endif
 	}
 
         printk("\n");
@@ -608,6 +939,13 @@ printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
 			printk(KERN_DEBUG "%s: new adapter_cnf: 0x%x\n",
 				dev->name, lp->adapter_cnf);
         }
+#else
+	get_dev_addr(dev);
+	printk("\n");
+    /* Fill this in, we don't have an EEPROM */
+    lp->adapter_cnf = A_CNF_10B_T | A_CNF_MEDIA_10B_T;
+    lp->auto_neg_cnf = EE_AUTO_NEG_ENABLE | IMM_BIT;
+#endif /* NO_EPROM */
 
         /* allow them to force multiple transceivers.  If they force multiple, autosense */
         {
@@ -639,6 +977,7 @@ printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
 
 	lp->irq_map = 0xffff;
 
+#ifndef CONFIG_UCLINUX
 	/* If this is a CS8900 then no pnp soft */
 	if (lp->chip_type != CS8900 &&
 	    /* Check if the ISA IRQ has been set  */
@@ -669,6 +1008,7 @@ printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
 		if (!dev->irq)
 			dev->irq = i;
 	}
+#endif /* CONFIG_UCLINUX */
 
 	printk(" IRQ %d", dev->irq);
 
@@ -705,6 +1045,11 @@ printk("PP_addr=0x%x\n", inw(ioaddr + ADD_PORT));
 	printk("\n");
 	if (net_debug)
 		printk("cs89x0_probe1() successful\n");
+#if defined (CONFIG_PM)
+	cs89x0_pm = pm_register(PM_SYS_DEV, PM_SYS_COM, cs89x0_pm_callback);
+	if (cs89x0_pm)
+		cs89x0_pm->data = dev;
+#endif
 	return 0;
 out2:
 	release_region(ioaddr & ~3, NETCARD_IO_EXTENT);
@@ -880,6 +1225,9 @@ void  __init reset_chip(struct net_device *dev)
 
 	writereg(dev, PP_SelfCTL, readreg(dev, PP_SelfCTL) | POWER_ON_RESET);
 
+#ifdef CONFIG_ARCH_TA7S
+	a7hal_lancs8900_reset( 0 );
+#endif
 	/* wait 30 ms */
 	current->state = TASK_INTERRUPTIBLE;
 	schedule_timeout(30*HZ/1000);
@@ -894,6 +1242,12 @@ void  __init reset_chip(struct net_device *dev)
 		outb((dev->mem_start >> 16) & 0xff, ioaddr + DATA_PORT);
 		outb((dev->mem_start >> 8) & 0xff,   ioaddr + DATA_PORT + 1);
 	}
+#ifdef CONFIG_EXCALIBUR
+/* This is a hack that seems to be necessary for the 2.0 nios core
+ * that must be done after power up resets.
+ */
+	*(char *)dev->base_addr = 0;
+#endif
 	/* Wait until the chip is reset */
 	reset_start_time = jiffies;
 	while( (readreg(dev, PP_SelfST) & INIT_DONE) == 0 && jiffies - reset_start_time < 2)
@@ -907,7 +1261,7 @@ control_dc_dc(struct net_device *dev, int on_not_off)
 	struct net_local *lp = (struct net_local *)dev->priv;
 	unsigned int selfcontrol;
 	int timenow = jiffies;
-	/* control the DC to DC convertor in the SelfControl register.  
+	/* control the DC to DC convertor in the SelfControl register.
 	   Note: This is hooked up to a general purpose pin, might not
 	   always be a DC to DC convertor. */
 
@@ -1080,6 +1434,7 @@ detect_bnc(struct net_device *dev)
 static void
 write_irq(struct net_device *dev, int chip_type, int irq)
 {
+#ifndef CONFIG_UCLINUX
 	int i;
 
 	if (chip_type == CS8900) {
@@ -1094,6 +1449,9 @@ write_irq(struct net_device *dev, int chip_type, int irq)
 	} else {
 		writereg(dev, PP_CS8920_ISAINT, irq);
 	}
+#else
+	writereg(dev, PP_CS8900_ISAINT, 0);
+#endif
 }
 
 /* Open/initialize the board.  This is called (in the current kernel)
@@ -1114,6 +1472,7 @@ net_open(struct net_device *dev)
 	int i;
 	int ret;
 
+#if !defined(CONFIG_UCLINUX)
 #ifndef CONFIG_SH_HICOSH4 /* uses irq#1, so this wont work */
 	if (dev->irq < 2) {
 		/* Allow interrupts to be generated by the chip */
@@ -1165,6 +1524,34 @@ net_open(struct net_device *dev)
 			goto bad_out;
 		}
 	}
+
+#else /* CONFIG_UCLINUX */
+
+	writereg(dev, PP_BusCTL, 0);    /* Disable Interrupts. */
+	write_irq(dev, lp->chip_type, dev->irq);
+#if defined( CONFIG_M68EZ328 ) || defined (CONFIG_M68VZ328)
+  #if  defined (CONFIG_DRAGONIXVZ)
+    *(volatile unsigned short *)0xfffff302 &= ~0x1100; /* -ve pol, level sensitive irq */
+    ret = request_irq(dev->irq, &net_interrupt, IRQ_FLG_STD, dev->name, dev);
+  #else
+
+    #if !defined(CONFIG_DRAGEN2)
+	*(volatile unsigned short *)0xfffff302 |= 0x0080; /* +ve pol irq */
+    #endif
+	ret = request_irq(dev->irq, &net_interrupt, IRQ_FLG_STD, dev->name, dev);
+  #endif
+
+#else
+	ret = request_irq(dev->irq, &net_interrupt, SA_INTERRUPT, dev->name, dev);
+#endif
+
+	if (ret) {
+		if (net_debug)
+			printk(KERN_DEBUG "cs89x0: request_irq(%d) failed\n", dev->irq);
+		goto bad_out;
+	}
+	writereg(dev, PP_BusCTL, readreg(dev, PP_BusCTL)|ENABLE_IRQ );
+#endif /* CONFIG_UCLINUX */
 
 #if ALLOW_DMA
 	if (lp->use_dma) {
@@ -1333,6 +1720,9 @@ net_open(struct net_device *dev)
         netif_start_queue(dev);
 	if (net_debug > 1)
 		printk("cs89x0: net_open() succeeded\n");
+#ifdef CONFIG_PM
+	cs89x0_in_use = 1;
+#endif
 	return 0;
 bad_out:
 	return ret;
@@ -1384,6 +1774,13 @@ static int net_send_packet(struct sk_buff *skb, struct net_device *dev)
 	outsw(dev->base_addr + TX_FRAME_PORT,skb->data,(skb->len+1) >>1);
 	spin_unlock_irq(&lp->lock);
 	dev->trans_start = jiffies;
+	/*
+	 * This is the estimate of how many bytes have been sent,
+	 * we don't realy know if the packet was sent 'till we get
+	 * the TX interrupt with a status of OK. However the interrupt
+	 * routine does not know the length of the packet that was sent.
+	 */
+	lp->stats.tx_bytes += skb->len;
 	dev_kfree_skb (skb);
 
 	/*
@@ -1402,13 +1799,13 @@ static int net_send_packet(struct sk_buff *skb, struct net_device *dev)
 
 /* The typical workload of the driver:
    Handle the network interface interrupts. */
-   
 static void net_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 {
+		
 	struct net_device *dev = dev_id;
 	struct net_local *lp;
 	int ioaddr, status;
- 
+
 	ioaddr = dev->base_addr;
 	lp = (struct net_local *)dev->priv;
 
@@ -1453,8 +1850,14 @@ static void net_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 			if (status & TX_UNDERRUN) {
 				if (net_debug > 0) printk("%s: transmit underrun\n", dev->name);
                                 lp->send_underrun++;
+#if !defined( CONFIG_UCSIMM ) && !defined(CONFIG_UCDIMM) && !defined(CONFIG_DRAGEN2) && !defined(DRAGONIXVZ) && !defined(CWVZ328)
+//vic - FIXME - is this ok for excalibur ?
                                 if (lp->send_underrun == 3) lp->send_cmd = TX_AFTER_381;
                                 else if (lp->send_underrun == 6) lp->send_cmd = TX_AFTER_ALL;
+#else
+								/* uCsimm has trouble keeping up */
+                                lp->send_cmd = TX_AFTER_ALL;
+#endif
 				/* transmit cycle is done, although
 				   frame wasn't transmitted - this
 				   avoids having to wait for the upper
@@ -1580,6 +1983,10 @@ net_close(struct net_device *dev)
 	}
 #endif
 
+#if defined(CONFIG_PM)
+	cs89x0_in_use = 0;
+#endif
+
 	/* Update the statistics here. */
 	return 0;
 }
@@ -1652,6 +2059,41 @@ static int set_mac_address(struct net_device *dev, void *p)
 
 	return 0;
 }
+
+
+
+#ifdef CONFIG_UCLINUX
+static void get_dev_addr(struct net_device *dev)
+{
+#if defined( CONFIG_UCSIMM ) || defined(CONFIG_UCDIMM) || defined(CONFIG_EXCALIBUR)
+	extern unsigned char *cs8900a_hwaddr;
+	memcpy(dev->dev_addr, cs8900a_hwaddr, 6);
+#endif
+#ifdef CONFIG_ARCH_DM270
+	dev->dev_addr[0] = 0x00;
+	dev->dev_addr[1] = 0x10;
+	dev->dev_addr[2] = 0x8b;
+	dev->dev_addr[3] = 0xf1;
+	dev->dev_addr[4] = 0xda;
+	dev->dev_addr[5] = 0x01;
+#endif
+#if defined CONFIG_EZ328LCD  || defined CONFIG_CWVZ328
+	dev->dev_addr[0] = 0x00;
+	dev->dev_addr[1] = 0x10;
+	dev->dev_addr[2] = 0x8b;
+	dev->dev_addr[3] = 0xf1;
+	dev->dev_addr[4] = 0xda;
+	dev->dev_addr[5] = 0x01;
+#endif
+#ifdef CONFIG_DRAGONIXVZ
+	extern unsigned char cs8900a_hwaddr1[6];
+	memcpy(dev->dev_addr, cs8900a_hwaddr1, 6);
+        /* FIXME add second controller support here */
+#endif
+}
+#endif
+
+
 
 #ifdef MODULE
 

@@ -44,7 +44,7 @@ choice 'SuperH system type'					\
 	 CAT68701		CONFIG_SH_CAT68701		\
 	 BigSur			CONFIG_SH_BIGSUR		\
 	 SH2000			CONFIG_SH_SH2000		\
-	 HS7729PCI		CONFIG_SH_HS7729PCI		\
+	 HS7729PCI              CONFIG_SH_HS7729PCI		\
 	 ADX			CONFIG_SH_ADX			\
 	 SecureEdge5410		CONFIG_SH_SECUREEDGE5410	\
 	 KeyWest		CONFIG_SH_KEYWEST		\
@@ -162,6 +162,7 @@ if [ "$CONFIG_SH_SECUREEDGE5410" = "y" ]; then
    define_hex CONFIG_MEMORY_START 08000000
    define_hex CONFIG_MEMORY_SIZE 01000000
    define_bool CONFIG_MEMORY_SET y
+   bool 'Serial console is on ttySC0 (not ttySC1)' CONFIG_SH_CONSOLE_TTYSC0
 fi
 if [ "$CONFIG_SH_HS7729PCI" = "y" ]; then
    define_hex CONFIG_MEMORY_START 0c000000
@@ -173,8 +174,20 @@ if [ "$CONFIG_MEMORY_SET" != "y" ]; then
    hex 'Physical memory start address' CONFIG_MEMORY_START 08000000
    hex 'Physical memory size' CONFIG_MEMORY_SIZE 00400000
 fi
+if [ "$CONFIG_SH_SECUREEDGE5410" = "y" -o "$CONFIG_SH_BIGSUR" = "y" -o \
+     "$CONFIG_SH_KEYWEST" = "y" ]; then
+   bool 'SnapGear romfs/bootarg support' CONFIG_SH_SNAPGEAR
+fi
 
 hex 'Link address offset for booting' CONFIG_BOOT_LINK_OFFSET 00210000
+
+if [ "$CONFIG_SH_BIGSUR" = "y" ]; then
+   bool 'Boot kernel from ROM' CONFIG_SH_ROMBOOT
+fi
+
+if [ "$CONFIG_SH_ROMBOOT" = "y" ]; then
+	hex 'Offset into ROM to store image at' CONFIG_ROM_STORE_OFFSET 100000
+fi
 
 dep_bool 'Enable OC RAM zone (experimental)' CONFIG_SCRATCH_SPACE $CONFIG_EXPERIMENTAL
 bool 'DSP mode support' CONFIG_SH_DSP
@@ -423,6 +436,12 @@ tristate 'Enhanced Real Time Clock Support' CONFIG_RTC
 if [ "$CONFIG_HOTPLUG" = "y" -a "$CONFIG_PCMCIA" != "n" ]; then
    source drivers/char/pcmcia/Config.in
 fi
+bool 'LED Manager support (ledman)' CONFIG_LEDMAN
+bool 'SnapGear Watchdog Support' CONFIG_SNAPDOG
+bool 'Fast Timer Support' CONFIG_FAST_TIMER
+if [ "$CONFIG_SH_DSP" = "y" ]; then
+  bool 'X/Y memory driver for SH3-DSP' CONFIG_XYMEM
+fi
 endmenu
 
 source fs/Config.in
@@ -434,6 +453,7 @@ if [ "$CONFIG_VT" = "y" ]; then
    comment 'Console drivers'
    bool 'VGA text console' CONFIG_VGA_CONSOLE
    bool 'Video mode selection support' CONFIG_VIDEO_SELECT
+   bool 'VGA dummy console' CONFIG_DUMMY_CONSOLE
    if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
       tristate 'MDA text console (dual-headed) (EXPERIMENTAL)' CONFIG_MDA_CONSOLE
       source drivers/video/Config.in
@@ -451,6 +471,8 @@ if [ "$CONFIG_SOUND" != "n" ]; then
 fi
 endmenu
 
+source drivers/usb/Config.in
+
 mainmenu_option next_comment
 comment 'Kernel hacking'
 
@@ -459,6 +481,11 @@ bool 'Use LinuxSH standard BIOS' CONFIG_SH_STANDARD_BIOS
 if [ "$CONFIG_SH_STANDARD_BIOS" = "y" ]; then
    bool 'Early printk support' CONFIG_SH_EARLY_PRINTK
 fi
+bool 'Specify Command Line' CONFIG_COMMAND_LINE
+if [ "$CONFIG_COMMAND_LINE" != "n" ]; then
+  string 'Command Line' CONFIG_COMMAND_LINE_VALUE ""
+fi
+
 bool 'Include KGDB kernel debugger' CONFIG_SH_KGDB
 if [ "$CONFIG_SH_KGDB" = "y" ]; then
    bool ' Enter KGDB on NMI' CONFIG_KGDB_NMI

@@ -1,3 +1,4 @@
+/* $USAGI: proc.c,v 1.8 2003/11/12 05:11:59 yoshfuji Exp $ */
 /* net/atm/proc.c - ATM /proc interface */
 
 /* Written 1995-2000 by Werner Almesberger, EPFL LRC/ICA */
@@ -288,6 +289,10 @@ static struct file_operations arp_seq_fops = {
 };
 #endif
 
+#ifdef CONFIG_ATM_IPV6
+  /* TODO: solve conflicts. */
+#include <net/atmipv6.h>
+#endif /* ifdef CONFIG_ATM_IPV6 */
 
 static void pvc_info(struct atm_vcc *vcc, char *buf, int clip_info)
 {
@@ -308,9 +313,17 @@ static void pvc_info(struct atm_vcc *vcc, char *buf, int clip_info)
 #if defined(CONFIG_ATM_CLIP) || defined(CONFIG_ATM_CLIP_MODULE)
 	if (clip_info && (vcc->push == atm_clip_ops->clip_push)) {
 		struct clip_vcc *clip_vcc = CLIP_VCC(vcc);
+#ifdef CONFIG_ATM_IPV6
+		struct clip6_vcc *clip6_vcc = CLIP6_VCC(vcc);
+#endif
 		struct net_device *dev;
 
+#ifdef CONFIG_ATM_IPV6
+		dev = clip_vcc->entry ? clip_vcc->entry->neigh->dev : 
+		    (clip6_vcc->dev ? clip6_vcc->dev : NULL);
+#else /* i.e., !ifdef CONFIG_ATM_IPV6 */
 		dev = clip_vcc->entry ? clip_vcc->entry->neigh->dev : NULL;
+#endif /* ifdef CONFIG_ATM_IPV6 */
 		off += sprintf(buf+off,"CLIP, Itf:%s, Encap:",
 		    dev ? dev->name : "none?");
 		if (clip_vcc->encap)
@@ -319,6 +332,18 @@ static void pvc_info(struct atm_vcc *vcc, char *buf, int clip_info)
 			off += sprintf(buf+off,"None");
 	}
 #endif
+#ifdef CONFIG_ATM_IPV6
+	if (vcc->push == clip6_push) {
+		struct clip6_vcc *clip6_vcc = CLIP6_VCC(vcc);
+		struct net_device *dev;
+
+		dev = clip6_vcc->dev ? clip6_vcc->dev : NULL;
+		off += sprintf(buf+off,"CLIP6, Itf:%s, Encap:",
+		    dev ? dev->name : "none?");
+		if (clip6_vcc->encap) off += sprintf(buf+off,"LLC/SNAP");
+		else off += sprintf(buf+off,"None");
+	}
+#endif /* ifdef CONFIG_ATM_IPV6 */
 	strcpy(buf+off,"\n");
 }
 

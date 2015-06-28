@@ -143,8 +143,10 @@ extern void br_fdb_insert(struct net_bridge *br,
 /* br_forward.c */
 extern void br_deliver(struct net_bridge_port *to,
 		struct sk_buff *skb);
+extern int br_dev_queue_push_xmit(struct sk_buff *skb);
 extern void br_forward(struct net_bridge_port *to,
 		struct sk_buff *skb);
+extern int br_forward_finish(struct sk_buff *skb);
 extern void br_flood_deliver(struct net_bridge *br,
 		      struct sk_buff *skb,
 		      int clone);
@@ -160,12 +162,13 @@ extern int br_add_if(struct net_bridge *br,
 extern int br_del_if(struct net_bridge *br,
 	      struct net_device *dev);
 extern int br_get_bridge_ifindices(int *indices,
-			    int num);
+			    int num, int user_buf);
 extern void br_get_port_ifindices(struct net_bridge *br,
 			   int *ifindices);
 
 /* br_input.c */
-extern void br_handle_frame(struct sk_buff *skb);
+extern int br_handle_frame_finish(struct sk_buff *skb);
+extern int br_handle_frame(struct sk_buff *skb);
 
 /* br_ioctl.c */
 extern int br_ioctl(struct net_bridge *br,
@@ -174,6 +177,10 @@ extern int br_ioctl(struct net_bridge *br,
 	     unsigned long arg1,
 	     unsigned long arg2);
 extern int br_ioctl_deviceless_stub(unsigned long arg);
+
+/* br_netfilter.c */
+extern int br_netfilter_init(void);
+extern void br_netfilter_fini(void);
 
 /* br_stp.c */
 extern int br_is_root_bridge(struct net_bridge *br);

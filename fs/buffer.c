@@ -3144,3 +3144,17 @@ static int __init bdflush_init(void)
 
 module_init(bdflush_init)
 
+#ifdef MAGIC_ROM_PTR
+int bromptr(kdev_t dev, struct vm_area_struct * vma)
+{
+	extern const struct block_device_operations *get_blkfops(unsigned int);
+
+	if (get_blkfops(MAJOR(dev))->romptr!=NULL)
+	{
+		return get_blkfops(MAJOR(dev))->romptr(dev, vma);
+	}
+	return -ENOSYS;
+}
+#endif /* MAGIC_ROM_PTR */
+
+

@@ -98,7 +98,17 @@
 #include <asm/io.h>
 #endif
 #define INCLUDE_LINUX_LOGO_DATA
+/* 
+ * The #include <asm/linux_logo.h> didn't seem to work for us.
+ * so I use #include <linux/linux_logo.h> if compiling for
+ * our board
+ * (20030314 - hede) 
+ */
+#if defined(CONFIG_FB_COBRA5272) || defined (CONFIG_DRAGEN2) || defined(CONFIG_M68VZ328)
+#include <linux/linux_logo.h>
+#else
 #include <asm/linux_logo.h>
+#endif
 
 #include <video/fbcon.h>
 #include <video/fbcon-mac.h>	/* for 6x11 font on mac */
@@ -572,8 +582,10 @@ static void fbcon_setup(int con, int init, int logo)
     int i, charcnt = 256;
     struct fbcon_font_desc *font;
     
+#ifndef CONFIG_ARCH_IPOD
     if (con != fg_console || (p->fb_info->flags & FBINFO_FLAG_MODULE) ||
         p->type == FB_TYPE_TEXT)
+#endif
     	logo = 0;
 
     p->var.xoffset = p->var.yoffset = p->yscroll = 0;  /* reset wrap/pan */
@@ -2315,6 +2327,28 @@ static int __init fbcon_show_logo( void )
 		}
 	    }
 	    done = 1;
+	}
+#endif
+#if defined(CONFIG_FBCON_CFB12)
+	if ((depth == 12) && (p->visual == FB_VISUAL_TRUECOLOR)) {
+		unsigned char *d, c0, c1;
+
+		src = logo;
+		dst = fb;
+		for (y1 = LOGO_H ; y1  ; y1--, dst += line) {
+			d = dst;
+			for (x1 = LOGO_W >> 1 ; x1 ; x1--) {
+				c0 = *src++ - 0x20;
+				c1 = *src++ - 0x20;
+				fb_writeb (((linux_logo_red[c0]   >> 4) & 0x0F) |
+				          (linux_logo_green[c0] & 0xF0), d++);
+				fb_writeb (((linux_logo_blue[c0]  >> 4) & 0x0F) |
+				          (linux_logo_red[c1]   & 0xF0), d++);
+				fb_writeb (((linux_logo_green[c1] >> 4) & 0x0F) |
+				          (linux_logo_blue[c1]  & 0xF0), d++);
+			}
+		}
+		done = 1;
 	}
 #endif
 #if defined(CONFIG_FBCON_CFB4)

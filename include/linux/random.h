@@ -52,6 +52,7 @@ extern void add_keyboard_randomness(unsigned char scancode);
 extern void add_mouse_randomness(__u32 mouse_data);
 extern void add_interrupt_randomness(int irq);
 extern void add_blkdev_randomness(int major);
+extern void add_true_randomness(__u32 *buf, int nwords);
 
 extern void get_random_bytes(void *buf, int nbytes);
 void generate_random_uuid(unsigned char uuid_out[16]);

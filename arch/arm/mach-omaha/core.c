@@ -23,8 +23,6 @@
 #include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/interrupt.h>
-#include <linux/list.h>
-#include <linux/timer.h>
 #include <linux/init.h>
 
 #include <asm/hardware.h>

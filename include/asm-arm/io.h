@@ -25,6 +25,7 @@
 #include <linux/types.h>
 #include <asm/byteorder.h>
 #include <asm/memory.h>
+#include <asm/byteorder.h>
 #include <asm/arch/hardware.h>
 
 /*
@@ -289,5 +290,6 @@ out:
 #define isa_check_signature(io,sig,len)	(0)
 
 #endif	/* __mem_isa */
+
 #endif	/* __KERNEL__ */
 #endif	/* __ASM_ARM_IO_H */

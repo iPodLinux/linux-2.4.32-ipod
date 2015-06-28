@@ -24,6 +24,7 @@
 #include <linux/kernel_stat.h>
 
 #include <asm/uaccess.h>
+#include <asm/io.h>
 
 /*
  * Timekeeping variables
@@ -495,7 +496,23 @@ static void update_wall_time_one_tick(void)
 	    /* Reduce by this step the amount of time left  */
 	    time_adjust -= time_adjust_step;
 	}
+#if 0
+//#if defined(CONFIG_MTD_NETtel) && !defined(CONFIG_TIMEPEG)
+{
+	extern void *cpu_mmcrp;
+	register long ms;
+	/* Work around for glitching problem of SC520 - Rev A1 silicon */
+	if (cpu_mmcrp) {
+		/* Use SC520 millisecond timer */
+		ms = *((volatile unsigned short *) (cpu_mmcrp + 0xc60));
+		xtime.tv_usec += (ms * 1000) + time_adjust_step;
+	} else {
+		xtime.tv_usec += tick + time_adjust_step;
+	}
+}
+#else
 	xtime.tv_usec += tick + time_adjust_step;
+#endif
 	/*
 	 * Advance the phase, once it gets to one microsecond, then
 	 * advance the tick more.
@@ -707,6 +724,9 @@ void do_timer(struct pt_regs *regs)
 	mark_bh(TIMER_BH);
 	if (TQ_ACTIVE(tq_timer))
 		mark_bh(TQUEUE_BH);
+#ifdef CONFIG_SNAPDOG
+    snapdog_service(regs);
+#endif
 }
 
 #if !defined(__alpha__) && !defined(__ia64__)

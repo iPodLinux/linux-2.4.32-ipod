@@ -66,6 +66,12 @@ void cpu_idle(void *unused)
 
 void machine_restart(char * __unused)
 {
+#ifdef CONFIG_SH_KEYWEST
+	cli();
+	* (unsigned short *) 0xa4000106 = 0xaa5a;
+	* (unsigned char *) 0xa4000126 = 0xff;
+	* (unsigned char *) 0xa4000126 = 0x00;
+#endif
 	/* SR.BL=1 and invoke address error to let CPU reset (manual reset) */
 	asm volatile("ldc %0, sr\n\t"
 		     "mov.l @%1, %0" : : "r" (0x10000000), "r" (0x80000001));
@@ -73,6 +79,12 @@ void machine_restart(char * __unused)
 
 void machine_halt(void)
 {
+#ifdef CONFIG_SH_KEYWEST
+	cli();
+	* (unsigned short *) 0xa4000106 = 0xaa5a;
+	* (unsigned char *) 0xa4000126 = 0xff;
+	* (unsigned char *) 0xa4000126 = 0x00;
+#endif
 	while (1)
 		asm volatile("sleep" : : : "memory");
 }

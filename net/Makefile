@@ -1,3 +1,4 @@
+# $USAGI: Makefile,v 1.15 2003/11/12 05:11:58 yoshfuji Exp $
 #
 # Makefile for the linux networking.
 #
@@ -7,7 +8,7 @@
 
 O_TARGET :=	network.o
 
-mod-subdirs :=	ipv4/netfilter ipv6/netfilter ipx irda bluetooth atm netlink sched core sctp 802
+mod-subdirs :=	ipv4/netfilter ipv6/netfilter bridge/netfilter ipx irda bluetooth atm netlink sched core sctp 802
 export-objs :=	netsyms.o
 
 subdir-y :=	core ethernet
@@ -24,6 +25,16 @@ subdir-$(CONFIG_IP_SCTP)	+= sctp
 ifneq ($(CONFIG_IPV6),n)
 ifneq ($(CONFIG_IPV6),)
 subdir-$(CONFIG_NETFILTER)	+= ipv6/netfilter
+endif
+endif
+
+ifeq ($(CONFIG_IPV6),y)
+subdir-$(CONFIG_IPV6_IPV6_TUNNEL)              += ipv6
+endif
+
+ifneq ($(CONFIG_BRIDGE),n)
+ifneq ($(CONFIG_BRIDGE),)
+subdir-$(CONFIG_BRIDGE)		+= bridge/netfilter
 endif
 endif
 

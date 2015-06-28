@@ -49,6 +49,7 @@
 #include <linux/netdevice.h>
 #include <linux/mm.h>
 #include <linux/socket.h>
+#include <linux/netfilter_logging.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_ipv4/ipt_ULOG.h>
 #include <linux/netfilter_ipv4/lockhelp.h>
@@ -78,6 +79,10 @@ MODULE_PARM_DESC(nlbufsiz, "netlink buffer size");
 static unsigned int flushtimeout = 10 * HZ;
 MODULE_PARM(flushtimeout, "i");
 MODULE_PARM_DESC(flushtimeout, "buffer flush timeout");
+
+static unsigned int nflog = 1;
+MODULE_PARM(nflog, "i");
+MODULE_PARM_DESC(nflog, "register as internal netfilter logging module");
 
 /* global data structures */
 
@@ -155,17 +160,17 @@ struct sk_buff *ulog_alloc_skb(unsigned int size)
 	return skb;
 }
 
-static unsigned int ipt_ulog_target(struct sk_buff **pskb,
-				    unsigned int hooknum,
-				    const struct net_device *in,
-				    const struct net_device *out,
-				    const void *targinfo, void *userinfo)
+static void ipt_ulog_packet(struct sk_buff **pskb,
+			    unsigned int hooknum,
+			    const struct net_device *in,
+			    const struct net_device *out,
+			    const struct ipt_ulog_info *loginfo,
+			    const char *prefix)
 {
 	ulog_buff_t *ub;
 	ulog_packet_msg_t *pm;
 	size_t size, copy_len;
 	struct nlmsghdr *nlh;
-	struct ipt_ulog_info *loginfo = (struct ipt_ulog_info *) targinfo;
 
 	/* ffs == find first bit set, necessary because userspace
 	 * is already shifting groupnumber, but we need unshifted.
@@ -216,7 +221,9 @@ static unsigned int ipt_ulog_target(struct sk_buff **pskb,
 	pm->timestamp_usec = (*pskb)->stamp.tv_usec;
 	pm->mark = (*pskb)->nfmark;
 	pm->hook = hooknum;
-	if (loginfo->prefix[0] != '\0')
+	if (prefix != NULL)
+		strncpy(pm->prefix, prefix, sizeof(pm->prefix));
+	else if (loginfo->prefix[0] != '\0')
 		strncpy(pm->prefix, loginfo->prefix, sizeof(pm->prefix));
 	else
 		*(pm->prefix) = '\0';
@@ -264,8 +271,7 @@ static unsigned int ipt_ulog_target(struct sk_buff **pskb,
 
 	UNLOCK_BH(&ulog_lock);
 
-	return IPT_CONTINUE;
-
+	return;
 
 nlmsg_failure:
 	PRINTR("ipt_ULOG: error during NLMSG_PUT\n");
@@ -274,8 +280,128 @@ alloc_failure:
 	PRINTR("ipt_ULOG: Error building netlink message\n");
 
 	UNLOCK_BH(&ulog_lock);
+}
 
-	return IPT_CONTINUE;
+static unsigned int ipt_ulog_target(struct sk_buff **pskb,
+				    unsigned int hooknum,
+				    const struct net_device *in,
+				    const struct net_device *out,
+				    const void *targinfo, void *userinfo)
+{
+	struct ipt_ulog_info *loginfo = (struct ipt_ulog_info *) targinfo;
+
+	ipt_ulog_packet(pskb, hooknum, in, out, loginfo, NULL);
+ 
+ 	return IPT_CONTINUE;
+}
+ 
+static void ip_ulog_packet_fn(struct sk_buff **pskb,
+			      unsigned int hooknum,
+			      const struct net_device *in,
+			      const struct net_device *out,
+			      const char *prefix)
+{
+	struct ipt_ulog_info loginfo = { 
+		.nl_group = NFLOG_DEFAULT_NLGROUP,
+		.copy_range = 0,
+		.qthreshold = NFLOG_DEFAULT_QTHRESHOLD,
+		.prefix = ""
+	};
+
+	ipt_ulog_packet(pskb, hooknum, in, out, &loginfo, prefix);
+}
+
+static void ip_ulog_fn(char *pfh, size_t len,
+		       const char *prefix)
+{
+	struct ipt_ulog_info loginfo = { 
+		.nl_group = NFLOG_DEFAULT_NLGROUP,
+		.copy_range = 0,
+		.qthreshold = NFLOG_DEFAULT_QTHRESHOLD,
+		.prefix = ""
+	};
+	ulog_buff_t *ub;
+	ulog_packet_msg_t *pm;
+	size_t size;
+	struct nlmsghdr *nlh;
+
+	/* ffs == find first bit set, necessary because userspace
+	 * is already shifting groupnumber, but we need unshifted.
+	 * ffs() returns [1..32], we need [0..31] */
+	unsigned int groupnum = ffs(loginfo.nl_group) - 1;
+
+	size = NLMSG_SPACE(sizeof(*pm) + len);
+
+	ub = &ulog_buffers[groupnum];
+	
+	LOCK_BH(&ulog_lock);
+
+	if (!ub->skb) {
+		if (!(ub->skb = ulog_alloc_skb(size)))
+			goto alloc_failure;
+	} else if (ub->qlen >= loginfo.qthreshold ||
+		   size > skb_tailroom(ub->skb)) {
+		/* either the queue len is too high or we don't have 
+		 * enough room in nlskb left. send it to userspace. */
+
+		ulog_send(groupnum);
+
+		if (!(ub->skb = ulog_alloc_skb(size)))
+			goto alloc_failure;
+	}
+
+	DEBUGP("ipt_ULOG: qlen %d, qthreshold %d\n", ub->qlen, 
+		loginfo.qthreshold);
+
+	/* NLMSG_PUT contains a hidden goto nlmsg_failure !!! */
+	nlh = NLMSG_PUT(ub->skb, 0, ub->qlen, ULOG_NL_EVENT, 
+			size - sizeof(*nlh));
+	ub->qlen++;
+
+	pm = NLMSG_DATA(nlh);
+
+	/* Set fake hook, prefix, timestamp etc. */
+	pm->data_len = len;
+	pm->timestamp_sec = 0;
+	pm->timestamp_usec = 0;
+	pm->mark = 0;
+	pm->hook = 0;
+	strncpy(pm->prefix, prefix, sizeof(pm->prefix));
+	pm->mac_len = 0;
+	pm->indev_name[0] = '\0';
+	pm->outdev_name[0] = '\0';
+	memcpy(pm->payload, pfh, len);
+	
+	/* check if we are building multi-part messages */
+	if (ub->qlen > 1) {
+		ub->lastnlh->nlmsg_flags |= NLM_F_MULTI;
+	}
+
+	/* if threshold is reached, send message to userspace */
+	if (ub->qlen >= loginfo.qthreshold) {
+		if (loginfo.qthreshold > 1)
+			nlh->nlmsg_type = NLMSG_DONE;
+	}
+
+	ub->lastnlh = nlh;
+
+	/* if timer isn't already running, start it */
+	if (!timer_pending(&ub->timer)) {
+		ub->timer.expires = jiffies + flushtimeout;
+		add_timer(&ub->timer);
+	}
+
+	UNLOCK_BH(&ulog_lock);
+
+	return;
+
+nlmsg_failure:
+	PRINTR("ipt_ULOG: error during NLMSG_PUT\n");
+
+alloc_failure:
+	PRINTR("ipt_ULOG: Error building netlink message\n");
+
+	UNLOCK_BH(&ulog_lock);
 }
 
 static int ipt_ulog_checkentry(const char *tablename,
@@ -310,6 +436,8 @@ static struct ipt_target ipt_ulog_reg =
     { {NULL, NULL}, "ULOG", ipt_ulog_target, ipt_ulog_checkentry, NULL,
 THIS_MODULE
 };
+static struct nf_logging_t ip_logging_fn
+= { ip_ulog_packet_fn, ip_ulog_fn };
 
 static int __init init(void)
 {
@@ -337,7 +465,9 @@ static int __init init(void)
 		sock_release(nflognl->socket);
 		return -EINVAL;
 	}
-
+	if (nflog)
+		nf_log_register(PF_INET, &ip_logging_fn);
+	
 	return 0;
 }
 
@@ -348,6 +478,8 @@ static void __exit fini(void)
 
 	DEBUGP("ipt_ULOG: cleanup_module\n");
 
+	if (nflog)
+		nf_log_unregister(PF_INET, &ip_logging_fn);
 	ipt_unregister_target(&ipt_ulog_reg);
 	sock_release(nflognl->socket);
 

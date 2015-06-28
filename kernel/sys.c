@@ -1,3 +1,5 @@
+/* $USAGI: sys.c,v 1.16 2003/11/12 05:11:57 yoshfuji Exp $ */
+
 /*
  *  linux/kernel/sys.c
  *
@@ -1022,6 +1024,11 @@ int in_egroup_p(gid_t grp)
 
 DECLARE_RWSEM(uts_sem);
 
+#ifdef CONFIG_IPV6_NODEINFO
+DECLARE_RWSEM(icmpv6_sethostname_hook_sem);
+void (*icmpv6_sethostname_hook)(struct new_utsname *) = NULL;
+#endif
+
 asmlinkage long sys_newuname(struct new_utsname * name)
 {
 	int errno = 0;
@@ -1047,6 +1054,12 @@ asmlinkage long sys_sethostname(char *name, int len)
 	if (!copy_from_user(tmp, name, len)) {
 		memcpy(system_utsname.nodename, tmp, len);
 		system_utsname.nodename[len] = 0;
+#ifdef CONFIG_IPV6_NODEINFO
+		down_read(&icmpv6_sethostname_hook_sem);
+		if (icmpv6_sethostname_hook)
+			icmpv6_sethostname_hook(&system_utsname);
+		up_read(&icmpv6_sethostname_hook_sem);
+#endif
 		errno = 0;
 	}
 	up_write(&uts_sem);

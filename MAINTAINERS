@@ -2138,6 +2138,23 @@ VIA 82Cxxx AUDIO DRIVER
 P:	Jeff Garzik
 S:	Odd fixes
 
+UCLINUX LINUX WITHOUT MMU SUPPORT
+P:	Greg Ungerer
+M:	gerg@snapgear.com
+P:	David McCullough
+M:	davidm@snapgear.com
+P:	D. Jeff Dionne
+M:	jeff@uclinux.org
+L:	uclinux-dev@uclinux.org
+W:	http://www.uclinux.org
+S:	Maintained
+
+UCLINUX FOR NEC V850
+P:	Miles Bader
+M:	uclinux-v850@lsi.nec.co.jp
+W:	http://www.ic.nec.co.jp/micro/uclinux/eng/
+S:	Supported
+
 VIA RHINE NETWORK DRIVER
 P:	Roger Luethi
 M:	rl@hellgate.ch

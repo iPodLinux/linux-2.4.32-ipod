@@ -231,7 +231,9 @@ static u32 global_outstanding_dmas = 0;
  * enable this define to make use of it. This provides better hotplug
  * support. The mentioned patch is not part of the kernel proper though,
  * because it is considered somewhat of a hack. */
-//#define SBP2_USE_SCSI_ADDREM_HACK
+#ifdef CONFIG_ARCH_IPOD
+#define SBP2_USE_SCSI_ADDREM_HACK
+#endif
 
 
 /*

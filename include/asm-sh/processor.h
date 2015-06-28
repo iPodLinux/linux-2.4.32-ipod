@@ -9,6 +9,7 @@
 
 #include <asm/page.h>
 #include <asm/types.h>
+#include <asm/cache.h>
 #include <linux/threads.h>
 
 /*
@@ -17,15 +18,26 @@
  */
 #define current_text_addr() ({ void *pc; __asm__("mova	1f, %0\n1:":"=z" (pc)); pc; })
 
+/* Core Processor Version Register */
+#define CCN_PVR		0xff000030
+#define CCN_PRR		0xff000044
+
 /*
  *  CPU type and hardware bug flags. Kept separately for each CPU.
  */
 enum cpu_type {
+	CPU_SH7300,		/* Represents 7300 (SH-Mobile) */
+	CPU_SH7604,		/* Represents 7604 */
 	CPU_SH7708,		/* Represents 7707, 7708, 7708S, 7708R, 7709 */
 	CPU_SH7729,		/* Represents 7709A, 7729 */
-	CPU_SH7750,             /* Represents 7750, 7751 */
-	CPU_ST40,		/* Represents ST40STB1 and ST40GX1 */
-        CPU_SH4202,
+	CPU_SH7750,     	/* Represents 7750 */
+	CPU_SH7750S,		/* Represents 7750S */
+	CPU_SH7750R,		/* Represents 7750R */
+	CPU_SH7751,		/* Represents 7751 */
+	CPU_SH7751R,		/* Represents 7751R */
+	CPU_ST40RA,		/* Represents ST40RA (formerly ST40STB1) */
+	CPU_ST40GX1,		/* Represents ST40GX1 */
+    CPU_SH4202,
 	CPU_SH_NONE
 };
 
@@ -38,6 +50,11 @@ struct sh_cpuinfo {
 #ifdef CONFIG_CPU_SUBTYPE_ST40
 	unsigned int memory_clock;
 #endif
+
+	struct cache_info icache;
+	struct cache_info dcache;
+
+	unsigned long flags;
 };
 
 extern struct sh_cpuinfo boot_cpu_data;
@@ -99,6 +116,14 @@ union sh_fpu_union {
 	struct sh_fpu_hard_struct hard;
 	struct sh_fpu_soft_struct soft;
 };
+
+/* 
+ * Processor flags
+ */
+
+#define CPU_HAS_FPU		0x0001	/* Hardware FPU support */
+#define CPU_HAS_P2_FLUSH_BUG	0x0002	/* Need to flush the cache in P2 area */
+#define CPU_HAS_MMU_PAGE_ASSOC	0x0004	/* SH3: TLB way selection bit support */
 
 struct thread_struct {
 	unsigned long sp;

@@ -54,6 +54,7 @@ subdir-$(CONFIG_UFS_FS)		+= ufs
 subdir-$(CONFIG_EFS_FS)		+= efs
 subdir-$(CONFIG_JFFS_FS)	+= jffs
 subdir-$(CONFIG_JFFS2_FS)	+= jffs2
+subdir-$(CONFIG_YAFFS_FS)	+= yaffs
 subdir-$(CONFIG_AFFS_FS)	+= affs
 subdir-$(CONFIG_ROMFS_FS)	+= romfs
 subdir-$(CONFIG_QNX4FS_FS)	+= qnx4
@@ -76,6 +77,8 @@ obj-$(CONFIG_BINFMT_MISC)	+= binfmt_misc.o
 obj-y				+= binfmt_script.o
 
 obj-$(CONFIG_BINFMT_ELF)	+= binfmt_elf.o
+obj-$(CONFIG_BINFMT_ELF_FDPIC)	+= binfmt_elf_fdpic.o
+obj-$(CONFIG_BINFMT_FLAT)	+= binfmt_flat.o
 
 # persistent filesystems
 obj-y += $(join $(subdir-y),$(subdir-y:%=/%.o))

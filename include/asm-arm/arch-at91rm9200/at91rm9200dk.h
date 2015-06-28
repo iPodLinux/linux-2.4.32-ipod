@@ -68,6 +68,7 @@
 #define AT91_SMR_IRQ5	(AT91C_AIC_PRIOR_LOWEST  | AT91C_AIC_SRCTYPE_INT_LEVEL_SENSITIVE)	// Advanced Interrupt Controller (IRQ5)
 #define AT91_SMR_IRQ6	(AT91C_AIC_PRIOR_LOWEST  | AT91C_AIC_SRCTYPE_INT_LEVEL_SENSITIVE)	// Advanced Interrupt Controller (IRQ6)
 
+#define AT91C_CONSOLE_DEFAULT_BAUDRATE 115200	/* default serial console baud-rate */
 
 /*
  * Serial port configuration.

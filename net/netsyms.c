@@ -1,3 +1,5 @@
+/* $USAGI: netsyms.c,v 1.61 2003/12/22 04:36:30 yoshfuji Exp $ */
+
 /*
  *  linux/net/netsyms.c
  *
@@ -67,6 +69,7 @@ extern struct net_proto_family inet_family_ops;
 #include <net/ndisc.h>
 #include <net/transp_v6.h>
 #include <net/addrconf.h>
+#include <net/ip6_route.h>
 
 extern int sysctl_local_port_range[2];
 extern int tcp_port_rover;
@@ -176,6 +179,7 @@ EXPORT_SYMBOL(neigh_table_init);
 EXPORT_SYMBOL(neigh_table_clear);
 EXPORT_SYMBOL(neigh_resolve_output);
 EXPORT_SYMBOL(neigh_connected_output);
+EXPORT_SYMBOL(__neigh_update);
 EXPORT_SYMBOL(neigh_update);
 EXPORT_SYMBOL(neigh_create);
 EXPORT_SYMBOL(neigh_lookup);
@@ -188,12 +192,14 @@ EXPORT_SYMBOL(neigh_seq_next);
 EXPORT_SYMBOL(neigh_seq_stop);
 #ifdef CONFIG_ARPD
 EXPORT_SYMBOL(neigh_app_ns);
+EXPORT_SYMBOL(neigh_app_notify);
 #endif
 #ifdef CONFIG_SYSCTL
 EXPORT_SYMBOL(neigh_sysctl_register);
 #endif
 EXPORT_SYMBOL(pneigh_lookup);
 EXPORT_SYMBOL(pneigh_enqueue);
+EXPORT_SYMBOL(pneigh_delete);
 EXPORT_SYMBOL(neigh_destroy);
 EXPORT_SYMBOL(neigh_parms_alloc);
 EXPORT_SYMBOL(neigh_parms_release);
@@ -301,7 +307,6 @@ EXPORT_SYMBOL(ip_statistics);
 extern int (*dlci_ioctl_hook)(unsigned int, void *);
 EXPORT_SYMBOL(dlci_ioctl_hook);
 #endif
-
 
 #if defined (CONFIG_IPV6_MODULE) || defined (CONFIG_KHTTPD) || defined (CONFIG_KHTTPD_MODULE) || defined (CONFIG_IP_SCTP_MODULE)
 /* inet functions common to v4 and v6 */
@@ -594,6 +599,7 @@ EXPORT_SYMBOL(unregister_tcf_proto_ops);
 #endif
 #ifdef CONFIG_NETFILTER
 #include <linux/netfilter.h>
+#include <linux/netfilter_logging.h>
 EXPORT_SYMBOL(nf_register_hook);
 EXPORT_SYMBOL(nf_unregister_hook);
 EXPORT_SYMBOL(nf_register_sockopt);
@@ -607,6 +613,10 @@ EXPORT_SYMBOL(nf_setsockopt);
 EXPORT_SYMBOL(nf_getsockopt);
 EXPORT_SYMBOL(ip_ct_attach);
 EXPORT_SYMBOL(nf_ct_attach);
+EXPORT_SYMBOL(nf_log_register);
+EXPORT_SYMBOL(nf_log_unregister);
+EXPORT_SYMBOL(nf_log_packet);
+EXPORT_SYMBOL(nf_log);
 #ifdef CONFIG_INET
 #include <linux/netfilter_ipv4.h>
 EXPORT_SYMBOL(ip_route_me_harder);

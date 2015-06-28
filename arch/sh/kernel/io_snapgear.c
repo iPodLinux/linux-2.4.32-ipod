@@ -22,7 +22,7 @@
 #include <asm/pci-sh7751.h>
 
 #ifdef CONFIG_SH_SECUREEDGE5410
-unsigned short secureedge5410_ioport;
+unsigned short secureedge5410_ioport = 0x7e; /* only power LED on by default */
 #endif
 
 /*

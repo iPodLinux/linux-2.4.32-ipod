@@ -16,6 +16,7 @@
 #include <linux/smp_lock.h>
 #include <linux/init.h>
 #include <linux/tqueue.h>
+#include <linux/compiler.h>
 
 /*
    - No shared variables, all the data are CPU local.
@@ -58,20 +59,44 @@ static inline void wakeup_softirqd(unsigned cpu)
 		wake_up_process(tsk);
 }
 
-asmlinkage void do_softirq()
+static inline int softirqd_is_waken(unsigned cpu)
+{
+	struct task_struct * tsk = ksoftirqd_task(cpu);
+
+	return tsk && tsk->state == TASK_RUNNING;
+}
+
+/*
+ * the higher this number the less likely ksoftirqd will be waken by
+ * a short irq flood peak, but the higher unfariness the softirq load
+ * will generate against the regular scheduler tasks.
+ * Each loop will allow one more block to pass through to the
+ * higher layer. If further blocks keeps arriving we giveup and we
+ * offload the work in a scheduler friendly way. After ksoftirqd
+ * is started we will stop wasting time here, so under attack
+ * we're still competely fair.
+ */
+#define MAX_SOFTIRQ_LOOPS 8
+
+static void __do_softirq(int ksoftirqd)
 {
 	int cpu = smp_processor_id();
 	__u32 pending;
 	unsigned long flags;
 	__u32 mask;
+	int loops;
 
 	if (in_interrupt())
 		return;
 
 	local_irq_save(flags);
 
-	pending = softirq_pending(cpu);
+	if (!ksoftirqd && softirqd_is_waken(cpu))
+		pending = 0;
+	else
+		pending = softirq_pending(cpu);
 
+	loops = 0;
 	if (pending) {
 		struct softirq_action *h;
 
@@ -101,11 +126,24 @@ restart:
 		}
 		__local_bh_enable();
 
-		if (pending)
-			wakeup_softirqd(cpu);
+		if (!softirqd_is_waken(cpu)) {
+			if (unlikely(++loops >= MAX_SOFTIRQ_LOOPS)) {
+				if (pending)
+					wakeup_softirqd(cpu);
+			} else {
+				mask = ~pending;
+				local_bh_disable();
+				goto restart;
+			}
+		}
 	}
 
 	local_irq_restore(flags);
+}
+
+asmlinkage void do_softirq()
+{
+	__do_softirq(0);
 }
 
 /*
@@ -386,7 +424,7 @@ static int ksoftirqd(void * __bind_cpu)
 		__set_current_state(TASK_RUNNING);
 
 		while (softirq_pending(cpu)) {
-			do_softirq();
+			__do_softirq(1);
 			if (current->need_resched)
 				schedule();
 		}

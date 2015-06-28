@@ -49,15 +49,19 @@
 #define NF_IP_POST_ROUTING	4
 #define NF_IP_NUMHOOKS		5
 
+#ifdef __KERNEL__
 enum nf_ip_hook_priorities {
 	NF_IP_PRI_FIRST = INT_MIN,
 	NF_IP_PRI_CONNTRACK = -200,
+	NF_IP_PRI_BRIDGE_SABOTAGE_FORWARD = -175,
 	NF_IP_PRI_MANGLE = -150,
 	NF_IP_PRI_NAT_DST = -100,
+	NF_IP_PRI_BRIDGE_SABOTAGE_LOCAL_OUT = -50,
 	NF_IP_PRI_FILTER = 0,
 	NF_IP_PRI_NAT_SRC = 100,
 	NF_IP_PRI_LAST = INT_MAX,
 };
+#endif
 
 /* Arguments for setsockopt SOL_IP: */
 /* 2.0 firewalling went from 64 through 71 (and +256, +512, etc). */

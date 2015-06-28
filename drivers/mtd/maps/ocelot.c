@@ -20,7 +20,7 @@
 #define NVRAM_WINDOW_SIZE 0x00007FF0
 #define NVRAM_BUSWIDTH 1
 
-extern int parse_redboot_partitions(struct mtd_info *master, struct mtd_partition **pparts);
+extern int parse_redboot_partitions(struct mtd_info *master, struct mtd_partition **pparts, unsigned long fis_origin);
 
 static unsigned int cacheflush = 0;
 
@@ -156,7 +156,7 @@ static int __init init_ocelot_maps(void)
 	add_mtd_device(nvram_mtd);
 
 	flash_mtd->module = THIS_MODULE;
-	nr_parts = parse_redboot_partitions(flash_mtd, &parsed_parts);
+	nr_parts = parse_redboot_partitions(flash_mtd, &parsed_parts, 0);
 
 	if (nr_parts)
 		add_mtd_partitions(flash_mtd, parsed_parts, nr_parts);

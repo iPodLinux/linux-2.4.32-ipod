@@ -4,7 +4,6 @@
 #include <linux/netfilter.h>
 #include <linux/ip.h>
 #include <linux/ctype.h>
-#include <net/checksum.h>
 #include <net/tcp.h>
 
 #include <linux/netfilter_ipv4/lockhelp.h>
@@ -228,16 +227,32 @@ static int find_pattern(const char *data, size_t dlen,
 	return 1;
 }
 
+static void update_nl(struct ip_ct_ftp_master *ct_ftp_info, int dir,
+		struct tcphdr *tcph, const char *data, unsigned int datalen)
+{
+	DEBUGP("conntrack_ftp: datalen %u\n", datalen);
+	if ((datalen > 0) && (data[datalen-1] == '\n')) {
+		u_int32_t seq = ntohl(tcph->seq) + datalen;
+
+		DEBUGP("conntrack_ftp: datalen %u ends in \\n\n", datalen);
+		if (!ct_ftp_info->seq_aft_nl_set[dir]
+		    || after(seq, ct_ftp_info->seq_aft_nl[dir])) {
+			DEBUGP("conntrack_ftp: updating nl to %u\n", seq);
+			ct_ftp_info->seq_aft_nl[dir] = seq;
+			ct_ftp_info->seq_aft_nl_set[dir] = 1;
+		}
+	}
+}
+
 /* FIXME: This should be in userspace.  Later. */
 static int help(const struct iphdr *iph, size_t len,
 		struct ip_conntrack *ct,
 		enum ip_conntrack_info ctinfo)
 {
-	/* tcplen not negative guaranteed by ip_conntrack_tcp.c */
+	/* datalen not negative guaranteed by ip_conntrack_proto_tcp.c */
 	struct tcphdr *tcph = (void *)iph + iph->ihl * 4;
 	const char *data = (const char *)tcph + tcph->doff * 4;
-	unsigned int tcplen = len - iph->ihl * 4;
-	unsigned int datalen = tcplen - tcph->doff * 4;
+	unsigned int datalen = len - iph->ihl * 4 - tcph->doff * 4;
 	u_int32_t old_seq_aft_nl;
 	int old_seq_aft_nl_set;
 	u_int32_t array[6] = { 0 };
@@ -257,44 +272,16 @@ static int help(const struct iphdr *iph, size_t len,
 		return NF_ACCEPT;
 	}
 
-	/* Not whole TCP header? */
-	if (tcplen < sizeof(struct tcphdr) || tcplen < tcph->doff*4) {
-		DEBUGP("ftp: tcplen = %u\n", (unsigned)tcplen);
-		return NF_ACCEPT;
-	}
-
-	/* Checksum invalid?  Ignore. */
-	/* FIXME: Source route IP option packets --RR */
-	if (tcp_v4_check(tcph, tcplen, iph->saddr, iph->daddr,
-			 csum_partial((char *)tcph, tcplen, 0))) {
-		DEBUGP("ftp_help: bad csum: %p %u %u.%u.%u.%u %u.%u.%u.%u\n",
-		       tcph, tcplen, NIPQUAD(iph->saddr),
-		       NIPQUAD(iph->daddr));
-		return NF_ACCEPT;
-	}
-
 	LOCK_BH(&ip_ftp_lock);
 	old_seq_aft_nl_set = ct_ftp_info->seq_aft_nl_set[dir];
 	old_seq_aft_nl = ct_ftp_info->seq_aft_nl[dir];
-
-	DEBUGP("conntrack_ftp: datalen %u\n", datalen);
-	if ((datalen > 0) && (data[datalen-1] == '\n')) {
-		DEBUGP("conntrack_ftp: datalen %u ends in \\n\n", datalen);
-		if (!old_seq_aft_nl_set
-		    || after(ntohl(tcph->seq) + datalen, old_seq_aft_nl)) {
-			DEBUGP("conntrack_ftp: updating nl to %u\n",
-			       ntohl(tcph->seq) + datalen);
-			ct_ftp_info->seq_aft_nl[dir] = 
-						ntohl(tcph->seq) + datalen;
-			ct_ftp_info->seq_aft_nl_set[dir] = 1;
-		}
-	}
-	UNLOCK_BH(&ip_ftp_lock);
 
 	if(!old_seq_aft_nl_set ||
 			(ntohl(tcph->seq) != old_seq_aft_nl)) {
 		DEBUGP("ip_conntrack_ftp_help: wrong seq pos %s(%u)\n",
 		       old_seq_aft_nl_set ? "":"(UNSET) ", old_seq_aft_nl);
+		update_nl(ct_ftp_info, dir, tcph, data, datalen);
+		UNLOCK_BH(&ip_ftp_lock);
 		return NF_ACCEPT;
 	}
 
@@ -323,13 +310,17 @@ static int help(const struct iphdr *iph, size_t len,
 		   connection tracking, not packet filtering.
 		   However, it is neccessary for accurate tracking in
 		   this case. */
+		UNLOCK_BH(&ip_ftp_lock);
 		if (net_ratelimit())
 			printk("conntrack_ftp: partial %s %u+%u\n",
 			       search[i].pattern,
 			       ntohl(tcph->seq), datalen);
 		return NF_DROP;
-	} else if (found == 0) /* No match */
+	} else if (found == 0) { /* No match */
+		update_nl(ct_ftp_info, dir, tcph, data, datalen);
+		UNLOCK_BH(&ip_ftp_lock);
 		return NF_ACCEPT;
+	}
 
 	DEBUGP("conntrack_ftp: match `%.*s' (%u bytes at %u)\n",
 	       (int)matchlen, data + matchoff,
@@ -349,17 +340,23 @@ static int help(const struct iphdr *iph, size_t len,
 		   server: it really wants us to connect to a
 		   different IP address.  Simply don't record it for
 		   NAT. */
-		DEBUGP("conntrack_ftp: NOT RECORDING: %u,%u,%u,%u != %u.%u.%u.%u\n",
-		       array[0], array[1], array[2], array[3],
-		       NIPQUAD(ct->tuplehash[dir].tuple.src.ip));
+		if (net_ratelimit())
+			printk("conntrack_ftp: ip mismatch: %u,%u,%u,%u != %u.%u.%u.%u\n",
+			       array[0], array[1], array[2], array[3],
+			       NIPQUAD(ct->tuplehash[dir].tuple.src.ip));
 
 		/* Thanks to Cristiano Lincoln Mattos
 		   <lincoln@cesar.org.br> for reporting this potential
 		   problem (DMZ machines opening holes to internal
 		   networks, or the packet filter itself). */
-		if (!loose)
-			return NF_ACCEPT;
+		if (!loose) {
+			UNLOCK_BH(&ip_ftp_lock);
+			return NF_DROP;
+		}
 	}
+
+	update_nl(ct_ftp_info, dir, tcph, data, datalen);
+	UNLOCK_BH(&ip_ftp_lock);
 
 	exp->tuple = ((struct ip_conntrack_tuple)
 		{ { ct->tuplehash[!dir].tuple.src.ip,

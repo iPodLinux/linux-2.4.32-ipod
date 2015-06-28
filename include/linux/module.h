@@ -203,18 +203,18 @@ extern int try_inc_mod_count(struct module *mod);
 
 /* For documentation purposes only.  */
 
-#define MODULE_AUTHOR(name)						   \
-const char __module_author[] __attribute__((section(".modinfo"))) = 	   \
+#define MODULE_AUTHOR(name)							\
+const char __module_author[] __attribute__((used, section(".modinfo"))) =	\
 "author=" name
 
-#define MODULE_DESCRIPTION(desc)					   \
-const char __module_description[] __attribute__((section(".modinfo"))) =   \
+#define MODULE_DESCRIPTION(desc)						\
+const char __module_description[] __attribute__((used, section(".modinfo"))) =	\
 "description=" desc
 
 /* Could potentially be used by kmod...  */
 
-#define MODULE_SUPPORTED_DEVICE(dev)					   \
-const char __module_device[] __attribute__((section(".modinfo"))) = 	   \
+#define MODULE_SUPPORTED_DEVICE(dev)						\
+const char __module_device[] __attribute__((used, section(".modinfo"))) =	\
 "device=" dev
 
 /* Used to verify parameters given to the module.  The TYPE arg should
@@ -232,12 +232,12 @@ const char __module_device[] __attribute__((section(".modinfo"))) = 	   \
 
 #define MODULE_PARM(var,type)			\
 const char __module_parm_##var[]		\
-__attribute__((section(".modinfo"))) =		\
+__attribute__((used, section(".modinfo"))) =		\
 "parm_" __MODULE_STRING(var) "=" type
 
 #define MODULE_PARM_DESC(var,desc)		\
 const char __module_parm_desc_##var[]		\
-__attribute__((section(".modinfo"))) =		\
+__attribute__((used, section(".modinfo"))) =		\
 "parm_desc_" __MODULE_STRING(var) "=" desc
 
 /*
@@ -376,16 +376,16 @@ extern struct module *module_list;
 
 #define __EXPORT_SYMBOL(sym, str)			\
 const char __kstrtab_##sym[]				\
-__attribute__((section(".kstrtab"))) = str;		\
-const struct module_symbol __ksymtab_##sym 		\
-__attribute__((section("__ksymtab"))) =			\
+__attribute__((used, section(".kstrtab"))) = str;	\
+const struct module_symbol __ksymtab_##sym		\
+__attribute__((used, section("__ksymtab"))) =		\
 { (unsigned long)&sym, __kstrtab_##sym }
 
-#define __EXPORT_SYMBOL_GPL(sym, str)			\
-const char __kstrtab_##sym[]				\
-__attribute__((section(".kstrtab"))) = "GPLONLY_" str;	\
-const struct module_symbol __ksymtab_##sym		\
-__attribute__((section("__ksymtab"))) =			\
+#define __EXPORT_SYMBOL_GPL(sym, str)				\
+const char __kstrtab_##sym[]					\
+__attribute__((used, section(".kstrtab"))) = "GPLONLY_" str;	\
+const struct module_symbol __ksymtab_##sym			\
+__attribute__((used, section("__ksymtab"))) =			\
 { (unsigned long)&sym, __kstrtab_##sym }
 
 #if defined(MODVERSIONS) || !defined(CONFIG_MODVERSIONS)

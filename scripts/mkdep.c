@@ -523,7 +523,9 @@ cee_CONFIG_word:
 void do_depend(const char * filename, const char * command)
 {
 	int mapsize;
+#ifndef __CYGWIN__
 	int pagesizem1 = getpagesize()-1;
+#endif
 	int fd;
 	struct stat st;
 	char * map;
@@ -542,7 +544,9 @@ void do_depend(const char * filename, const char * command)
 	}
 
 	mapsize = st.st_size;
+#ifndef __CYGWIN__
 	mapsize = (mapsize+pagesizem1) & ~pagesizem1;
+#endif
 	map = mmap(NULL, mapsize, PROT_READ, MAP_PRIVATE, fd, 0);
 	if ((long) map == -1) {
 		perror("mkdep: mmap");

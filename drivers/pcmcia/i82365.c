@@ -29,6 +29,9 @@
     the provisions above, a recipient may use your version of this
     file under either the MPL or the GPL.
     
+       11/05/2004	Mark Salter <msalter@redhat.com>
+			Support MB93493 on FR-V hardware.
+
 ======================================================================*/
 
 #include <linux/module.h>
@@ -50,6 +53,9 @@
 #include <asm/bitops.h>
 #include <asm/segment.h>
 #include <asm/system.h>
+#ifdef CONFIG_FUJITSU_MB93493
+#include <asm/mb93493-regs.h>
+#endif
 
 #include <pcmcia/version.h>
 #include <pcmcia/cs_types.h>
@@ -72,6 +78,12 @@ static const char *version =
 "i82365.c 1.265 1999/11/10 18:36:21 (David Hinds)";
 #else
 #define DEBUG(n, args...) do { } while (0)
+#endif
+
+#ifdef CONFIG_FUJITSU_MB93493
+#define MB93493_BASE ((u_long)__addr_MB93493_PCMCIA(0))
+#else
+#define MB93493_BASE 0;
 #endif
 
 static void irq_count(int, void *, struct pt_regs *);
@@ -193,13 +205,14 @@ static struct timer_list poll_timer;
 typedef enum pcic_id {
     IS_I82365A, IS_I82365B, IS_I82365DF,
     IS_IBM, IS_RF5Cx96, IS_VLSI, IS_VG468, IS_VG469,
-    IS_PD6710, IS_PD672X, IS_VT83C469,
+    IS_PD6710, IS_PD672X, IS_VT83C469, IS_MB93493
 } pcic_id;
 
 /* Flags for classifying groups of controllers */
 #define IS_VADEM	0x0001
 #define IS_CIRRUS	0x0002
 #define IS_VIA		0x0010
+#define IS_FUJITSU      0x0020
 #define IS_UNKNOWN	0x0400
 #define IS_VG_PWR	0x0800
 #define IS_DF_PWR	0x1000
@@ -222,6 +235,7 @@ static pcic_t pcic[] = {
     { "Cirrus PD6710", IS_CIRRUS },
     { "Cirrus PD672x", IS_CIRRUS },
     { "VIA VT83C469", IS_CIRRUS|IS_VIA },
+    { "Fujitsu MB93493", IS_FUJITSU },
 };
 
 #define PCIC_COUNT	(sizeof(pcic)/sizeof(pcic_t))
@@ -456,7 +470,8 @@ static void set_bridge_state(u_short s)
 	i365_set(s, I365_GBLCTL, 0x00);
 	i365_set(s, I365_GENCTL, 0x00);
     }
-    i365_bflip(s, I365_INTCTL, I365_INTR_ENA, t->intr);
+    if (!(t->flags & IS_FUJITSU))
+	i365_bflip(s, I365_INTCTL, I365_INTR_ENA, t->intr);
     if (t->flags & IS_VADEM)
 	vg46x_set_state(s);
 }
@@ -589,7 +604,7 @@ static int to_ns(int cycles)
 
 /*====================================================================*/
 
-static int __init identify(u_short port, u_short sock)
+static int __init identify(ioaddr_t port, u_short sock)
 {
     u_char val;
     int type = -1;
@@ -605,8 +620,9 @@ static int __init identify(u_short port, u_short sock)
 	mdelay(50);
     }
     
-    if ((val = i365_get(sockets, I365_IDENT)) & 0x70)
+    if ((val = i365_get(sockets, I365_IDENT)) & 0x70) {
 	return -1;
+    }
     switch (val) {
     case 0x82:
 	type = IS_I82365A; break;
@@ -630,6 +646,10 @@ static int __init identify(u_short port, u_short sock)
 
     /* Check for Ricoh chips */
     val = i365_get(sockets, RF5C_CHIP_ID);
+#ifdef CONFIG_FUJITSU_MB93493
+    if (port == i365_base && val == 0xb2)
+	return IS_MB93493;
+#endif
     if ((val == RF5C_CHIP_RF5C296) || (val == RF5C_CHIP_RF5C396))
 	type = IS_RF5Cx96;
     
@@ -668,7 +688,9 @@ static int __init is_alive(u_short sock)
     if ((stat & I365_CS_DETECT) && (stat & I365_CS_POWERON) &&
 	(i365_get(sock, I365_INTCTL) & I365_PC_IOCARD) &&
 	(i365_get(sock, I365_ADDRWIN) & I365_ENA_IO(0)) &&
+#ifndef CONFIG_FUJITSU_MB93493
 	(check_region(start, stop-start+1) != 0) &&
+#endif
 	((start & 0xfeef) != 0x02e8))
 	return 1;
     else
@@ -677,7 +699,7 @@ static int __init is_alive(u_short sock)
 
 /*====================================================================*/
 
-static void __init add_socket(u_short port, int psock, int type)
+static void __init add_socket(ioaddr_t port, int psock, int type)
 {
     socket[sockets].ioaddr = port;
     socket[sockets].psock = psock;
@@ -703,6 +725,13 @@ static void __init add_pcic(int ns, int type)
 	       t->ioaddr, t->psock*0x40);
     printk(", %d socket%s\n", ns, ((ns > 1) ? "s" : ""));
 
+#ifdef CONFIG_FUJITSU_MB93493
+    if (type == IS_MB93493) {
+	do_scan = 0;
+	printk("  irq %d, ", IRQ_MB93493_PCMCIA);
+    }
+#else
+
     /* Set host options, build basic interrupt mask */
     if (irq_list[0] == -1)
 	mask = irq_mask;
@@ -720,6 +749,7 @@ static void __init add_pcic(int ns, int type)
 	if ((tmp & (tmp-1)) == 0)
 	    poll_interval = HZ;
     }
+#endif
     /* Only try an ISA cs_irq if this is the first controller */
     if (!grab_irq && (cs_irq || !poll_interval)) {
 	/* Avoid irq 12 unless it is explicitly requested */
@@ -746,6 +776,11 @@ static void __init add_pcic(int ns, int type)
     /* Update socket interrupt information, capabilities */
     for (i = 0; i < ns; i++) {
 	t[i].cap.features |= SS_CAP_PCCARD;
+	if (type == IS_MB93493) {
+	    t[i].cap.features |= (SS_CAP_PAGE_REGS | SS_CAP_STATIC_MAP);
+	    t[i].cap.io_offset = MB93493_BASE + 0xe000;
+	    t[i].cap.pci_irq = IRQ_MB93493_PCMCIA;
+	}
 	t[i].cap.map_size = 0x1000;
 	t[i].cap.irq_mask = mask;
 	t[i].cs_irq = isa_irq;
@@ -806,11 +841,13 @@ static void __init isa_probe(void)
     }
 #endif
 
+#ifndef CONFIG_FUJITSU_MB93493
     if (check_region(i365_base, 2) != 0) {
 	if (sockets == 0)
 	    printk("port conflict at %#x\n", i365_base);
 	return;
     }
+#endif
 
     id = identify(i365_base, 0);
     if ((id == IS_I82365DF) && (identify(i365_base, 1) != id)) {
@@ -1056,7 +1093,10 @@ static int i365_get_socket(u_short sock, socket_state_t *state)
     reg = i365_get(sock, I365_INTCTL);
     state->flags |= (reg & I365_PC_RESET) ? 0 : SS_RESET;
     if (reg & I365_PC_IOCARD) state->flags |= SS_IOCARD;
-    state->io_irq = reg & I365_IRQ_MASK;
+    if (t->flags & IS_FUJITSU)
+	state->io_irq = t->cap.pci_irq;
+    else
+	state->io_irq = reg & I365_IRQ_MASK;
     
     /* speaker control */
     if (t->flags & IS_CIRRUS) {
@@ -1097,12 +1137,19 @@ static int i365_set_socket(u_short sock, socket_state_t *state)
     
     /* IO card, RESET flag, IO interrupt */
     reg = t->intr;
-    reg |= state->io_irq;
+    if (t->flags & IS_FUJITSU) {
+	if (state->io_irq == t->cap.pci_irq)
+	    reg |= 0x01 ;
+    } else
+	reg |= state->io_irq;
     reg |= (state->flags & SS_RESET) ? 0 : I365_PC_RESET;
     reg |= (state->flags & SS_IOCARD) ? I365_PC_IOCARD : 0;
     i365_set(sock, I365_INTCTL, reg);
     
-    reg = I365_PWR_NORESET;
+    if (t->flags & IS_FUJITSU)
+	reg = 0;
+    else
+	reg = I365_PWR_NORESET;
     if (state->flags & SS_PWR_AUTO) reg |= I365_PWR_AUTO;
     if (state->flags & SS_OUTPUT_ENA) reg |= I365_PWR_OUT;
 
@@ -1154,14 +1201,17 @@ static int i365_set_socket(u_short sock, socket_state_t *state)
     } else {
 	switch (state->Vcc) {
 	case 0:		break;
-	case 50:	reg |= I365_VCC_5V; break;
+	case 33:        if ((t->flags & IS_FUJITSU)) reg |= I365_VCC_3V; break;
+	case 50:	if ((t->flags & IS_FUJITSU)) reg |= I365_VCC_5V; break;
 	default:	return -EINVAL;
 	}
-	switch (state->Vpp) {
-	case 0:		break;
-	case 50:	reg |= I365_VPP1_5V | I365_VPP2_5V; break;
-	case 120:	reg |= I365_VPP1_12V | I365_VPP2_12V; break;
-	default:	return -EINVAL;
+	if (!(t->flags & IS_FUJITSU)) {
+	    switch (state->Vpp) {
+	    case 0:	break;
+	    case 50:	reg |= I365_VPP1_5V | I365_VPP2_5V; break;
+	    case 120:	reg |= I365_VPP1_12V | I365_VPP2_12V; break;
+	    default:	return -EINVAL;
+	    }
 	}
     }
     
@@ -1169,14 +1219,23 @@ static int i365_set_socket(u_short sock, socket_state_t *state)
 	i365_set(sock, I365_POWER, reg);
 
     /* Chipset-specific functions */
+    if (t->flags & IS_FUJITSU) {
+	reg = i365_get(sock, I365_MODECTL2);
+	if(state->Vcc == 33)
+	    reg |= 1; /* bit 0 (VOLSL) : 0=5V , 1=3.3V */
+	else
+	    reg &= ~1;
+	i365_set(sock, I365_MODECTL2, reg);
+    }
+
     if (t->flags & IS_CIRRUS) {
 	/* Speaker control */
 	i365_bflip(sock, PD67_MISC_CTL_1, PD67_MC1_SPKR_ENA,
 		   state->flags & SS_SPKR_ENA);
     }
-    
+
     /* Card status change interrupt mask */
-    reg = t->cs_irq << 4;
+    reg = (t->flags & IS_FUJITSU) ? 0 : (t->cs_irq << 4);
     if (state->csc_mask & SS_DETECT) reg |= I365_CSC_DETECT;
     if (state->flags & SS_IOCARD) {
 	if (state->csc_mask & SS_STSCHG) reg |= I365_CSC_STSCHG;
@@ -1196,6 +1255,7 @@ static int i365_set_socket(u_short sock, socket_state_t *state)
 static int i365_get_io_map(u_short sock, struct pccard_io_map *io)
 {
     u_char map, ioctl, addr;
+    u_short flags = socket[sock].flags;
     
     map = io->map;
     if (map > 1) return -EINVAL;
@@ -1203,9 +1263,13 @@ static int i365_get_io_map(u_short sock, struct pccard_io_map *io)
     io->stop = i365_get_pair(sock, I365_IO(map)+I365_W_STOP);
     ioctl = i365_get(sock, I365_IOCTL);
     addr = i365_get(sock, I365_ADDRWIN);
-    io->speed = to_ns(ioctl & I365_IOCTL_WAIT(map)) ? 1 : 0;
+    if (flags & IS_FUJITSU)
+	io->speed = to_ns((i365_get(sock, map ? I365_IOCMDW1 : I365_IOCMDW0) >> 3) & 0x1f);
+    else
+	io->speed = to_ns(ioctl & I365_IOCTL_WAIT(map)) ? 1 : 0;
     io->flags  = (addr & I365_ENA_IO(map)) ? MAP_ACTIVE : 0;
-    io->flags |= (ioctl & I365_IOCTL_0WS(map)) ? MAP_0WS : 0;
+    if (!(flags & IS_FUJITSU))
+	io->flags |= (ioctl & I365_IOCTL_0WS(map)) ? MAP_0WS : 0;
     io->flags |= (ioctl & I365_IOCTL_16BIT(map)) ? MAP_16BIT : 0;
     io->flags |= (ioctl & I365_IOCTL_IOCS16(map)) ? MAP_AUTOSZ : 0;
     DEBUG(1, "i82365: GetIOMap(%d, %d) = %#2.2x, %d ns, "
@@ -1219,10 +1283,19 @@ static int i365_get_io_map(u_short sock, struct pccard_io_map *io)
 static int i365_set_io_map(u_short sock, struct pccard_io_map *io)
 {
     u_char map, ioctl;
+    u_short flags = socket[sock].flags;
     
     DEBUG(1, "i82365: SetIOMap(%d, %d, %#2.2x, %d ns, "
 	  "%#4.4x-%#4.4x)\n", sock, io->map, io->flags,
 	  io->speed, io->start, io->stop);
+
+    if (flags & IS_FUJITSU) {
+	io->start |= MB93493_BASE;
+	io->start ^= MB93493_BASE;
+	io->stop |= MB93493_BASE;
+	io->stop ^= MB93493_BASE;
+    }
+
     map = io->map;
     if ((map > 1) || (io->start > 0xffff) || (io->stop > 0xffff) ||
 	(io->stop < io->start)) return -EINVAL;
@@ -1232,14 +1305,40 @@ static int i365_set_io_map(u_short sock, struct pccard_io_map *io)
     i365_set_pair(sock, I365_IO(map)+I365_W_START, io->start);
     i365_set_pair(sock, I365_IO(map)+I365_W_STOP, io->stop);
     ioctl = i365_get(sock, I365_IOCTL) & ~I365_IOCTL_MASK(map);
-    if (io->speed) ioctl |= I365_IOCTL_WAIT(map);
-    if (io->flags & MAP_0WS) ioctl |= I365_IOCTL_0WS(map);
+
+    if (flags & IS_FUJITSU) {
+	u_char cycle, iosetup = i365_get(sock, I365_IOSETUP);
+
+	cycle = to_cycles(io->speed);
+	if (cycle > 0x07)
+		cycle = 0x07;
+	if (map == 0)
+	    iosetup |= (cycle << 4) & 0x70;
+	else
+	    iosetup |= cycle & 0x07;
+	i365_set(sock, I365_IOSETUP, iosetup);
+
+	cycle = to_cycles(io->speed);
+	if (cycle > 0x1f)
+		cycle = 0x1f;
+	i365_set(sock, (map ? I365_IOCMDW1 : I365_IOCMDW0), cycle << 3);
+    } else {
+	if (io->speed) ioctl |= I365_IOCTL_WAIT(map);
+	if (io->flags & MAP_0WS) ioctl |= I365_IOCTL_0WS(map);
+    }
+
     if (io->flags & MAP_16BIT) ioctl |= I365_IOCTL_16BIT(map);
     if (io->flags & MAP_AUTOSZ) ioctl |= I365_IOCTL_IOCS16(map);
     i365_set(sock, I365_IOCTL, ioctl);
     /* Turn on the window if necessary */
     if (io->flags & MAP_ACTIVE)
 	i365_bset(sock, I365_ADDRWIN, I365_ENA_IO(map));
+
+    if (socket[sock].flags & IS_FUJITSU) {
+	io->start |= MB93493_BASE;
+	io->stop |= MB93493_BASE;
+    }
+
     return 0;
 } /* i365_set_io_map */
 
@@ -1249,6 +1348,7 @@ static int i365_get_mem_map(u_short sock, struct pccard_mem_map *mem)
 {
     u_short base, i;
     u_char map, addr;
+    u_short flags = socket[sock].flags;
     
     map = mem->map;
     if (map > 4) return -EINVAL;
@@ -1258,13 +1358,19 @@ static int i365_get_mem_map(u_short sock, struct pccard_mem_map *mem)
     
     i = i365_get_pair(sock, base+I365_W_START);
     mem->flags |= (i & I365_MEM_16BIT) ? MAP_16BIT : 0;
-    mem->flags |= (i & I365_MEM_0WS) ? MAP_0WS : 0;
+    if (!(flags & IS_FUJITSU))
+	mem->flags |= (i & I365_MEM_0WS) ? MAP_0WS : 0;
     mem->sys_start = ((u_long)(i & 0x0fff) << 12);
     
     i = i365_get_pair(sock, base+I365_W_STOP);
-    mem->speed  = (i & I365_MEM_WS0) ? 1 : 0;
-    mem->speed += (i & I365_MEM_WS1) ? 2 : 0;
-    mem->speed = to_ns(mem->speed);
+    if (flags & IS_FUJITSU) {
+	mem->speed = (i & 0xf000) >> 12;
+	mem->speed = to_ns(mem->speed);
+    } else {
+	mem->speed  = (i & I365_MEM_WS0) ? 1 : 0;
+	mem->speed += (i & I365_MEM_WS1) ? 2 : 0;
+	mem->speed = to_ns(mem->speed);
+    }
     mem->sys_stop = ((u_long)(i & 0x0fff) << 12) + 0x0fff;
     
     i = i365_get_pair(sock, base+I365_W_OFF);
@@ -1280,21 +1386,29 @@ static int i365_get_mem_map(u_short sock, struct pccard_mem_map *mem)
 } /* i365_get_mem_map */
 
 /*====================================================================*/
-  
 static int i365_set_mem_map(u_short sock, struct pccard_mem_map *mem)
 {
-    u_short base, i;
+    u_short base, i, flags;
     u_char map;
     
     DEBUG(1, "i82365: SetMemMap(%d, %d, %#2.2x, %d ns, %#5.5lx-%#5.5"
 	  "lx, %#5.5x)\n", sock, mem->map, mem->flags, mem->speed,
 	  mem->sys_start, mem->sys_stop, mem->card_start);
 
+    flags = socket[sock].flags;
+
+    if (flags & IS_FUJITSU) {
+	mem->sys_start |= MB93493_BASE;
+	mem->sys_stop |= MB93493_BASE;
+	mem->sys_start ^= MB93493_BASE;
+	mem->sys_stop ^= MB93493_BASE;
+    }
+
     map = mem->map;
     if ((map > 4) || (mem->card_start > 0x3ffffff) ||
 	(mem->sys_start > mem->sys_stop) || (mem->speed > 1000))
 	return -EINVAL;
-    if ((mem->sys_start > 0xffffff) || (mem->sys_stop > 0xffffff))
+    if (!(flags & IS_FUJITSU) && ((mem->sys_start > 0xffffff) || (mem->sys_stop > 0xffffff)))
 	return -EINVAL;
 	
     /* Turn off the window before changing anything */
@@ -1304,15 +1418,30 @@ static int i365_set_mem_map(u_short sock, struct pccard_mem_map *mem)
     base = I365_MEM(map);
     i = (mem->sys_start >> 12) & 0x0fff;
     if (mem->flags & MAP_16BIT) i |= I365_MEM_16BIT;
-    if (mem->flags & MAP_0WS) i |= I365_MEM_0WS;
+    if (!(flags & IS_FUJITSU) && (mem->flags & MAP_0WS)) i |= I365_MEM_0WS;
     i365_set_pair(sock, base+I365_W_START, i);
     
-    i = (mem->sys_stop >> 12) & 0x0fff;
-    switch (to_cycles(mem->speed)) {
-    case 0:	break;
-    case 1:	i |= I365_MEM_WS0; break;
-    case 2:	i |= I365_MEM_WS1; break;
-    default:	i |= I365_MEM_WS1 | I365_MEM_WS0; break;
+    if (flags & IS_FUJITSU) {
+	u_char cycle = to_cycles(mem->speed);
+
+	if (cycle > 0x000f)
+	    cycle = 0x000f;
+	i |= (cycle & 0x000f) << 12;
+	switch (map) {
+	case 0: i365_set(sock, I365_MEMCMDW0, to_cycles(mem->speed)); break;
+	case 1: i365_set(sock, I365_MEMCMDW1, to_cycles(mem->speed)); break;
+	case 2: i365_set(sock, I365_MEMCMDW2, to_cycles(mem->speed)); break;
+	case 3: i365_set(sock, I365_MEMCMDW3, to_cycles(mem->speed)); break;
+	default: break;
+	}
+    } else {
+	i = (mem->sys_stop >> 12) & 0x0fff;
+	switch (to_cycles(mem->speed)) {
+	case 0:	    break;
+	case 1:	    i |= I365_MEM_WS0; break;
+	case 2:	    i |= I365_MEM_WS1; break;
+	default:    i |= I365_MEM_WS1 | I365_MEM_WS0; break;
+	}
     }
     i365_set_pair(sock, base+I365_W_STOP, i);
     
@@ -1324,6 +1453,12 @@ static int i365_set_mem_map(u_short sock, struct pccard_mem_map *mem)
     /* Turn on the window if necessary */
     if (mem->flags & MAP_ACTIVE)
 	i365_bset(sock, I365_ADDRWIN, I365_ENA_MEM(map));
+
+    if (flags & IS_FUJITSU) {
+	mem->sys_start |= MB93493_BASE;
+	mem->sys_stop |=  MB93493_BASE;
+    }
+
     return 0;
 } /* i365_set_mem_map */
 
@@ -1483,6 +1618,14 @@ static int pcic_init(unsigned int s)
 		mem.map = i;
 		pcic_set_mem_map(s, &mem);
 	}
+	if (socket[s].flags & IS_FUJITSU) {
+		io.map = 0;
+		io.flags = MAP_ACTIVE | MAP_AUTOSZ;
+		io.speed = 120;
+		io.start = 0xe000;
+		io.stop =  0xe000 + 0x1000;
+		pcic_set_io_map(s, &io);
+	}
 	return 0;
 }
 
@@ -1520,6 +1663,14 @@ static int __init init_i82365(void)
     DEBUG(0, "%s\n", version);
     printk(KERN_INFO "Intel ISA PCIC probe: ");
     sockets = 0;
+
+#ifdef CONFIG_FUJITSU_MB93493
+    i365_base = __region_CS3 + 0x400;
+    __set_MB93493_LBSER(__get_MB93493_LBSER() | MB93493_LBSER_PCMCIA);
+    cycle_time = 10000000 / (__ext_bus_clock_speed_HZ / 1000);
+    cycle_time = (cycle_time + 5) / 10;
+    wmb();
+#endif
 
     isa_probe();
 

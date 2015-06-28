@@ -1,7 +1,7 @@
 #
 # linux/drivers/chips/Makefile
 #
-# $Id: Makefile,v 1.8 2002/01/10 20:27:40 eric Exp $
+# $Id: Makefile,v 1.1.1.1 2003/10/24 09:52:18 bas Exp $
 
 O_TARGET	:= chipslink.o
 
@@ -16,6 +16,7 @@ export-objs	:= chipreg.o gen_probe.o
 
 obj-$(CONFIG_MTD)		+= chipreg.o
 obj-$(CONFIG_MTD_AMDSTD)	+= amd_flash.o 
+obj-$(CONFIG_MTD_PSD4256G)	+= stm_flash.o
 obj-$(CONFIG_MTD_CFI)		+= cfi_probe.o
 obj-$(CONFIG_MTD_CFI_STAA)	+= cfi_cmdset_0020.o
 obj-$(CONFIG_MTD_CFI_AMDSTD)	+= cfi_cmdset_0002.o

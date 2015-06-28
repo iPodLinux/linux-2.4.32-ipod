@@ -71,7 +71,7 @@ unsigned long (*gettimeoffset)(void) = dummy_gettimeoffset;
 /*
  * Handle kernel profile stuff...
  */
-static inline void do_profile(struct pt_regs *regs)
+inline void do_profile(struct pt_regs *regs)
 {
 	if (!user_mode(regs) &&
 	    prof_buffer &&
@@ -136,7 +136,7 @@ EXPORT_SYMBOL(leds_event);
 #endif
 
 #ifdef CONFIG_LEDS_TIMER
-static void do_leds(void)
+void do_leds(void)
 {
 	static unsigned int count = 50;
 

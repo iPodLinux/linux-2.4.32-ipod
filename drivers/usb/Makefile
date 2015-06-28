@@ -49,6 +49,7 @@ obj-	:=
 
 # Each configuration option enables a list of files.
 
+obj-$(CONFIG_USB_EDB7312)	+= edb7312-usb.o
 obj-$(CONFIG_USB)		+= usbcore.o
 
 # EHCI should initialize/link before the other HCDs
@@ -75,6 +76,24 @@ endif
 subdir-$(CONFIG_USB_OHCI)	+= host
 ifeq ($(CONFIG_USB_OHCI),y)
 	obj-y += host/usb-ohci.o
+endif
+subdir-$(CONFIG_USB_OHCI_SA1111)+= host
+ifeq ($(CONFIG_USB_OHCI_SA1111),y)
+	obj-y += host/usb-ohci.o host/usb-ohci-sa1111.o
+endif
+subdir-$(CONFIG_USB_OHCI_WINBOND)+= host
+ifeq ($(CONFIG_USB_OHCI_WINBOND),y)
+	obj-y += host/usb-ohci.o host/usb-ohci-w90n740.o
+endif
+subdir-$(CONFIG_USB_OHCI_EP93XX)+= host
+ifeq ($(CONFIG_USB_OHCI_EP93XX),y)
+	obj-y += host/usb-ohci.o host/usb-ohci-ep93xx.o
+endif
+subdir-$(CONFIG_USB_OHCI_AT91)	+= host
+ifeq ($(CONFIG_USB_OHCI_AT91),y)
+  ifneq ($(CONFIG_USB_OHCI),y)
+	obj-y += host/usb-ohci.o
+  endif
 endif
 
 subdir-$(CONFIG_USB_SL811HS_ALT)	+= host

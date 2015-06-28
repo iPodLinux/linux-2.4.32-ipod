@@ -1,6 +1,7 @@
 #ifndef _LINUX_ELF_H
 #define _LINUX_ELF_H
 
+#include <linux/sched.h>
 #include <linux/types.h>
 #include <asm/elf.h>
 
@@ -29,8 +30,12 @@ typedef __s64	Elf64_Sxword;
 #define PT_NOTE    4
 #define PT_SHLIB   5
 #define PT_PHDR    6
+#define PT_TLS     7               /* Thread local storage segment */
+#define PT_LOOS    0x60000000      /* OS-specific */
+#define PT_HIOS    0x6fffffff      /* OS-specific */
 #define PT_LOPROC  0x70000000
 #define PT_HIPROC  0x7fffffff
+#define PT_GNU_EH_FRAME		0x6474e550
 #define PT_MIPS_REGINFO		0x70000000
 #define PT_MIPS_OPTIONS		0x70000001
 
@@ -43,6 +48,37 @@ typedef __s64	Elf64_Sxword;
 #define EF_MIPS_32BITMODE 0x00000100
 #define EF_MIPS_ABI       0x0000f000
 #define EF_MIPS_ARCH      0xf0000000
+
+#define EF_FRV_GPR_MASK         0x00000003 /* mask for # of gprs */
+#define EF_FRV_GPR32		0x00000001 /* Only uses GR on 32-register */
+#define EF_FRV_GPR64		0x00000002 /* Only uses GR on 64-register */
+#define EF_FRV_FPR_MASK         0x0000000c /* mask for # of fprs */
+#define EF_FRV_FPR32		0x00000004 /* Only uses FR on 32-register */
+#define EF_FRV_FPR64		0x00000008 /* Only uses FR on 64-register */
+#define EF_FRV_FPR_NONE		0x0000000C /* Uses software floating-point */
+#define EF_FRV_DWORD_MASK       0x00000030 /* mask for dword support */
+#define EF_FRV_DWORD_YES	0x00000010 /* Assumes stack aligned to 8-byte boundaries. */
+#define EF_FRV_DWORD_NO		0x00000020 /* Assumes stack aligned to 4-byte boundaries. */
+#define EF_FRV_DOUBLE		0x00000040 /* Uses double instructions. */
+#define EF_FRV_MEDIA		0x00000080 /* Uses media instructions. */
+#define EF_FRV_PIC		0x00000100 /* Uses position independent code. */
+#define EF_FRV_NON_PIC_RELOCS	0x00000200 /* Does not use position Independent code. */
+#define EF_FRV_MULADD           0x00000400 /* -mmuladd */
+#define EF_FRV_BIGPIC           0x00000800 /* -fPIC */
+#define EF_FRV_LIBPIC           0x00001000 /* -mlibrary-pic */
+#define EF_FRV_G0               0x00002000 /* -G 0, no small data ptr */
+#define EF_FRV_NOPACK           0x00004000 /* -mnopack */
+#define EF_FRV_FDPIC            0x00008000 /* -mfdpic */
+#define EF_FRV_CPU_MASK         0xff000000 /* specific cpu bits */
+#define EF_FRV_CPU_GENERIC	0x00000000 /* Set CPU type is FR-V */
+#define EF_FRV_CPU_FR500	0x01000000 /* Set CPU type is FR500 */
+#define EF_FRV_CPU_FR300	0x02000000 /* Set CPU type is FR300 */
+#define EF_FRV_CPU_SIMPLE       0x03000000 /* SIMPLE */
+#define EF_FRV_CPU_TOMCAT       0x04000000 /* Tomcat, FR500 prototype */
+#define EF_FRV_CPU_FR400	0x05000000 /* Set CPU type is FR400 */
+#define EF_FRV_CPU_FR550        0x06000000 /* Set CPU type is FR550 */
+#define EF_FRV_CPU_FR405	0x07000000 /* Set CPU type is FR405 */
+#define EF_FRV_CPU_FR450	0x08000000 /* Set CPU type is FR450 */
 
 /* These constants define the different elf file types */
 #define ET_NONE   0
@@ -78,6 +114,9 @@ typedef __s64	Elf64_Sxword;
 
 #define EM_SPARCV9     43	/* SPARC v9 64-bit */
 
+#define EM_H8_300H     47       /* Hitachi H8/300H */ 
+#define EM_H8_S        48       /* Hitachi H8S */
+
 #define EM_IA_64	50	/* HP/Intel IA-64 */
 
 #define EM_X86_64	62	/* AMD x86-64 */
@@ -85,6 +124,8 @@ typedef __s64	Elf64_Sxword;
 #define EM_S390		22	/* IBM S/390 */
 
 #define EM_CRIS         76      /* Axis Communications 32-bit embedded processor */
+
+#define EM_V850		87	/* NEC v850 */
 
 /*
  * This is an interim value that we will use until the committee comes
@@ -96,6 +137,11 @@ typedef __s64	Elf64_Sxword;
  * This is the old interim value for S/390 architecture
  */
 #define EM_S390_OLD     0xA390
+
+#define EM_NIOS32	0xfebb		/* Altera NIOS 32 */
+#define EM_NIOS		EM_NIOS32	/* Altera NIOS */
+
+#define EM_FRV		0x5441		/* Fujitsu FR-V */
 
 /* This is the info that is needed to parse the dynamic section of the file */
 #define DT_NULL		0
@@ -580,7 +626,8 @@ typedef struct elf64_shdr {
 #define NT_PRFPREG	2
 #define NT_PRPSINFO	3
 #define NT_TASKSTRUCT	4
-#define NT_PRFPXREG	20
+#define NT_PRXFPREG     0x46e62b7f      /* copied from gdb5.1/include/elf/common.h */
+
 
 /* Note header in a PT_NOTE section */
 typedef struct elf32_note {
@@ -612,5 +659,39 @@ extern Elf64_Dyn _DYNAMIC [];
 
 #endif
 
+
+/* Altera NIOS specific */
+#define R_NIOS_NONE		0
+#define R_NIOS_32		1	/* A 32 bit absolute relocation.*/
+#define R_NIOS_LO16_LO5		2	/* A LO-16 5 bit absolute relocation.  */
+#define R_NIOS_LO16_HI11	3	/* A LO-16 top 11 bit absolute relocation.  */
+#define R_NIOS_HI16_LO5		4	/* A HI-16 5 bit absolute relocation.  */
+#define R_NIOS_HI16_HI11	5	/* A HI-16 top 11 bit absolute relocation.  */
+#define R_NIOS_PCREL6		6	/* A 6 bit relative relocation.  */
+#define R_NIOS_PCREL8		7	/* An 8 bit relative relocation.  */
+#define R_NIOS_PCREL11		8	/* An 11 bit relative relocation.  */
+#define R_NIOS_16		9	/* A 16 bit absolute relocation.  */
+#define R_NIOS_H_LO5		10	/* Low 5-bits of absolute relocation in halfwords.  */
+#define R_NIOS_H_HI11		11	/* Top 11 bits of 16-bit absolute relocation in halfwords.  */
+#define R_NIOS_H_XLO5		12	/* Low 5 bits of top 16-bits of 32-bit absolute relocation in halfwords.  */
+#define R_NIOS_H_XHI11		13	/* Top 11 bits of top 16-bits of 32-bit absolute relocation in halfwords.  */
+#define R_NIOS_H_16		14	/* Half-word @h value */
+#define R_NIOS_H_32		15	/* Word @h value */
+#define R_NIOS_GNU_VTINHERIT	200	/* GNU extension to record C++ vtable hierarchy */
+#define R_NIOS_GNU_VTENTRY	201	/* GNU extension to record C++ vtable member usage */
+#define R_NIOS_NUM		202
+
+/* Fujitsu FR-V specific */
+#define R_FRV_NONE		0 /* none */
+#define R_FRV_32		1 /* 32 bit relocation. */
+#define R_FRV_LABEL16		2 /* Used with Bicc instructions. */
+#define R_FRV_LABEL24		3 /* Used with CALL instructions. */
+#define R_FRV_LO16		4 /* Used with SETLO and setlos. */
+#define R_FRV_HI16		5 /* Used with SETHI. */
+#define R_FRV_GPREL12		6 /* Used with immediate instructions for gp(GR16,GR17)-relative
+				   * references. */
+#define R_FRV_GPREL32		7 /* - */
+#define R_FRV_GPRELHI		8 /* Used with sethi for gp(GR16,GR17)-relative references. */
+#define R_FRV_GPRELLO		9 /* Used with setlo for gp(GR16,GR17)-relative references. */
 
 #endif /* _LINUX_ELF_H */

@@ -49,6 +49,11 @@
 #include <asm/system.h>
 #include <asm/unaligned.h>
 
+#ifdef CONFIG_PCI
+#define HCD_PDEV(hcd) hcd->pdev
+#else
+#define HCD_PDEV(hcd) NULL
+#endif
 
 /*-------------------------------------------------------------------------*/
 
@@ -662,7 +667,9 @@ clean_2:
 	pci_set_drvdata(dev, hcd);
 	hcd->driver = driver;
 	hcd->description = driver->description;
+#ifdef CONFIG_PCI
 	hcd->pdev = dev;
+#endif
 	printk (KERN_INFO "%s %s: %s\n",
 			hcd->description,  dev->slot_name, dev->name);
 
@@ -1208,13 +1215,13 @@ static int hcd_submit_urb (struct urb *urb)
 	} else {
 		if (usb_pipecontrol (urb->pipe))
 			urb->setup_dma = pci_map_single (
-					hcd->pdev,
+					HCD_PDEV(hcd),
 					urb->setup_packet,
 					sizeof (struct usb_ctrlrequest),
 					PCI_DMA_TODEVICE);
 		if (urb->transfer_buffer_length != 0)
 			urb->transfer_dma = pci_map_single (
-					hcd->pdev,
+					HCD_PDEV(hcd),
 					urb->transfer_buffer,
 					urb->transfer_buffer_length,
 					usb_pipein (urb->pipe)
@@ -1490,12 +1497,12 @@ void usb_hcd_giveback_urb (struct usb_hcd *hcd, struct urb *urb, struct pt_regs 
 	
 	/* For 2.4, don't unmap bounce buffer if it's a root hub operation. */
 	if (usb_pipecontrol (urb->pipe) && !is_root_hub_operation)
-		pci_unmap_single (hcd->pdev, urb->setup_dma,
+		pci_unmap_single (HCD_PDEV(hcd), urb->setup_dma,
 				sizeof (struct usb_ctrlrequest),
 				PCI_DMA_TODEVICE);
 
 	if ((urb->transfer_buffer_length != 0) && !is_root_hub_operation)
-		pci_unmap_single (hcd->pdev, urb->transfer_dma,
+		pci_unmap_single (HCD_PDEV(hcd), urb->transfer_dma,
 				urb->transfer_buffer_length,
 				usb_pipein (urb->pipe)
 				    ? PCI_DMA_FROMDEVICE

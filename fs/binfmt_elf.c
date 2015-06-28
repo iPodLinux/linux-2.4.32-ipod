@@ -679,16 +679,21 @@ static int load_elf_binary(struct linux_binprm * bprm, struct pt_regs * regs)
 	current->mm->end_data = 0;
 	current->mm->end_code = 0;
 	current->mm->mmap = NULL;
+
+#ifdef CONFIG_ARM_FASS
+	arch_new_mm(current, current->mm);
+#endif
+
 	current->flags &= ~PF_FORKNOEXEC;
 	elf_entry = (unsigned long) elf_ex.e_entry;
 
 	/* Do this so that we can load the interpreter, if need be.  We will
 	   change some of these later */
 	current->mm->rss = 0;
-	retval = setup_arg_pages(bprm);
+	retval = setup_arg_pages(bprm, STACK_TOP);
 	if (retval < 0) {
 		send_sig(SIGKILL, current, 0);
-		return retval;
+		goto out_free_dentry;
 	}
 	
 	current->mm->start_stack = bprm->p;

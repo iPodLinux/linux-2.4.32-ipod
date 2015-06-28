@@ -119,6 +119,12 @@ int __init init_physmap(void)
 {
 	static const char *rom_probe_types[] = { "cfi_probe", "jedec_probe", "map_rom", 0 };
 	const char **type;
+#ifdef CONFIG_MTD_PARTITIONS
+	int nb_parts = 0, parsed_nr_parts = 0;
+	struct mtd_partition *parts;
+	const char *part_type;
+	static struct mtd_partition *parsed_parts;
+#endif
 
        	printk(KERN_NOTICE "physmap flash device: %x at %x\n", WINDOW_SIZE, WINDOW_ADDR);
 	physmap_map.map_priv_1 = (unsigned long)ioremap(WINDOW_ADDR, WINDOW_SIZE);
@@ -147,6 +153,14 @@ int __init init_physmap(void)
 			       "Using command line partition definition\n");
 			add_mtd_partitions (mymtd, mtd_parts, mtd_parts_nb);
 		}
+
+		if (parsed_nr_parts == 0) {
+			int ret = parse_cmdline_partitions(mymtd, &parsed_parts, "physmap");
+			if (ret > 0) {
+				part_type = "Command Line";
+				parsed_nr_parts = ret;
+			}
+		}
 #else
 		if (NUM_PARTITIONS != 0) 
 		{
@@ -154,9 +168,24 @@ int __init init_physmap(void)
 			       "Using physmap partition definition\n");
 			add_mtd_partitions (mymtd, physmap_partitions, NUM_PARTITIONS);
 		}
+#endif /* CONFIG_MTD_CMDLINE_PARTS */
 
-#endif
-#endif
+		if (parsed_nr_parts > 0) {
+			parts = parsed_parts;
+			nb_parts = parsed_nr_parts;
+		}
+
+		if (nb_parts == 0) {
+			printk(KERN_NOTICE "physmap: no partition info available, "
+					"registering whole flash at once\n");
+			add_mtd_device(mymtd);
+		} else {
+			printk(KERN_NOTICE "physmap: Using %s partition definition\n",
+					part_type);
+			add_mtd_partitions(mymtd, parts, nb_parts);
+		}
+#endif /* CONFIG_MTD_PARTITIONS */
+
 		return 0;
 	}
 

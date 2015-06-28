@@ -1,3 +1,5 @@
+/* $USAGI: ip6_fib.c,v 1.32 2004/01/14 14:11:38 yoshfuji Exp $ */
+
 /*
  *	Linux INET6 implementation 
  *	Forwarding Information Database
@@ -14,10 +16,12 @@
  */
 
 /*
+ *	Changes:
  * 	Changes:
  * 	Yuji SEKIYA @USAGI:	Support default route on router node;
  * 				remove ip6_null_entry from the top of
  * 				routing table.
+ * 	Ville Nuorvala:		Fixes to source address sub trees
  */
 #include <linux/config.h>
 #include <linux/errno.h>
@@ -39,9 +43,6 @@
 #include <net/ip6_fib.h>
 #include <net/ip6_route.h>
 
-#define RT6_DEBUG 2
-#undef CONFIG_IPV6_SUBTREES
-
 #if RT6_DEBUG >= 3
 #define RT6_TRACE(x...) printk(KERN_DEBUG x)
 #else
@@ -49,6 +50,11 @@
 #endif
 
 struct rt6_statistics	rt6_stats;
+
+#if !defined(CONFIG_IPV6_NEW_ROUNDROBIN)
+extern struct rt6_info *rt6_dflt_pointer;
+extern spinlock_t rt6_dflt_lock;
+#endif
 
 static kmem_cache_t * fib6_node_kmem;
 
@@ -81,8 +87,13 @@ rwlock_t fib6_walker_lock = RW_LOCK_UNLOCKED;
 #define SUBTREE(fn) NULL
 #endif
 
+static struct rt6_info * fib6_find_prefix(struct fib6_node *fn);
 static void fib6_prune_clones(struct fib6_node *fn, struct rt6_info *rt);
 static struct fib6_node * fib6_repair_tree(struct fib6_node *fn);
+
+#ifdef CONFIG_IPV6_SUBTREES
+static struct in6_addr fib6_addr_any;
+#endif
 
 /*
  *	A routing update causes an increase of the serial number on the
@@ -110,101 +121,14 @@ static __inline__ u32 fib6_new_sernum(void)
 }
 
 /*
- *	Auxiliary address test functions for the radix tree.
- *
- *	These assume a 32bit processor (although it will work on 
- *	64bit processors)
- */
-
-/*
- *	compare "prefix length" bits of an address
- */
-
-static __inline__ int addr_match(void *token1, void *token2, int prefixlen)
-{
-	__u32 *a1 = token1;
-	__u32 *a2 = token2;
-	int pdw;
-	int pbi;
-
-	pdw = prefixlen >> 5;	  /* num of whole __u32 in prefix */
-	pbi = prefixlen &  0x1f;  /* num of bits in incomplete u32 in prefix */
-
-	if (pdw)
-		if (memcmp(a1, a2, pdw << 2))
-			return 0;
-
-	if (pbi) {
-		__u32 mask;
-
-		mask = htonl((0xffffffff) << (32 - pbi));
-
-		if ((a1[pdw] ^ a2[pdw]) & mask)
-			return 0;
-	}
-
-	return 1;
-}
-
-/*
  *	test bit
  */
 
-static __inline__ int addr_bit_set(void *token, int fn_bit)
+static __inline__ int addr_bit_set(const void *token, int fn_bit)
 {
-	__u32 *addr = token;
+	const __u32 *addr = token;
 
 	return htonl(1 << ((~fn_bit)&0x1F)) & addr[fn_bit>>5];
-}
-
-/*
- *	find the first different bit between two addresses
- *	length of address must be a multiple of 32bits
- */
-
-static __inline__ int addr_diff(void *token1, void *token2, int addrlen)
-{
-	__u32 *a1 = token1;
-	__u32 *a2 = token2;
-	int i;
-
-	addrlen >>= 2;
-
-	for (i = 0; i < addrlen; i++) {
-		__u32 xb;
-
-		xb = a1[i] ^ a2[i];
-
-		if (xb) {
-			int j = 31;
-
-			xb = ntohl(xb);
-
-			while ((xb & (1 << j)) == 0)
-				j--;
-
-			return (i * 32 + 31 - j);
-		}
-	}
-
-	/*
-	 *	we should *never* get to this point since that 
-	 *	would mean the addrs are equal
-	 *
-	 *	However, we do get to it 8) And exacly, when
-	 *	addresses are equal 8)
-	 *
-	 *	ip route add 1111::/128 via ...
-	 *	ip route add 1111::/64 via ...
-	 *	and we are here.
-	 *
-	 *	Ideally, this function should stop comparison
-	 *	at prefix length. It does not, but it is still OK,
-	 *	if returned value is greater than prefix length.
-	 *					--ANK (980803)
-	 */
-
-	return addrlen<<5;
 }
 
 static __inline__ struct fib6_node * node_alloc(void)
@@ -261,7 +185,7 @@ static struct fib6_node * fib6_add_1(struct fib6_node *root, void *addr,
 		 *	Prefix match
 		 */
 		if (plen < fn->fn_bit ||
-		    !addr_match(&key->addr, addr, fn->fn_bit))
+		    u32_prefix_cmp(&key->addr, addr, fn->fn_bit))
 			goto insert_above;
 		
 		/*
@@ -324,13 +248,15 @@ insert_above:
 
 	pn = fn->parent;
 
-	/* find 1st bit in difference between the 2 addrs.
-
-	   See comment in addr_diff: bit may be an invalid value,
-	   but if it is >= plen, the value is ignored in any case.
+	/*
+	 * find 1st bit in difference between the 2 addrs.
+	 *
+	 * Retuned value is ignored if returned valud is
+	 * greater than prefix length.
+	 *					--ANK (980803)
 	 */
-	
-	bit = addr_diff(addr, &key->addr, addrlen);
+
+	bit = u32_addr_diff(addr, &key->addr, addrlen);
 
 	/* 
 	 *		(intermediate)[in]	
@@ -437,6 +363,8 @@ static int fib6_add_rt2node(struct fib6_node *fn, struct rt6_info *rt,
 		/*
 		 * The top fib of ip6 routing table includes ip6_null_entry.
 		 */
+		RT6_TRACE(
+			"fib6_add_rt2node : Try to insert default route into RTN_TL_ROOT.\n");
 		fn->leaf = rt;
 		rt->u.next = NULL;
 		goto out;
@@ -500,6 +428,8 @@ static __inline__ void fib6_start_gc(struct rt6_info *rt)
 		mod_timer(&ip6_fib_timer, jiffies + ip6_rt_gc_interval);
 }
 
+static struct rt6_info * fib6_find_prefix(struct fib6_node *fn);
+
 /*
  *	Add routing information to the routing tree.
  *	<destination addr>/<source addr>
@@ -509,19 +439,24 @@ static __inline__ void fib6_start_gc(struct rt6_info *rt)
 int fib6_add(struct fib6_node *root, struct rt6_info *rt, struct nlmsghdr *nlh,
 		struct netlink_skb_parms *req)
 {
-	struct fib6_node *fn;
+	struct fib6_node *fn = NULL;
 	int err = -ENOMEM;
-
-	fn = fib6_add_1(root, &rt->rt6i_dst.addr, sizeof(struct in6_addr),
-			rt->rt6i_dst.plen, (u8*) &rt->rt6i_dst - (u8*) rt);
+#ifdef CONFIG_IPV6_SUBTREES
+	struct fib6_node *pn = NULL;
+	if (&rt->rt6i_src)
+		fn = fib6_add_1(root, &rt->rt6i_src.addr, sizeof(struct in6_addr),
+			rt->rt6i_src.plen, (u8*) &rt->rt6i_src - (u8*) rt);
 
 	if (fn == NULL)
 		goto out;
 
-#ifdef CONFIG_IPV6_SUBTREES
-	if (rt->rt6i_src.plen) {
+	if (rt->rt6i_dst.plen) {
 		struct fib6_node *sn;
-
+		if (!fn->leaf) {
+			RT6_TRACE("Adding ip6_null_entry to fn->leaf at fib6_add\n");
+			fn->leaf = &ip6_null_entry;
+			atomic_inc(&ip6_null_entry.rt6i_ref);
+		}
 		if (fn->subtree == NULL) {
 			struct fib6_node *sfn;
 
@@ -547,9 +482,9 @@ int fib6_add(struct fib6_node *root, struct rt6_info *rt, struct nlmsghdr *nlh,
 
 			/* Now add the first leaf node to new subtree */
 
-			sn = fib6_add_1(sfn, &rt->rt6i_src.addr,
-					sizeof(struct in6_addr), rt->rt6i_src.plen,
-					(u8*) &rt->rt6i_src - (u8*) rt);
+			sn = fib6_add_1(sfn, &rt->rt6i_dst.addr,
+					sizeof(struct in6_addr), rt->rt6i_dst.plen,
+					(u8*) &rt->rt6i_dst - (u8*) rt);
 
 			if (sn == NULL) {
 				/* If it is failed, discard just allocated
@@ -563,21 +498,30 @@ int fib6_add(struct fib6_node *root, struct rt6_info *rt, struct nlmsghdr *nlh,
 			/* Now link new subtree to main tree */
 			sfn->parent = fn;
 			fn->subtree = sfn;
-			if (fn->leaf == NULL) {
-				fn->leaf = rt;
-				atomic_inc(&rt->rt6i_ref);
-			}
 		} else {
-			sn = fib6_add_1(fn->subtree, &rt->rt6i_src.addr,
-					sizeof(struct in6_addr), rt->rt6i_src.plen,
-					(u8*) &rt->rt6i_src - (u8*) rt);
+			sn = fib6_add_1(fn->subtree, &rt->rt6i_dst.addr,
+					sizeof(struct in6_addr), rt->rt6i_dst.plen,
+					(u8*) &rt->rt6i_dst - (u8*) rt);
 
 			if (sn == NULL)
 				goto st_failure;
 		}
 
+		/* fib6_add_1 might have cleared the old leaf pointer */
+		if (fn->leaf == NULL) {
+			fn->leaf = rt;
+			atomic_inc(&rt->rt6i_ref);
+		}
+
+		pn = fn;
 		fn = sn;
 	}
+#else 
+	fn = fib6_add_1(root, &rt->rt6i_dst.addr, sizeof(struct in6_addr),
+			rt->rt6i_dst.plen, (u8*) &rt->rt6i_dst - (u8*) rt);
+
+	if (fn == NULL)
+		goto out;
 #endif
 
 	err = fib6_add_rt2node(fn, rt, nlh, req);
@@ -589,8 +533,29 @@ int fib6_add(struct fib6_node *root, struct rt6_info *rt, struct nlmsghdr *nlh,
 	}
 
 out:
-	if (err)
+	if (err) {
+#ifdef CONFIG_IPV6_SUBTREES
+		/* If fib6_add_1 has cleared the old leaf pointer in the 
+		 * super-tree leaf node, we have to find a new one for it. 
+		 *
+		 * This situation will never arise in the sub-tree since 
+		 * the node will at least have the duplicate route that 
+		 * caused fib6_add_rt2node to fail in the first place.
+		 */
+
+		if (pn && !(pn->fn_flags & RTN_RTINFO)) {
+			pn->leaf = fib6_find_prefix(pn);
+#if RT6_DEBUG >= 2
+			if (!pn->leaf) {
+				BUG_TRAP(pn->leaf);
+				pn->leaf = &ip6_null_entry;
+			}
+#endif
+			atomic_inc(&pn->leaf->rt6i_ref);
+		}
+#endif
 		dst_free(&rt->u.dst);
+	}
 	return err;
 
 #ifdef CONFIG_IPV6_SUBTREES
@@ -598,8 +563,8 @@ out:
 	   is orphan. If it is, shoot it.
 	 */
 st_failure:
-	if (fn && !(fn->fn_flags&RTN_RTINFO|RTN_ROOT))
-		fib_repair_tree(fn);
+	if (fn && !(fn->fn_flags&(RTN_RTINFO|RTN_ROOT)))
+		fib6_repair_tree(fn);
 	dst_free(&rt->u.dst);
 	return err;
 #endif
@@ -611,15 +576,15 @@ st_failure:
  */
 
 struct lookup_args {
-	int		offset;		/* key offset on rt6_info	*/
-	struct in6_addr	*addr;		/* search key			*/
+	int			offset;		/* key offset on rt6_info	*/
+	const struct in6_addr	*addr;		/* search key			*/
 };
 
 static struct fib6_node * fib6_lookup_1(struct fib6_node *root,
 					struct lookup_args *args)
 {
 	struct fib6_node *fn;
-	int dir;
+	int dir = 0;
 
 	/*
 	 *	Descend on a tree
@@ -629,7 +594,7 @@ static struct fib6_node * fib6_lookup_1(struct fib6_node *root,
 
 	for (;;) {
 		struct fib6_node *next;
-
+		if (args->addr)
 		dir = addr_bit_set(args->addr, fn->fn_bit);
 
 		next = dir ? fn->right : fn->left;
@@ -642,22 +607,28 @@ static struct fib6_node * fib6_lookup_1(struct fib6_node *root,
 		break;
 	}
 
-	while ((fn->fn_flags & RTN_ROOT) == 0) {
+	for(;;) {
 #ifdef CONFIG_IPV6_SUBTREES
 		if (fn->subtree) {
-			struct fib6_node *st;
-			struct lookup_args *narg;
+			struct rt6key *key;
 
-			narg = args + 1;
-
-			if (narg->addr) {
-				st = fib6_lookup_1(fn->subtree, narg);
-
-				if (st && !(st->fn_flags & RTN_ROOT))
-					return st;
+			key = (struct rt6key *) ((u8 *) fn->leaf +
+						 args->offset);
+			
+			if (!u32_prefix_cmp(&key->addr, args->addr, key->plen)) {
+				struct fib6_node *st;
+				struct lookup_args *narg = args + 1;
+				if (!ipv6_addr_any(narg->addr)) {
+					st = fib6_lookup_1(fn->subtree, narg);
+					
+					if (st && !(st->fn_flags & RTN_ROOT))
+						return st;
+				} 
 			}
 		}
 #endif
+		if (fn->fn_flags & RTN_ROOT)
+			break;
 
 		if (fn->fn_flags & RTN_RTINFO) {
 			struct rt6key *key;
@@ -665,13 +636,14 @@ static struct fib6_node * fib6_lookup_1(struct fib6_node *root,
 			key = (struct rt6key *) ((u8 *) fn->leaf +
 						 args->offset);
 
-			if (addr_match(&key->addr, args->addr, key->plen))
+			if (!u32_prefix_cmp(&key->addr, args->addr, key->plen))
 				return fn;
 		}
 
 		fn = fn->parent;
 	}
 
+	RT6_TRACE("no fib found, return NULL\n");
 	return NULL;
 }
 
@@ -680,14 +652,18 @@ struct fib6_node * fib6_lookup(struct fib6_node *root, struct in6_addr *daddr,
 {
 	struct lookup_args args[2];
 	struct rt6_info *rt = NULL;
-	struct fib6_node *fn;
+	struct fib6_node *fn = NULL;
+#ifdef CONFIG_IPV6_SUBTREES
+	if (saddr == NULL)
+		saddr = &fib6_addr_any;
 
+	args[0].offset = (u8*) &rt->rt6i_src - (u8*) rt;
+	args[0].addr = saddr;
+	args[1].offset = (u8*) &rt->rt6i_dst - (u8*) rt;
+	args[1].addr = daddr;
+#else 
 	args[0].offset = (u8*) &rt->rt6i_dst - (u8*) rt;
 	args[0].addr = daddr;
-
-#ifdef CONFIG_IPV6_SUBTREES
-	args[1].offset = (u8*) &rt->rt6i_src - (u8*) rt;
-	args[1].addr = saddr;
 #endif
 
 	fn = fib6_lookup_1(root, args);
@@ -717,7 +693,7 @@ static struct fib6_node * fib6_locate_1(struct fib6_node *root,
 		 *	Prefix match
 		 */
 		if (plen < fn->fn_bit ||
-		    !addr_match(&key->addr, addr, fn->fn_bit))
+		    u32_prefix_cmp(&key->addr, addr, fn->fn_bit))
 			return NULL;
 
 		if (plen == fn->fn_bit)
@@ -741,18 +717,22 @@ struct fib6_node * fib6_locate(struct fib6_node *root,
 	struct rt6_info *rt = NULL;
 	struct fib6_node *fn;
 
+#ifdef CONFIG_IPV6_SUBTREES
+	if (saddr == NULL)
+		saddr = &fib6_addr_any;
+
+	fn = fib6_locate_1(root, saddr, src_len, 
+			   (u8*) &rt->rt6i_src - (u8*) rt);
+	if (dst_len) {
+		if (fn)
+			fn = fib6_locate_1(fn->subtree, daddr, dst_len,
+					   (u8*) &rt->rt6i_dst - (u8*) rt);
+		else 
+			return NULL;
+	}
+#else
 	fn = fib6_locate_1(root, daddr, dst_len,
 			   (u8*) &rt->rt6i_dst - (u8*) rt);
-
-#ifdef CONFIG_IPV6_SUBTREES
-	if (src_len) {
-		BUG_TRAP(saddr!=NULL);
-		if (fn == NULL)
-			fn = fn->subtree;
-		if (fn)
-			fn = fib6_locate_1(fn, saddr, src_len,
-					   (u8*) &rt->rt6i_src - (u8*) rt);
-	}
 #endif
 
 	if (fn && fn->fn_flags&RTN_RTINFO)
@@ -940,7 +920,7 @@ static void fib6_del_route(struct fib6_node *fn, struct rt6_info **rtp,
 			}
 			fn = fn->parent;
 		}
-		/* No more references are possiible at this point. */
+		/* No more references are possible at this point. */
 		if (atomic_read(&rt->rt6i_ref) != 1) BUG();
 	}
 
@@ -1184,6 +1164,12 @@ static int fib6_age(struct rt6_info *rt, void *arg)
 	if (rt->rt6i_flags&RTF_EXPIRES && rt->rt6i_expires) {
 		if (time_after(now, rt->rt6i_expires)) {
 			RT6_TRACE("expiring %p\n", rt);
+#if !defined(CONFIG_IPV6_NEW_ROUNDROBIN)
+			spin_lock_bh(&rt6_dflt_lock);
+			if (rt == rt6_dflt_pointer)
+				rt6_dflt_pointer = NULL;
+			spin_unlock_bh(&rt6_dflt_lock);
+#endif
 			return -1;
 		}
 		gc_args.more++;
@@ -1244,6 +1230,14 @@ void __init fib6_init(void)
 void fib6_gc_cleanup(void)
 {
 	del_timer(&ip6_fib_timer);
+	if (kmem_cache_destroy(fib6_node_kmem) == 0) {
+		RT6_TRACE("%s(): kmem_cache %p for fib6_nodes destroyed\n",
+			  __FUNCTION__, fib6_node_kmem);
+		fib6_node_kmem = NULL;
+	} else {
+		RT6_TRACE("%s(): failed to destroy kmem_cache %p for fib6_nodes.\n",
+			  __FUNCTION__, fib6_node_kmem);
+	}
 }
 #endif
 

@@ -43,7 +43,7 @@ static inline pte_t *pte_alloc_one(struct mm_struct *mm, unsigned long address)
 
 static inline pte_t *pte_alloc_one_fast(struct mm_struct *mm, unsigned long address)
 {
-	return 0;
+	return (pte_t *) 0;
 }
 
 static inline void pte_free_slow(pte_t *pte)

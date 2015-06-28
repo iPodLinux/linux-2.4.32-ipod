@@ -1,3 +1,5 @@
+/* $USAGI: udp.c,v 1.59 2003/11/12 05:12:00 yoshfuji Exp $ */
+
 /*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
@@ -61,9 +63,16 @@
  *					return ENOTCONN for unconnected sockets (POSIX)
  *		Janos Farkas	:	don't deliver multi/broadcasts to a different
  *					bound-to-device socket
- *	YOSHIFUJI Hideaki @USAGI and:	Support IPV6_V6ONLY socket option, which
- *	Alexey Kuznetsov:		allow both IPv4 and IPv6 sockets to bind
- *					a single port at the same time.
+ *		yoshfuji@USAGI	:	Reworked bind(2) behavior, including:
+ *					- Allow ipv6 and ipv4 bind(2) to the
+ *					  same port.
+ *					- Don't allow narrow binding unless
+ *					  later uid is the same as before:
+ *					  CONFIG_NET_RESTRICTED_REUSE
+ *					- Don't allow binding to the same
+ *					  address unless it is one of multi-
+ *					  cast address even if SO_REUSEADDR 
+ *					  is set.
  *
  *
  *		This program is free software; you can redistribute it and/or
@@ -79,6 +88,7 @@
 #include <linux/fcntl.h>
 #include <linux/socket.h>
 #include <linux/sockios.h>
+#include <linux/module.h>
 #include <linux/in.h>
 #include <linux/errno.h>
 #include <linux/timer.h>
@@ -112,6 +122,9 @@ int udp_port_rover;
 
 static int udp_v4_get_port(struct sock *sk, unsigned short snum)
 {
+#if defined(CONFIG_IPV6_IM) && defined(CONFIG_IPV6_RESTRICTED_DOUBLE_BIND)
+	int *sysctl_ipv6_bindv6only_restriction = inter_module_get(IM_IPV6_SYSCTL_BINDV6ONLY_RESTRICTION);
+#endif
 	write_lock_bh(&udp_hash_lock);
 	if (snum == 0) {
 		int best_size_so_far, best, result, i;
@@ -157,10 +170,134 @@ gotit:
 		udp_port_rover = snum = result;
 	} else {
 		struct sock *sk2;
+		int sk_reuse, sk2_reuse;
+		int addr_type2;
+#if defined(CONFIG_NET_RESTRICTED_REUSE) || defined(CONFIG_IPV6_RESTRICTED_DOUBLE_BIND)
+		uid_t sk_uid = sock_i_uid_t(sk),
+		      sk2_uid;
+#endif
+
+		sk_reuse = 0;
+		if (sk->reuse)
+			sk_reuse |= 1;
+#ifdef SO_REUSEPORT
+		if (sk->reuseport)
+			sk_reuse |= 2;
+#endif
+		if (sk_reuse &&
+		    MULTICAST(sk->rcv_saddr))
+			sk_reuse |= 4;
 
 		for (sk2 = udp_hash[snum & (UDP_HTABLE_SIZE - 1)];
 		     sk2 != NULL;
 		     sk2 = sk2->next) {
+#if 1	/* XXX: linux-2.4.21 style */
+#if defined(CONFIG_NET_RESTRICTED_REUSE) || defined(CONFIG_IPV6_RESTRICTED_DOUBLE_BIND)
+			int uid_ok;
+#endif
+			int both_specified = 0;
+
+			if (sk2->num != snum ||
+			    sk2 == sk ||
+			    (sk2->bound_dev_if && sk->bound_dev_if &&
+			     sk2->bound_dev_if != sk->bound_dev_if))
+				continue;
+#if 0
+			if (sk2->family != AF_INET6 && sk2->family != AF_INET)
+				continue;
+#endif
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+			if (sk2->family == AF_INET6) {
+				if (IN6_IS_ADDR_UNSPECIFIED(&sk2->net_pinfo.af_inet6.rcv_saddr))
+					addr_type2 = IPV6_ADDR_ANY;
+				else if (IN6_IS_ADDR_V4MAPPED(&sk2->net_pinfo.af_inet6.rcv_saddr))
+					addr_type2 = IPV6_ADDR_MAPPED;
+				else
+					addr_type2 = IPV6_ADDR_UNICAST;	/*XXX*/
+			} else
+				addr_type2 = IPV6_ADDR_MAPPED;
+#else
+			addr_type2 = IPV6_ADDR_MAPPED;
+#endif
+#if defined(CONFIG_NET_RESTRICTED_REUSE) || defined(CONFIG_IPV6_RESTRICTED_DOUBLE_BIND)
+			sk2_uid = sock_i_uid_t(sk2);
+#endif
+
+			if ((addr_type2 != IPV6_ADDR_MAPPED ? addr_type2 != IPV6_ADDR_ANY : sk2->rcv_saddr) &&
+			    sk->rcv_saddr) {
+				if (sk2->rcv_saddr != sk->rcv_saddr)
+					continue;
+				both_specified = 1;
+			}
+
+#if defined(CONFIG_NET_RESTRICTED_REUSE) || defined(CONFIG_IPV6_RESTRICTED_DOUBLE_BIND)
+			uid_ok = sk2_uid == (uid_t) -1 || sk_uid == sk2_uid;
+#endif
+
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+			if (addr_type2 != IPV6_ADDR_MAPPED && __ipv6_only_sock(sk2)) {
+#ifdef CONFIG_IPV6_RESTRICTED_DOUBLE_BIND
+#ifndef CONFIG_IPV6_IM
+				if (sysctl_ipv6_bindv6only_restriction == 0 || uid_ok)
+					continue;
+#else
+				if ((sysctl_ipv6_bindv6only_restriction && *sysctl_ipv6_bindv6only_restriction == 0) || uid_ok)
+					continue;
+#endif
+#else
+				continue;
+#endif
+			}
+#endif
+
+			sk2_reuse = 0;
+			if (sk2->reuse)
+				sk2_reuse |= 1;
+#ifdef SO_REUSEPORT
+			if (sk2->reuseport)
+				sk2_reuse |= 2;
+#endif
+			if (sk2_reuse &&
+			    (addr_type2 != IPV6_ADDR_MAPPED ? (addr_type2 & IPV6_ADDR_MULTICAST) : MULTICAST(sk2->rcv_saddr)))
+				sk2_reuse |= 4;
+
+			if (sk2_reuse & sk_reuse & 3) {	/* NOT && */
+				if (sk2_reuse & sk_reuse & 4)
+					continue;
+#ifdef CONFIG_NET_RESTRICTED_REUSE
+				if (!uid_ok)
+					goto fail;
+#endif
+#ifdef SO_REUSEPORT
+				if (sk2_reuse & sk_reuse & 2)
+					continue;
+#endif
+				if (both_specified) {
+					int addr_type2d;
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+					if (sk2->family == AF_INET6) {
+						if (IN6_IS_ADDR_UNSPECIFIED(&sk2->net_pinfo.af_inet6.daddr))
+							addr_type2d = IPV6_ADDR_ANY;
+						else if (IN6_IS_ADDR_V4MAPPED(&sk2->net_pinfo.af_inet6.daddr))
+							addr_type2d = IPV6_ADDR_MAPPED;
+						else
+							addr_type2d = IPV6_ADDR_UNICAST; /*XXX*/
+					} else
+						addr_type2d = IPV6_ADDR_MAPPED;
+#else
+					addr_type2d = IPV6_ADDR_MAPPED;
+#endif
+					if (addr_type2d != IPV6_ADDR_MAPPED ? addr_type2d != IPV6_ADDR_ANY : sk2->daddr)
+						continue;
+				} else {
+					if ((addr_type2 != IPV6_ADDR_MAPPED ? addr_type2 != IPV6_ADDR_ANY : sk2->rcv_saddr) ||
+					    sk->rcv_saddr)
+						continue;
+				}
+			}
+			goto fail;
+#else	/* XXX: linux-2.4.21 style */
 			if (sk2->num == snum &&
 			    sk2 != sk &&
 			    !ipv6_only_sock(sk2) &&
@@ -172,6 +309,7 @@ gotit:
 			     sk2->rcv_saddr == sk->rcv_saddr) &&
 			    (!sk2->reuse || !sk->reuse))
 				goto fail;
+#endif	/* XXX: linux-2.4.21 style */
 		}
 	}
 	sk->num = snum;
@@ -185,10 +323,18 @@ gotit:
 		sock_hold(sk);
 	}
 	write_unlock_bh(&udp_hash_lock);
+#if defined(CONFIG_IPV6_IM) && defined(CONFIG_IPV6_RESTRICTED_DOUBLE_BIND)
+	if (sysctl_ipv6_bindv6only_restriction)
+		inter_module_put(IM_IPV6_SYSCTL_BINDV6ONLY_RESTRICTION);
+#endif
 	return 0;
 
 fail:
 	write_unlock_bh(&udp_hash_lock);
+#if defined(CONFIG_IPV6_IM) && defined(CONFIG_IPV6_RESTRICTED_DOUBLE_BIND)
+	if (sysctl_ipv6_bindv6only_restriction)
+		inter_module_put(IM_IPV6_SYSCTL_BINDV6ONLY_RESTRICTION);
+#endif
 	return 1;
 }
 
@@ -860,6 +1006,9 @@ static void udp_close(struct sock *sk, long timeout)
 
 static int udp_queue_rcv_skb(struct sock * sk, struct sk_buff *skb)
 {
+#ifdef CONFIG_IPSEC_NAT_TRAVERSAL
+	struct udp_opt *tp =  &(sk->tp_pinfo.af_udp);
+#endif
 	/*
 	 *	Charge it to the socket, dropping if the queue is full.
 	 */
@@ -874,6 +1023,39 @@ static int udp_queue_rcv_skb(struct sock * sk, struct sk_buff *skb)
 			return -1;
 		}
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
+	}
+#endif
+#ifdef CONFIG_IPSEC_NAT_TRAVERSAL
+	if (tp->esp_in_udp) {
+		/*
+		 * Set skb->sk and xmit packet to ipsec_rcv.
+		 *
+		 * If ret != 0, ipsec_rcv refused the packet (not ESPinUDP),
+		 * restore skb->sk and fall back to sock_queue_rcv_skb
+		 */
+		struct inet_protocol *esp = NULL;
+
+#if (defined(CONFIG_IPSEC) && !defined(CONFIG_IPSEC_MODULE)) || (defined(CONFIG_KLIPS) && !defined(CONFIG_KLIPS_MODULE))
+               /* optomize only when we know it is statically linked */
+		extern struct inet_protocol esp_protocol;
+		esp = &esp_protocol;
+#else
+		for (esp = (struct inet_protocol *)inet_protos[IPPROTO_ESP & (MAX_INET_PROTOS - 1)];
+			(esp) && (esp->protocol != IPPROTO_ESP);
+			esp = esp->next);
+#endif
+
+		if (esp && esp->handler) {
+			struct sock *sav_sk = skb->sk;
+			skb->sk = sk;
+			if (esp->handler(skb) == 0) {
+				skb->sk = sav_sk;
+				/*not sure we might count ESPinUDP as UDP...*/
+				UDP_INC_STATS_BH(UdpInDatagrams);
+				return 0;
+			}
+			skb->sk = sav_sk;
+		}
 	}
 #endif
 
@@ -1100,13 +1282,53 @@ out:
 	return len;
 }
 
+static int udp_setsockopt(struct sock *sk, int level, int optname,
+	char *optval, int optlen)
+{
+	struct udp_opt *tp = &(sk->tp_pinfo.af_udp);
+	int val;
+	int err = 0;
+
+	if (level != SOL_UDP)
+		return ip_setsockopt(sk, level, optname, optval, optlen);
+
+	if(optlen<sizeof(int))
+		return -EINVAL;
+
+	if (get_user(val, (int *)optval))
+		return -EFAULT;
+	
+	lock_sock(sk);
+
+	switch(optname) {
+#ifdef CONFIG_IPSEC_NAT_TRAVERSAL
+#ifndef UDP_ESPINUDP
+#define UDP_ESPINUDP 100
+#endif
+		case UDP_ESPINUDP:
+			tp->esp_in_udp = val;
+			break;
+#endif
+		default:
+			err = -ENOPROTOOPT;
+			break;
+	}
+
+	release_sock(sk);
+	return err;
+}
+
 struct proto udp_prot = {
  	name:		"UDP",
 	close:		udp_close,
 	connect:	udp_connect,
 	disconnect:	udp_disconnect,
 	ioctl:		udp_ioctl,
-	setsockopt:	ip_setsockopt,
+#if 1
+	setsockopt:	udp_setsockopt,
+#else
+ 	setsockopt:	ip_setsockopt,
+#endif
 	getsockopt:	ip_getsockopt,
 	sendmsg:	udp_sendmsg,
 	recvmsg:	udp_recvmsg,

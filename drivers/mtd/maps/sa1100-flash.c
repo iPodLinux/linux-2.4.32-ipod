@@ -765,8 +765,8 @@ static struct mtd_partition yopy_partitions[] = {
 };
 #endif
 
-extern int parse_redboot_partitions(struct mtd_info *master, struct mtd_partition **pparts);
-extern int parse_bootldr_partitions(struct mtd_info *master, struct mtd_partition **pparts);
+extern int parse_redboot_partitions(struct mtd_info *master, struct mtd_partition **pparts, unsigned long fis_origin);
+extern int parse_cmdline_partitions(struct mtd_info *master, struct mtd_partition **pparts);
 
 static struct mtd_partition *parsed_parts;
 static struct mtd_info *mymtd;
@@ -964,7 +964,7 @@ int __init sa1100_mtd_init(void)
 	 */
 #ifdef CONFIG_MTD_REDBOOT_PARTS
 	if (parsed_nr_parts == 0) {
-		int ret = parse_redboot_partitions(mymtd, &parsed_parts);
+		int ret = parse_redboot_partitions(mymtd, &parsed_parts, 0);
 
 		if (ret > 0) {
 			part_type = "RedBoot";

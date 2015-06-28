@@ -65,6 +65,11 @@
 #define EP7212_BASE		CLPS7111_VIRT_BASE
 #include <asm/hardware/ep7212.h>
 
+#elif defined (CONFIG_ARCH_EP7312)
+
+#define EP7312_VIRT_BASE        CLPS7111_VIRT_BASE
+#define EP7312_BASE             CLPS7111_VIRT_BASE
+#include <asm/hardware/ep7312.h>
 
 #endif
 
@@ -176,6 +181,29 @@
 
 #endif /* CONFIG_ARCH_EDB7211 */
 
+#if defined (CONFIG_ARCH_EDB7312)
+
+/*
+ * nCS0..nCS7
+ */
+#define EP7312_VIRT_CS0		0xfe000000
+#define EP7312_VIRT_CS1		0xfd000000
+#define EP7312_VIRT_CS2		0xfc000000
+#define EP7312_VIRT_CS3		0xfb000000
+#define	EP7312_VIRT_CS4		0xfa000000
+#define EP7312_VIRT_CS5		0xf9000000
+#define	EP7312_VIRT_CS6		0xf8000000
+#define EP7312_VIRT_CS7		0xf7000000
+
+/*
+ * devices
+ */
+#define EDB7312_VIRT_CS8900A	EP7312_VIRT_CS2
+#define EDB7312_VIRT_PDIUSBD12	EP7312_VIRT_CS4
+#define EDB7312_VIRT_8042	(EP7312_VIRT_CS4 + 0x10000)
+#define EDB7312_VIRT_IDE	EP7312_VIRT_CS5
+
+#endif /* CONFIG_ARCH_EDB7312 */
 
 /*
  * Relevant bits in port D, which controls power to the various parts of

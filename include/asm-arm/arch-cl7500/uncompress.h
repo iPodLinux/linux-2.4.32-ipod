@@ -5,7 +5,7 @@
  */
 
 #define BASE 0x03010000
-#define SERBASE (BASE + (0x2f8 << 2))
+#define SERBASE (BASE + (0x3f8 << 2))
 
 static __inline__ void putc(char c)
 {

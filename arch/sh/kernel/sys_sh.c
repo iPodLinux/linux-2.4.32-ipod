@@ -253,7 +253,7 @@ sys_cacheflush (unsigned long addr, unsigned long len, int op)
 			break;
 	}
 	if (op & CACHEFLUSH_I) {
-		__flush_icache_all();
+		flush_icache_all();
 	}
 
 	return 0;

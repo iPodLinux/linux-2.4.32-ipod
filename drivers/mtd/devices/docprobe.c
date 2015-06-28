@@ -40,7 +40,10 @@
    a Millennium enough that they go through and work out what the 
    difference is :)
 */
+#include <linux/config.h>
+#ifndef CONFIG_SH_SECUREEDGE5410
 #define DOC_SINGLE_DRIVER
+#endif
 
 #include <linux/config.h>
 #include <linux/kernel.h>
@@ -92,17 +95,26 @@ static unsigned long __initdata doc_locations[] = {
         0xff000000,
 #elif defined(CONFIG_MOMENCO_OCELOT_G) || defined (CONFIG_MOMENCO_OCELOT_C)
         0xff000000,
-##else
+#elif defined(CONFIG_SH_SECUREEDGE5410)
+	0x00000000,
+	0x04000000,
+#elif defined(CONFIG_SECUREEDGEMP3)
+	0xe0000000,
+#elif defined(CONFIG_NETtel)
+	0x30c00000,
+#elif defined(CONFIG_MACH_ESS710) || defined(CONFIG_MACH_SE5100)
+	0x50000000,
+#else
 #warning Unknown architecture for DiskOnChip. No default probe locations defined
 #endif
-	0 };
+	0xffffffff };
 
 /* doccheck: Probe a given memory window to see if there's a DiskOnChip present */
 
 static inline int __init doccheck(unsigned long potential, unsigned long physadr)
 {
 	unsigned long window=potential;
-	unsigned char tmp, ChipID;
+	unsigned char tmp, tmpb, tmpc, ChipID;
 #ifndef DOC_PASSIVE_PROBE
 	unsigned char tmp2;
 #endif
@@ -145,19 +157,65 @@ static inline int __init doccheck(unsigned long potential, unsigned long physadr
 	switch (ChipID) {
 	case DOC_ChipID_Doc2k:
 		/* Check the TOGGLE bit in the ECC register */
-		tmp = ReadDOC(window, 2k_ECCStatus) & DOC_TOGGLE_BIT;
-		if ((ReadDOC(window, 2k_ECCStatus) & DOC_TOGGLE_BIT) != tmp)
+		tmp  = ReadDOC(window, 2k_ECCStatus) & DOC_TOGGLE_BIT;
+		tmpb = ReadDOC(window, 2k_ECCStatus) & DOC_TOGGLE_BIT;
+		tmpc = ReadDOC(window, 2k_ECCStatus) & DOC_TOGGLE_BIT;
+		if (tmp != tmpb && tmp == tmpc)
 				return ChipID;
 		break;
 		
 	case DOC_ChipID_DocMil:
 		/* Check the TOGGLE bit in the ECC register */
-		tmp = ReadDOC(window, ECCConf) & DOC_TOGGLE_BIT;
-		if ((ReadDOC(window, ECCConf) & DOC_TOGGLE_BIT) != tmp)
+		tmp  = ReadDOC(window, ECCConf) & DOC_TOGGLE_BIT;
+		tmpb = ReadDOC(window, ECCConf) & DOC_TOGGLE_BIT;
+		tmpc = ReadDOC(window, ECCConf) & DOC_TOGGLE_BIT;
+		if (tmp != tmpb && tmp == tmpc)
 				return ChipID;
 		break;
 		
+	case DOC_ChipID_DocMilPlus16:
+	case DOC_ChipID_DocMilPlus32:
+	case 0:
+		/* Possible Millennium+, need to do more checks */
+#ifndef DOC_PASSIVE_PROBE
+		/* Possibly release from power down mode */
+		for (tmp = 0; (tmp < 4); tmp++)
+			ReadDOC(window, Mplus_Power);
+
+		/* Reset the DiskOnChip ASIC */
+		tmp = DOC_MODE_RESET | DOC_MODE_MDWREN | DOC_MODE_RST_LAT |
+			DOC_MODE_BDECT;
+		WriteDOC(tmp, window, Mplus_DOCControl);
+		WriteDOC(~tmp, window, Mplus_CtrlConfirm);
+	
+		mdelay(1);
+		/* Enable the DiskOnChip ASIC */
+		tmp = DOC_MODE_NORMAL | DOC_MODE_MDWREN | DOC_MODE_RST_LAT |
+			DOC_MODE_BDECT;
+		WriteDOC(tmp, window, Mplus_DOCControl);
+		WriteDOC(~tmp, window, Mplus_CtrlConfirm);
+		mdelay(1);
+#endif /* !DOC_PASSIVE_PROBE */	
+
+		ChipID = ReadDOC(window, ChipID);
+
+		switch (ChipID) {
+		case DOC_ChipID_DocMilPlus16:
+		case DOC_ChipID_DocMilPlus32:
+			/* Check the TOGGLE bit in the toggle register */
+			tmp  = ReadDOC(window, Mplus_Toggle) & DOC_TOGGLE_BIT;
+			tmpb = ReadDOC(window, Mplus_Toggle) & DOC_TOGGLE_BIT;
+			tmpc = ReadDOC(window, Mplus_Toggle) & DOC_TOGGLE_BIT;
+			if (tmp != tmpb && tmp == tmpc)
+					return ChipID;
+			break;
+		default:
+			break;
+		}
+		/* FALL TRHU */
+
 	default:
+
 #ifndef CONFIG_MTD_DOCPROBE_55AA
 		printk(KERN_WARNING "Possible DiskOnChip with unknown ChipID %2.2X found at 0x%lx\n",
 		       ChipID, physadr);
@@ -237,6 +295,13 @@ static void __init DoC_Probe(unsigned long physadr)
 			im_modname = "doc2001";
 #endif /* DOC_SINGLE_DRIVER */
 			break;
+
+		case DOC_ChipID_DocMilPlus16:
+		case DOC_ChipID_DocMilPlus32:
+			name="MillenniumPlus";
+			im_funcname = "DoCMilPlus_init";
+			im_modname = "doc2001plus";
+			break;
 		}
 
 		if (im_funcname)
@@ -267,7 +332,7 @@ int __init init_doc(void)
 		printk(KERN_INFO "Using configured DiskOnChip probe address 0x%lx\n", doc_config_location);
 		DoC_Probe(doc_config_location);
 	} else {
-		for (i=0; doc_locations[i]; i++) {
+		for (i=0; (doc_locations[i] != 0xffffffff); i++) {
 			DoC_Probe(doc_locations[i]);
 		}
 	}

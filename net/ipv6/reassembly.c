@@ -1,3 +1,5 @@
+/* $USAGI: reassembly.c,v 1.24 2003/08/08 13:46:38 yoshfuji Exp $ */
+
 /*
  *	IPv6 fragment reassembly
  *	Linux INET6 implementation 
@@ -260,7 +262,7 @@ static __inline__ void fq_kill(struct frag_queue *fq)
 	}
 }
 
-static void ip6_evictor(void)
+static void ip6_evictor(struct inet6_dev *idev)
 {
 	struct frag_queue *fq;
 	struct list_head *tmp;
@@ -287,13 +289,15 @@ static void ip6_evictor(void)
 		spin_unlock(&fq->lock);
 
 		fq_put(fq, &work);
-		IP6_INC_STATS_BH(Ip6ReasmFails);
+		IP6_INC_STATS_BH(idev,Ip6ReasmFails);
 	}
 }
 
 static void ip6_frag_expire(unsigned long data)
 {
 	struct frag_queue *fq = (struct frag_queue *) data;
+	struct net_device *dev;
+	struct inet6_dev *idev;
 
 	spin_lock(&fq->lock);
 
@@ -302,13 +306,14 @@ static void ip6_frag_expire(unsigned long data)
 
 	fq_kill(fq);
 
-	IP6_INC_STATS_BH(Ip6ReasmTimeout);
-	IP6_INC_STATS_BH(Ip6ReasmFails);
+	dev = dev_get_by_index(fq->iif);
+	idev = dev ? in6_dev_get(dev) : NULL;
+
+	IP6_INC_STATS_BH(idev,Ip6ReasmTimeout);
+	IP6_INC_STATS_BH(idev,Ip6ReasmFails);
 
 	/* Send error only if the first segment arrived. */
 	if (fq->last_in&FIRST_IN && fq->fragments) {
-		struct net_device *dev = dev_get_by_index(fq->iif);
-
 		/*
 		   But use as source device on which LAST ARRIVED
 		   segment was received. And do not use fq->dev
@@ -318,9 +323,12 @@ static void ip6_frag_expire(unsigned long data)
 			fq->fragments->dev = dev;
 			icmpv6_send(fq->fragments, ICMPV6_TIME_EXCEED, ICMPV6_EXC_FRAGTIME, 0,
 				    dev);
-			dev_put(dev);
 		}
 	}
+	if (idev)
+		in6_dev_put(idev);
+	if (dev)
+		dev_put(dev);
 out:
 	spin_unlock(&fq->lock);
 	fq_put(fq, NULL);
@@ -367,7 +375,8 @@ static struct frag_queue *ip6_frag_intern(unsigned int hash,
 
 
 static struct frag_queue *
-ip6_frag_create(unsigned int hash, u32 id, struct in6_addr *src, struct in6_addr *dst)
+ip6_frag_create(unsigned int hash, u32 id, struct in6_addr *src, struct in6_addr *dst,
+		struct inet6_dev *idev)
 {
 	struct frag_queue *fq;
 
@@ -389,12 +398,12 @@ ip6_frag_create(unsigned int hash, u32 id, struct in6_addr *src, struct in6_addr
 	return ip6_frag_intern(hash, fq);
 
 oom:
-	IP6_INC_STATS_BH(Ip6ReasmFails);
+	IP6_INC_STATS_BH(idev,Ip6ReasmFails);
 	return NULL;
 }
 
 static __inline__ struct frag_queue *
-fq_find(u32 id, struct in6_addr *src, struct in6_addr *dst)
+fq_find(u32 id, struct in6_addr *src, struct in6_addr *dst, struct inet6_dev *idev)
 {
 	struct frag_queue *fq;
 	unsigned int hash = ip6qhashfn(id, src, dst);
@@ -411,7 +420,7 @@ fq_find(u32 id, struct in6_addr *src, struct in6_addr *dst)
 	}
 	read_unlock(&ip6_frag_lock);
 
-	return ip6_frag_create(hash, id, src, dst);
+	return ip6_frag_create(hash, id, src, dst, idev);
 }
 
 
@@ -420,6 +429,7 @@ static void ip6_frag_queue(struct frag_queue *fq, struct sk_buff *skb,
 {
 	struct sk_buff *prev, *next;
 	int offset, end;
+	unsigned int unfrag_len;
 
 	if (fq->last_in & COMPLETE)
 		goto err;
@@ -427,10 +437,18 @@ static void ip6_frag_queue(struct frag_queue *fq, struct sk_buff *skb,
 	offset = ntohs(fhdr->frag_off) & ~0x7;
 	end = offset + (ntohs(skb->nh.ipv6h->payload_len) -
 			((u8 *) (fhdr + 1) - (u8 *) (skb->nh.ipv6h + 1)));
+	if (offset) {
+		struct sk_buff *head = fq->fragments;
+		unfrag_len = (fq->last_in & FIRST_IN) ? 
+				(head->h.raw - (u8 *) (head->nh.ipv6h + 1)) :
+				0;
+	} else {
+		unfrag_len = ((u8 *) fhdr) - (u8 *)(skb->nh.ipv6h + 1);
+	}
 
-	if ((unsigned int)end >= 65536) {
- 		icmpv6_param_prob(skb,ICMPV6_HDR_FIELD, (u8*)&fhdr->frag_off - skb->nh.raw);
- 		return;
+	if (unfrag_len + (unsigned int)end >= 65536) {
+		icmpv6_param_prob(skb,ICMPV6_HDR_FIELD, (u8*)&fhdr->frag_off - skb->nh.raw); 
+		return;
 	}
 
  	if (skb->ip_summed == CHECKSUM_HW)
@@ -589,7 +607,8 @@ static int ip6_frag_reasm(struct frag_queue *fq, struct sk_buff **skb_in,
 			  struct net_device *dev)
 {
 	struct sk_buff *fp, *head = fq->fragments;
-	int    remove_fraghdr = 0;
+	struct inet6_dev *idev;
+	int    remove_fraghdr = 1;
 	int    payload_len;
 	int    nhoff;
 
@@ -598,16 +617,14 @@ static int ip6_frag_reasm(struct frag_queue *fq, struct sk_buff **skb_in,
 	BUG_TRAP(head != NULL);
 	BUG_TRAP(FRAG6_CB(head)->offset == 0);
 
+	idev = in6_dev_get(dev);
+
 	/* Unfragmented part is taken from the first segment. */
 	payload_len = (head->data - head->nh.raw) - sizeof(struct ipv6hdr) + fq->len;
 	nhoff = head->h.raw - head->nh.raw;
 
-	if (payload_len > 65535) {
-		payload_len -= 8;
-		if (payload_len > 65535)
-			goto out_oversize;
-		remove_fraghdr = 1;
-	}
+	if (payload_len > 65535 + 8)
+		goto out_oversize;
 
 	/* Head of list must not be cloned. */
 	if (skb_cloned(head) && pskb_expand_head(head, 0, 0, GFP_ATOMIC))
@@ -645,6 +662,7 @@ static int ip6_frag_reasm(struct frag_queue *fq, struct sk_buff **skb_in,
 		memmove(head->head+8, head->head, (head->data-head->head)-8);
 		head->mac.raw += 8;
 		head->nh.raw += 8;
+		payload_len -= 8;
 	} else {
 		((struct frag_hdr*)head->h.raw)->frag_off = 0;
 	}
@@ -676,7 +694,9 @@ static int ip6_frag_reasm(struct frag_queue *fq, struct sk_buff **skb_in,
 	if (head->ip_summed == CHECKSUM_HW)
 		head->csum = csum_partial(head->nh.raw, head->h.raw-head->nh.raw, head->csum);
 
-	IP6_INC_STATS_BH(Ip6ReasmOKs);
+	IP6_INC_STATS_BH(idev,Ip6ReasmOKs);
+	if (idev)
+		in6_dev_put(idev);
 	fq->fragments = NULL;
 	return nhoff;
 
@@ -688,13 +708,16 @@ out_oom:
 	if (net_ratelimit())
 		printk(KERN_DEBUG "ip6_frag_reasm: no memory for reassembly\n");
 out_fail:
-	IP6_INC_STATS_BH(Ip6ReasmFails);
+	IP6_INC_STATS_BH(idev,Ip6ReasmFails);
+	if (idev)
+		in6_dev_put(idev);
 	return -1;
 }
 
 int ipv6_reassembly(struct sk_buff **skbp, int nhoff)
 {
 	struct sk_buff *skb = *skbp; 
+	struct inet6_dev *idev = in6_dev_get(skb->dev);
 	struct net_device *dev = skb->dev;
 	struct frag_hdr *fhdr;
 	struct frag_queue *fq;
@@ -702,14 +725,18 @@ int ipv6_reassembly(struct sk_buff **skbp, int nhoff)
 
 	hdr = skb->nh.ipv6h;
 
-	IP6_INC_STATS_BH(Ip6ReasmReqds);
+	IP6_INC_STATS_BH(idev,Ip6ReasmReqds);
 
 	/* Jumbo payload inhibits frag. header */
 	if (hdr->payload_len==0) {
+		if (idev)
+			in6_dev_put(idev);
 		icmpv6_param_prob(skb, ICMPV6_HDR_FIELD, skb->h.raw-skb->nh.raw);
 		return -1;
 	}
 	if (!pskb_may_pull(skb, (skb->h.raw-skb->data)+sizeof(struct frag_hdr))) {
+		if (idev)
+			in6_dev_put(idev);
 		icmpv6_param_prob(skb, ICMPV6_HDR_FIELD, skb->h.raw-skb->nh.raw);
 		return -1;
 	}
@@ -720,15 +747,17 @@ int ipv6_reassembly(struct sk_buff **skbp, int nhoff)
 	if (!(fhdr->frag_off & htons(0xFFF9))) {
 		/* It is not a fragmented frame */
 		skb->h.raw += sizeof(struct frag_hdr);
-		IP6_INC_STATS_BH(Ip6ReasmOKs);
+		IP6_INC_STATS_BH(idev,Ip6ReasmOKs);
 
+		if (idev)
+			in6_dev_put(idev);
 		return (u8*)fhdr - skb->nh.raw;
 	}
 
 	if (atomic_read(&ip6_frag_mem) > sysctl_ip6frag_high_thresh)
-		ip6_evictor();
+		ip6_evictor(idev);
 
-	if ((fq = fq_find(fhdr->identification, &hdr->saddr, &hdr->daddr)) != NULL) {
+	if ((fq = fq_find(fhdr->identification, &hdr->saddr, &hdr->daddr, idev)) != NULL) {
 		int ret = -1;
 
 		spin_lock(&fq->lock);
@@ -744,7 +773,9 @@ int ipv6_reassembly(struct sk_buff **skbp, int nhoff)
 		return ret;
 	}
 
-	IP6_INC_STATS_BH(Ip6ReasmFails);
+	IP6_INC_STATS_BH(idev,Ip6ReasmFails);
+	if (idev)
+		in6_dev_put(idev);
 	kfree_skb(skb);
 	return -1;
 }

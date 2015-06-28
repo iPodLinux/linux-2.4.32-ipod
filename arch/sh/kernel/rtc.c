@@ -68,6 +68,7 @@ void sh_rtc_gettimeofday(struct timeval *tv)
 
 	if (badval || yr > 99 || mon < 1 || mon > 12 || day > 31 || day < 1 ||
 	    hr > 23 || min > 59 || sec > 59 || (yr100 != 19 && yr100 != 20)) {
+bad_time:
 		printk(KERN_ERR
 		       "SH RTC: invalid value, resetting to 1 Jan 2000\n");
 		ctrl_outb(RCR2_RESET, RCR2);  /* Reset & Stop */
@@ -92,6 +93,8 @@ void sh_rtc_gettimeofday(struct timeval *tv)
 #endif
 
 	tv->tv_sec = mktime(yr100 * 100 + yr, mon, day, hr, min, sec);
+	if (tv->tv_sec < 0)
+		goto bad_time;
 	tv->tv_usec = (sec128 * 1000000) / 128;
 }
 

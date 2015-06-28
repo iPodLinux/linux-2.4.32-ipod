@@ -435,6 +435,180 @@
 		bne	1001b
 		.endm
 
+#elif defined(CONFIG_ARCH_IXP1200)
+
+                .macro  addruart,rx
+                mrc     p15, 0, \rx, c1, c0
+                tst     \rx, #1                 @ MMU enabled?
+                moveq   \rx, #0x90000000        @ physical base address
+                movne   \rx, #0xf0000000        @ virtual address
+                add     \rx, \rx, #0x00003000   @
+                .endm
+
+                .macro  senduart,rd,rx
+                str     \rd, [\rx, #0xc00]      @ UARTDR
+                .endm
+
+		.macro	busyuart,rd,rx
+1001:           ldr     \rd, [\rx, #0x400]      @ UARTFLG 
+		tst     \rd, #1 << 2            @ loop until set
+                beq     1001b
+                .endm
+
+                .macro  waituart,rd,rx
+                .endm
+
+#elif defined(CONFIG_ARCH_IOP3XX)
+
+		.macro	addruart,rx
+		mov	\rx, #0xfe000000
+#ifdef CONFIG_ARCH_IQ80310)
+		orr	\rx, \rx, #0x00810000
+#elif defined(CONFIG_ARCH_IQ80321) || defined(CONFIG_ARCH_IQ31244)
+		orr	\rx, \rx, #0x00800000
+#else
+#error Unknown IOP3XX implementation
+#endif
+		.endm
+
+		.macro	senduart,rd,rx
+		strb	\rd, [\rx]
+		.endm
+
+		.macro	busyuart,rd,rx
+1002:		ldrb	\rd, [\rx, #0x5]
+		and	\rd, \rd, #0x60
+		teq	\rd, #0x60
+		bne	1002b
+		.endm
+
+		.macro	waituart,rd,rx
+		.endm
+
+#elif defined(CONFIG_ARCH_ADI_EVB)
+
+		.macro	addruart,rx
+		mrc	p15, 0, \rx, c1, c0
+		tst	\rx, #1			@ MMU enabled?
+		mov	\rx, #0x00400000	@ physical base address
+		orrne	\rx, \rx, #0xff000000	@ virtual base
+		.endm
+
+		.macro	senduart,rd,rx
+		strb	\rd, [\rx]
+		.endm
+
+		.macro	busyuart,rd,rx
+1002:		ldrb	\rd, [\rx, #0x5]
+		and	\rd, \rd, #0x60
+		teq	\rd, #0x60
+		bne	1002b
+		.endm
+
+		.macro	waituart,rd,rx
+1001:		ldrb	\rd, [\rx, #0x6]
+		tst	\rd, #0x10
+		beq	1001b
+		.endm
+
+#elif defined(CONFIG_ARCH_ADIFCC)
+
+#ifdef CONFIG_ARCH_ADI_EVB
+		.macro	addruart,rx
+		mrc	p15, 0, \rx, c1, c0
+		tst	\rx, #1			@ MMU enabled?
+		mov	\rx, #0x00400000	@ physical base address
+		orrne	\rx, #0xff000000	@ virtual base
+		.endm
+#elif defined(CONFIG_ARCH_BRH)
+		.macro	addruart,rx
+		mrc	p15, 0, \rx, c1, c0
+		tst	\rx, #1			@ MMU enabled?
+		moveq	\rx, #0x03000000	@ physical base address
+		movne	\rx, #0xff000000	@ virtual base
+		.endm
+#endif
+
+		.macro	senduart,rd,rx
+		strb	\rd, [\rx]
+		.endm
+
+		.macro	busyuart,rd,rx
+1002:		ldrb	\rd, [\rx, #0x5]
+		and	\rd, \rd, #0x60
+		teq	\rd, #0x60
+		bne	1002b
+		.endm
+
+		.macro	waituart,rd,rx
+1001:		ldrb	\rd, [\rx, #0x6]
+		tst	\rd, #0x10
+		beq	1001b
+		.endm
+
+#elif defined(CONFIG_ARCH_IXP2000)
+
+		.macro  addruart,rx
+		mrc	p15, 0, \rx, c1, c0
+		tst	\rx, #1			@ MMU enabled?
+		moveq	\rx, #0xc0000000	@ Physical base
+		addeq	\rx, \rx, #0x00030000
+		movne	\rx, #0xfa000000	@ virtual base
+		addne	\rx, \rx, #0x00ff0000
+		addne	\rx, \rx, #0x0000b000
+#ifdef	__ARMEB__
+		orr	\rx, \rx, #0x00000003
+#endif
+		.endm 
+		
+		.macro	senduart,rd,rx
+		strb	\rd, [\rx]
+		.endm
+
+		.macro	busyuart,rd,rx
+1002:		ldrb	\rd, [\rx, #0x14]
+		tst	\rd, #0x60       
+		beq	1002b
+		.endm
+
+		.macro	waituart,rd,rx
+		nop
+		nop
+		nop
+		.endm
+
+
+#elif defined(CONFIG_ARCH_IXP425)
+
+		.macro	addruart,rx
+		mrc	p15, 0, \rx, c1, c0
+		tst	\rx, #1			@ MMU enabled?
+		moveq	\rx, #0xc8000000	@ Physical
+		movne	\rx, #0xff000000	@ Virtual
+		orrne	\rx, \rx, #0x00fd0000	
+		orrne	\rx, \rx, #0x00002000
+#ifdef __ARMEB__
+		add	\rx,\rx,#3            
+#endif
+		.endm
+
+		.macro  senduart,rd,rx
+		strb    \rd, [\rx]
+		.endm
+
+		.macro  busyuart,rd,rx
+1002:		ldrb    \rd, [\rx, #0x14]
+		and     \rd, \rd, #0x60	@ check THRE and TEMT bits
+		teq     \rd, #0x60
+		beq     1002b
+		.endm 
+		
+		.macro  waituart,rd,rx
+		nop
+		nop
+		nop
+		.endm
+
 #elif defined(CONFIG_ARCH_MX1ADS)
 
 		.macro	addruart,rx
@@ -467,7 +641,6 @@
 		tst	\rd, #1 << 3		@ TXDC
 		beq	1002b			@ wait until transmit done
 		.endm
-
 
 
 #else

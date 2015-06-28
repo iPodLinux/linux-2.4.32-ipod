@@ -4,6 +4,9 @@
  *
  *  Copyright (C) 1999  Niibe Yutaka
  *
+ * Modified by Rahul Chaturvedi on 22/06/2004 (justanotheraliasforrahul@yahoo.com)
+ * Lines 158-164 (For copying the ROMFS from the .bss image in ROM instead of RAM)
+ * 
  */
 
 /*
@@ -43,6 +46,7 @@
 #ifdef CONFIG_SH_EARLY_PRINTK
 #include <asm/sh_bios.h>
 #endif
+#include <asm/byteorder.h>
 
 #ifdef CONFIG_SH_KGDB
 #include <asm/kgdb.h>
@@ -96,7 +100,7 @@ static struct sh_machine_vector* __init get_mv_byname(const char* name);
 #define RAMDISK_FLAGS (*(unsigned long *) (PARAM+0x004))
 #define ORIG_ROOT_DEV (*(unsigned long *) (PARAM+0x008))
 #define LOADER_TYPE (*(unsigned long *) (PARAM+0x00c))
-#define INITRD_START (*(unsigned long *) (PARAM+0x010))
+#define INITRD_START __pa(*(unsigned long *) (PARAM+0x010))
 #define INITRD_SIZE (*(unsigned long *) (PARAM+0x014))
 /* ... */
 #define COMMAND_LINE ((char *) (PARAM+0x100))
@@ -106,6 +110,10 @@ static struct sh_machine_vector* __init get_mv_byname(const char* name);
 #define RAMDISK_PROMPT_FLAG		0x8000
 #define RAMDISK_LOAD_FLAG		0x4000	
 
+#ifdef CONFIG_COMMAND_LINE
+#undef COMMAND_LINE
+static char COMMAND_LINE[COMMAND_LINE_SIZE] = CONFIG_COMMAND_LINE_VALUE;
+#endif
 static char command_line[COMMAND_LINE_SIZE] = { 0, };
        char saved_command_line[COMMAND_LINE_SIZE];
 
@@ -135,14 +143,102 @@ static struct resource ram_resources[] = {
 
 unsigned long memory_start, memory_end;
 
+
+#if defined(CONFIG_SH_SNAPGEAR)
+
+/*
+ * do not call printk in here,  bad things will happen,  the kernel isn't
+ * actually up yet,  we are called from head.S before BSS is cleared.
+ */
+
+extern void copy_romfs(void);
+void copy_romfs()
+{
+	unsigned long	*sp, *dp, len;
+	extern int __bss_start;
+#ifdef CONFIG_SH_ROMBOOT
+	extern int _mem_start, _rom_store;
+
+	sp = (unsigned long *) &__bss_start - ((_mem_start - _rom_store) / 4);
+#else
+	sp = (unsigned long *) &__bss_start;
+#endif
+	dp = (unsigned long *) &_end;
+
+	if (memcmp(&sp[0], "-rom1fs-", 8) == 0) { /* romfs */
+		len = be32_to_cpu(sp[2]);
+	} else if (sp[0] == 0x28cd3d45) { /* cramfs */
+		len = sp[1];
+	} else {
+		*dp = 0; /* make sure we don't see an old FS there */
+		return;
+	}
+
+	len = (len + 0xfff) & ~0xfff; /* make it a multiple of a page */
+	INITRD_SIZE = len;
+
+	sp += (len / 4);
+	dp += (len / 4);
+
+	/* copy backwards to avoid writing over ourselves */
+	while (dp >= ((unsigned long *) &_end))
+		*dp-- = *sp--;
+}
+#endif
+
+
+
 #ifdef CONFIG_SH_EARLY_PRINTK
+
+#ifndef CONFIG_SH_STANDARD_BIOS
+/*
+ * if we don't have a BIOS, assume the debug serial port for now.
+ */
+#if defined(__sh3__)
+#define SCBASE	0xa4000150
+#define	SCSSRT	short
+#define SCTDR ((volatile unsigned char *)   (SCBASE + 0x6))
+#define SCSSR ((volatile unsigned SCSSRT *) (SCBASE + 0x8))
+#elif defined(__SH4__)
+#define SCBASE	0xffe80000
+#define	SCSSRT	short
+#define SCTDR ((volatile unsigned char *)   (SCBASE + 0xc))
+#define SCSSR ((volatile unsigned SCSSRT *) (SCBASE + 0x10))
+#else
+#error "Unknown CPU type"
+#endif
+
+static void sci_put_char(char ch)
+{
+	unsigned SCSSRT status = 0;
+	while ((*SCSSR & 0x20) == 0)
+		;
+	*SCTDR = ch;
+	status = *SCSSR;
+	*SCSSR = status & ~0x20;
+}
+
+#endif
+
+
 /*
  *	Print a string through the BIOS
  */
 static void sh_console_write(struct console *co, const char *s,
 				 unsigned count)
 {
-    	sh_bios_console_write(s, count);
+#ifdef CONFIG_SH_STANDARD_BIOS
+	sh_bios_console_write(s, count);
+#else
+	int flags;
+	save_and_cli(flags);
+	while (count-- > 0) {
+		if (*s == '\n')
+			sci_put_char('\r');
+		sci_put_char(*s++);
+	}
+	restore_flags(flags);
+#endif
 }
 
 static kdev_t sh_console_device(struct console *c)
@@ -168,7 +264,7 @@ static int __init sh_console_setup(struct console *co, char *options)
 	 *  	no idea what serial settings the BIOS is using, or
 	 *  	even if its using the serial port at all.
 	 */
-    	cflag |= B115200 | CS8 | /*no parity*/0;
+	cflag |= B115200 | CS8 | /*no parity*/0;
 
 	co->cflag = cflag;
 
@@ -176,7 +272,11 @@ static int __init sh_console_setup(struct console *co, char *options)
 }
 
 static struct console sh_console = {
+#ifdef CONFIG_SH_STANDARD_BIOS
 	name:		"bios",
+#else
+	name:		"sci",
+#endif
 	write:		sh_console_write,
 	device:		sh_console_device,
 	setup:		sh_console_setup,
@@ -387,6 +487,11 @@ void __init setup_arch(char **cmdline_p)
 	 * Partially used pages are not usable - thus
 	 * we are rounding upwards:
  	 */
+#ifdef CONFIG_BLK_DEV_INITRD
+	if (INITRD_START == __pa(&_end))
+		start_pfn = PFN_UP(__pa(&_end) + INITRD_SIZE);
+	else
+#endif
 	start_pfn = PFN_UP(__pa(&_end));
 	/*
 	 * Find a proper area for the bootmem bitmap. After this
@@ -437,11 +542,15 @@ void __init setup_arch(char **cmdline_p)
 	reserve_bootmem_node(NODE_DATA(0), __MEMORY_START, PAGE_SIZE);
 
 #ifdef CONFIG_BLK_DEV_INITRD
-	if (LOADER_TYPE && INITRD_START) {
+	if (LOADER_TYPE && INITRD_START && INITRD_SIZE) {
 		if (INITRD_START + INITRD_SIZE <= (max_low_pfn << PAGE_SHIFT)) {
-			reserve_bootmem_node(NODE_DATA(0), INITRD_START+__MEMORY_START, INITRD_SIZE);
-			initrd_start =
-				INITRD_START ? INITRD_START + PAGE_OFFSET + __MEMORY_START : 0;
+			if (INITRD_START == __pa(&_end)) {
+				initrd_start = INITRD_START + PAGE_OFFSET;
+			} else {
+				reserve_bootmem_node(NODE_DATA(0), INITRD_START+__MEMORY_START, INITRD_SIZE);
+				initrd_start =
+					INITRD_START ? INITRD_START + PAGE_OFFSET + __MEMORY_START : 0;
+			}
 			initrd_end = initrd_start + INITRD_SIZE;
 		} else {
 			printk("initrd extends beyond end of memory "
@@ -532,6 +641,13 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 #if defined(__sh3__)
 	seq_printf(m, "cpu family\t: SH-3\n"
 		      "cache size\t: 8K-byte\n");
+#if defined(CONFIG_SH_DSP)
+{
+	extern int sh3_dsp(void);
+	seq_printf(m, "dsp unit\t: %s\n",
+			(sh3_dsp() ? "present" : "not present"));
+}
+#endif
 #elif defined(__SH4__)
 	seq_printf(m, "cpu family\t: SH-4\n"
 		      "cache size\t: 8K-byte/16K-byte\n");

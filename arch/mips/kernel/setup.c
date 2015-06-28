@@ -265,7 +265,21 @@ static inline void bootmem_init(void)
 	 * Partially used pages are not usable - thus
 	 * we are rounding upwards.
 	 */
-	start_pfn = PFN_UP(__pa(&_end));
+	{
+		unsigned long	*sp, len = 0;
+
+		sp = (unsigned long *) &_end;
+		
+		if (memcmp(&sp[0], "-rom1fs-", 8) == 0) { /* romfs */
+			len = be32_to_cpu(sp[2]);
+			printk("romfs reserved %d\n", len);
+		} else if (sp[0] == 0x28cd3d45) { /* cramfs */
+			len = sp[1];
+			printk("cramfs reserved %d\n", len);
+		} else
+			printk("NOFS reserved @ 0x%x\n", sp);
+		start_pfn = PFN_UP(__pa(&_end + len));
+	}
 #endif	/* CONFIG_BLK_DEV_INITRD */
 
 	/* Find the highest page frame number we have available.  */

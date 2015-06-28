@@ -17,6 +17,8 @@
 #define pc_pointer(v) \
 	((v) & ~PCMASK)
 
+#define user_stack(regs) ((regs)->ARM_sp)
+
 #define instruction_pointer(regs) \
 	(pc_pointer((regs)->ARM_pc))
 

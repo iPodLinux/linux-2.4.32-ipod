@@ -203,11 +203,14 @@ int inet_addr_onlink(struct in_device *in_dev, u32 a, u32 b)
 static void
 inet_del_ifa(struct in_device *in_dev, struct in_ifaddr **ifap, int destroy)
 {
+	struct in_ifaddr *promote = NULL;
 	struct in_ifaddr *ifa1 = *ifap;
 
 	ASSERT_RTNL();
 
-	/* 1. Deleting primary ifaddr forces deletion all secondaries */
+	/* 1. Deleting primary ifaddr forces deletion all secondaries
+	 * unless alias promotion is set
+	 * */
 
 	if (!(ifa1->ifa_flags&IFA_F_SECONDARY)) {
 		struct in_ifaddr *ifa;
@@ -220,13 +223,19 @@ inet_del_ifa(struct in_device *in_dev, struct in_ifaddr **ifap, int destroy)
 				ifap1 = &ifa->ifa_next;
 				continue;
 			}
-			write_lock_bh(&in_dev->lock);
-			*ifap1 = ifa->ifa_next;
-			write_unlock_bh(&in_dev->lock);
 
-			rtmsg_ifa(RTM_DELADDR, ifa);
-			notifier_call_chain(&inetaddr_chain, NETDEV_DOWN, ifa);
-			inet_free_ifa(ifa);
+			if (!IN_DEV_PROMOTE_SECONDARIES(in_dev)) {
+				write_lock_bh(&in_dev->lock);
+				*ifap1 = ifa->ifa_next;
+				write_unlock_bh(&in_dev->lock);
+
+				rtmsg_ifa(RTM_DELADDR, ifa);
+				notifier_call_chain(&inetaddr_chain, NETDEV_DOWN, ifa);
+				inet_free_ifa(ifa);
+			} else {
+				promote = ifa;
+				break;
+			}
 		}
 	}
 
@@ -253,6 +262,12 @@ inet_del_ifa(struct in_device *in_dev, struct in_ifaddr **ifap, int destroy)
 
 		if (in_dev->ifa_list == NULL)
 			inetdev_destroy(in_dev);
+	}
+
+	if (promote && IN_DEV_PROMOTE_SECONDARIES(in_dev)) {
+		promote->ifa_flags &= ~IFA_F_SECONDARY;
+		rtmsg_ifa(RTM_NEWADDR, promote);
+		notifier_call_chain(&inetaddr_chain, NETDEV_UP, promote);
 	}
 }
 
@@ -1208,6 +1223,9 @@ static struct devinet_sysctl_table
 	 &proc_dointvec},
 	{NET_IPV4_CONF_FORCE_IGMP_VERSION, "force_igmp_version",
 	 &ipv4_devconf.force_igmp_version, sizeof(int), 0644, NULL,
+	 &proc_dointvec},
+	{NET_IPV4_CONF_PROMOTE_SECONDARIES, "promote_secondaries",
+	 &ipv4_devconf.promote_secondaries, sizeof(int), 0644, NULL,
 	 &proc_dointvec},
 	 {0}},
 

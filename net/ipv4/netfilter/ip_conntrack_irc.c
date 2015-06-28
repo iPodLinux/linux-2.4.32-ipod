@@ -26,7 +26,6 @@
 #include <linux/module.h>
 #include <linux/netfilter.h>
 #include <linux/ip.h>
-#include <net/checksum.h>
 #include <net/tcp.h>
 
 #include <linux/netfilter_ipv4/ip_conntrack_helper.h>
@@ -107,13 +106,12 @@ int parse_dcc(char *data, char *data_end, u_int32_t * ip, u_int16_t * port,
 static int help(const struct iphdr *iph, size_t len,
 		struct ip_conntrack *ct, enum ip_conntrack_info ctinfo)
 {
-	/* tcplen not negative guarenteed by ip_conntrack_tcp.c */
+	/* datalen not negative guarenteed by ip_conntrack_proto_tcp.c */
 	struct tcphdr *tcph = (void *) iph + iph->ihl * 4;
 	const char *data = (const char *) tcph + tcph->doff * 4;
 	const char *_data = data;
 	char *data_limit;
-	u_int32_t tcplen = len - iph->ihl * 4;
-	u_int32_t datalen = tcplen - tcph->doff * 4;
+	u_int32_t datalen = len - iph->ihl * 4 - tcph->doff * 4;
 	int dir = CTINFO2DIR(ctinfo);
 	struct ip_conntrack_expect expect, *exp = &expect;
 	struct ip_ct_irc_expect *exp_irc_info = &exp->help.exp_irc_info;
@@ -133,22 +131,6 @@ static int help(const struct iphdr *iph, size_t len,
 	if (ctinfo != IP_CT_ESTABLISHED
 	    && ctinfo != IP_CT_ESTABLISHED + IP_CT_IS_REPLY) {
 		DEBUGP("Conntrackinfo = %u\n", ctinfo);
-		return NF_ACCEPT;
-	}
-
-	/* Not whole TCP header? */
-	if (tcplen < sizeof(struct tcphdr) || tcplen < tcph->doff * 4) {
-		DEBUGP("tcplen = %u\n", (unsigned) tcplen);
-		return NF_ACCEPT;
-	}
-
-	/* Checksum invalid?  Ignore. */
-	/* FIXME: Source route IP option packets --RR */
-	if (tcp_v4_check(tcph, tcplen, iph->saddr, iph->daddr,
-			 csum_partial((char *) tcph, tcplen, 0))) {
-		DEBUGP("bad csum: %p %u %u.%u.%u.%u %u.%u.%u.%u\n",
-		     tcph, tcplen, NIPQUAD(iph->saddr),
-		     NIPQUAD(iph->daddr));
 		return NF_ACCEPT;
 	}
 

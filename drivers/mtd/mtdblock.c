@@ -566,6 +566,31 @@ static int mtdblock_ioctl(struct inode * inode, struct file * file,
 	}
 }
 
+
+#ifdef MAGIC_ROM_PTR
+static int
+mtdblock_romptr(kdev_t dev, struct vm_area_struct * vma)
+{
+	struct mtd_info *mtd;
+	u_char *ptr;
+	size_t len;
+
+	mtd = __get_mtd_device(NULL, MINOR(dev));
+
+	if (!mtd->point)
+		return -ENOSYS; /* Can't do it, No function to point to correct addr */
+
+	if ((*mtd->point)(mtd, vma->vm_pgoff << PAGE_SHIFT,
+				vma->vm_end - vma->vm_start, &len, &ptr) != 0)
+		return -ENOSYS;
+
+	vma->vm_start = (unsigned long) ptr;
+	vma->vm_end = vma->vm_start + len;
+	return 0;
+}
+#endif
+
+
 #if LINUX_VERSION_CODE < 0x20326
 static struct file_operations mtd_fops =
 {
@@ -573,6 +598,9 @@ static struct file_operations mtd_fops =
 	ioctl: mtdblock_ioctl,
 	release: mtdblock_release,
 	read: block_read,
+#ifdef MAGIC_ROM_PTR
+	romptr: mtdblock_romptr,
+#endif
 	write: block_write
 };
 #else
@@ -583,6 +611,9 @@ static struct block_device_operations mtd_fops =
 #endif
 	open: mtdblock_open,
 	release: mtdblock_release,
+#ifdef MAGIC_ROM_PTR
+	romptr: mtdblock_romptr,
+#endif
 	ioctl: mtdblock_ioctl
 };
 #endif
@@ -636,6 +667,8 @@ int __init init_mtdblock(void)
 		return -EAGAIN;
 	}
 #endif
+	DEBUG(MTD_DEBUG_LEVEL3,
+		"init_mtdblock: allocated major number %d.\n", MTD_BLOCK_MAJOR);
 	
 	/* We fill it in at open() time. */
 	for (i=0; i< MAX_MTD_DEVICES; i++) {

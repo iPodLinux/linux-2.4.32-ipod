@@ -121,7 +121,7 @@ SCTP_STATIC void sctp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	skb->nh.raw = saveip;
 	skb->h.raw = savesctp;
 	if (!sk) {
-		ICMP6_INC_STATS_BH(Icmp6InErrors);
+		ICMP6_INC_STATS_BH(idev, Icmp6InErrors);
 		goto out;
 	}
 
@@ -287,7 +287,8 @@ static void sctp_v6_get_saddr(struct sctp_association *asoc,
 			  __FUNCTION__, asoc, dst, NIP6(&daddr->v6.sin6_addr));
 
 	if (!asoc) {
-		ipv6_get_saddr(dst, &daddr->v6.sin6_addr,&saddr->v6.sin6_addr);
+		/* XXX: we need to inherit tp->use_tempaddr */
+		ipv6_get_saddr(dst, &daddr->v6.sin6_addr,&saddr->v6.sin6_addr, 0);
 		SCTP_DEBUG_PRINTK("saddr from ipv6_get_saddr: "
 				  "%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x\n",
 				  NIP6(&saddr->v6.sin6_addr));

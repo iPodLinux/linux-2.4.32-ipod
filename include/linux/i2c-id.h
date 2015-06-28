@@ -147,6 +147,7 @@
 #define I2C_ALGO_ISA 	0x050000	/* lm_sensors ISA pseudo-adapter */
 #define I2C_ALGO_SAA7146 0x060000	/* SAA 7146 video decoder bus	*/
 #define I2C_ALGO_ACB 	0x070000	/* ACCESS.bus algorithm         */
+#define I2C_ALGO_MB93493 0x080000	/* Fujitsu MB93493              */
 
 #define I2C_ALGO_EC     0x100000        /* ACPI embedded controller     */
 
@@ -185,6 +186,7 @@
 #define I2C_HW_B_RIVA	0x10	/* Riva based graphics cards		*/
 #define I2C_HW_B_IOC	0x11	/* IOC bit-wiggling			*/
 #define I2C_HW_B_TSUNA  0x12	/* DEC Tsunami chipset			*/
+#define I2C_HW_B_COLDF	0x13	/* Motorola Coldfire GPIO I2C		*/
 
 /* --- PCF 8584 based algorithms					*/
 #define I2C_HW_P_LP	0x00	/* Parallel port interface		*/
@@ -217,5 +219,8 @@
 
 /* --- ISA pseudo-adapter						*/
 #define I2C_HW_ISA 0x00
+
+/* --- MB93493 adapters */
+#define I2C_HW_MB_MB	0x00
 
 #endif /* I2C_ID_H */

@@ -312,6 +312,12 @@ static inline unsigned long __cmpxchg(volatile void *ptr, unsigned long old,
 
 #define set_wmb(var, value) do { var = value; wmb(); } while (0)
 
+#ifdef CONFIG_INTLAT
+
+#include <asm/intlat.h>
+
+#else   /* CONFIG_INTLAT_ */
+
 /* interrupt control.. */
 #define __save_flags(x)		__asm__ __volatile__("pushfl ; popl %0":"=g" (x): /* no input */)
 #define __restore_flags(x) 	__asm__ __volatile__("pushl %0 ; popfl": /* no output */ :"g" (x):"memory", "cc")
@@ -335,6 +341,8 @@ static inline unsigned long __cmpxchg(volatile void *ptr, unsigned long old,
 #define local_irq_restore(x)	__restore_flags(x)
 #define local_irq_disable()	__cli()
 #define local_irq_enable()	__sti()
+
+#endif		/* CONFIG_INTLAT */
 
 #ifdef CONFIG_SMP
 

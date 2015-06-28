@@ -1,3 +1,5 @@
+/* $USAGI: mcast.c,v 1.35 2003/11/12 05:12:01 yoshfuji Exp $ */
+
 /*
  *	Multicast support for IPv6
  *	Linux INET6 implementation 
@@ -32,6 +34,7 @@
 #include <linux/module.h>
 #include <linux/errno.h>
 #include <linux/types.h>
+#include <linux/random.h>
 #include <linux/string.h>
 #include <linux/socket.h>
 #include <linux/sockios.h>
@@ -60,13 +63,36 @@
 
 #include <net/checksum.h>
 
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+#include <linux/inet.h>
+#endif
+
 /* Set to 3 to get tracing... */
-#define MCAST_DEBUG 2
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+#define MCAST_DEBUG 3
+#else
+#define MCAST_DEBUG 1
+#endif
+
+#define MDBG(x)		printk x
+#define NOMDBG(x)	do { ; } while(0)
 
 #if MCAST_DEBUG >= 3
-#define MDBG(x) printk x
+#define MDBG3(x)	MDBG(x)
 #else
-#define MDBG(x)
+#define MDBG3(x)	NOMDBG(x)
+#endif
+
+#if MCAST_DEBUB >= 2
+#define MDBG2(x)	MDBG(x)
+#else
+#define MDBG2(x)	NOMDBG(x)
+#endif
+
+#if MCAST_DEBUG >= 1
+#define MDBG1(x)	MDBG(x)
+#else
+#define MDBG1(x)	NOMDBG(x)
 #endif
 
 /*
@@ -177,6 +203,14 @@ int ipv6_sock_mc_join(struct sock *sk, int ifindex, struct in6_addr *addr)
 	struct ipv6_mc_socklist *mc_lst;
 	struct ipv6_pinfo *np = &sk->net_pinfo.af_inet6;
 	int err;
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf[128];
+	in6_ntop(addr, abuf);
+
+	MDBG3((KERN_DEBUG
+		"ipv6_sock_mc_join(sk=%p, ifindex=%d, addr=%s)\n",
+		sk, ifindex, abuf));
+#endif
 
 	if (!(ipv6_addr_type(addr) & IPV6_ADDR_MULTICAST))
 		return -EINVAL;
@@ -187,7 +221,7 @@ int ipv6_sock_mc_join(struct sock *sk, int ifindex, struct in6_addr *addr)
 		return -ENOMEM;
 
 	mc_lst->next = NULL;
-	memcpy(&mc_lst->addr, addr, sizeof(struct in6_addr));
+	ipv6_addr_copy(&mc_lst->addr, addr);
 
 	if (ifindex == 0) {
 		struct rt6_info *rt;
@@ -238,17 +272,26 @@ int ipv6_sock_mc_drop(struct sock *sk, int ifindex, struct in6_addr *addr)
 {
 	struct ipv6_pinfo *np = &sk->net_pinfo.af_inet6;
 	struct ipv6_mc_socklist *mc_lst, **lnk;
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf[128];
+	in6_ntop(addr, abuf);
+
+	MDBG3((KERN_DEBUG
+		"ipv6_sock_mc_drop(sk=%p, ifindex=%d, addr=%s)\n",
+		sk, ifindex, abuf));
+#endif
 
 	write_lock_bh(&ipv6_sk_mc_lock);
 	for (lnk = &np->ipv6_mc_list; (mc_lst = *lnk) !=NULL ; lnk = &mc_lst->next) {
-		if (mc_lst->ifindex == ifindex &&
+		if ((ifindex == 0 || mc_lst->ifindex == ifindex) &&
 		    ipv6_addr_cmp(&mc_lst->addr, addr) == 0) {
 			struct net_device *dev;
 
 			*lnk = mc_lst->next;
 			write_unlock_bh(&ipv6_sk_mc_lock);
 
-			if ((dev = dev_get_by_index(ifindex)) != NULL) {
+			/* Note: mc_lst->ifindex != 0 */
+			if ((dev = dev_get_by_index(mc_lst->ifindex)) != NULL) {
 				struct inet6_dev *idev = in6_dev_get(dev);
 
 				if (idev) {
@@ -305,6 +348,9 @@ void ipv6_sock_mc_close(struct sock *sk)
 {
 	struct ipv6_pinfo *np = &sk->net_pinfo.af_inet6;
 	struct ipv6_mc_socklist *mc_lst;
+
+	MDBG3((KERN_DEBUG
+		"ipv6_sock_mc_close(sk=%p)\n", sk));
 
 	write_lock_bh(&ipv6_sk_mc_lock);
 	while ((mc_lst = np->ipv6_mc_list) != NULL) {
@@ -595,6 +641,15 @@ int inet6_mc_check(struct sock *sk, struct in6_addr *mc_addr,
 	struct ipv6_mc_socklist *mc;
 	struct ip6_sf_socklist *psl;
 	int rv = 1;
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf[128], sbuf[128];
+	in6_ntop(mc_addr, abuf);
+	in6_ntop(src_addr, sbuf);
+
+	MDBG3((KERN_DEBUG
+		"ipv6_sock_mc_check(sk=%p, mc_addr=%s, src_addr=%s)\n",
+		sk, abuf, sbuf));
+#endif
 
 	read_lock(&ipv6_sk_mc_lock);
 	for (mc = np->ipv6_mc_list; mc; mc = mc->next) {
@@ -627,6 +682,10 @@ int inet6_mc_check(struct sock *sk, struct in6_addr *mc_addr,
 
 static void ma_put(struct ifmcaddr6 *mc)
 {
+	MDBG3((KERN_DEBUG
+		"ma_put(mc=%p): refcnt=%d\n", 
+		mc, atomic_read(&mc->mca_refcnt)));
+
 	if (atomic_dec_and_test(&mc->mca_refcnt)) {
 		in6_dev_put(mc->idev);
 		kfree(mc);
@@ -637,8 +696,17 @@ static void igmp6_group_added(struct ifmcaddr6 *mc)
 {
 	struct net_device *dev = mc->idev->dev;
 	char buf[MAX_ADDR_LEN];
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf[128];
+#endif
 
 	spin_lock_bh(&mc->mca_lock);
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	in6_ntop(&mc->mca_addr, abuf);
+	MDBG3((KERN_DEBUG
+		"igmp6_group_added(mc=%p): mca_addr=%s, flag=%08x\n", 
+		mc, abuf, mc->mca_flags));
+#endif
 	if (!(mc->mca_flags&MAF_LOADED)) {
 		mc->mca_flags |= MAF_LOADED;
 		if (ndisc_mc_map(&mc->mca_addr, buf, dev, 0) == 0)
@@ -663,8 +731,17 @@ static void igmp6_group_dropped(struct ifmcaddr6 *mc)
 {
 	struct net_device *dev = mc->idev->dev;
 	char buf[MAX_ADDR_LEN];
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf[128];
+#endif
 
 	spin_lock_bh(&mc->mca_lock);
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	in6_ntop(&mc->mca_addr, abuf);
+	MDBG3((KERN_DEBUG
+		"igmp6_group_dropped(mc=%p): mca_addr=%s, flag=%08x\n", 
+		mc, abuf, mc->mca_flags));
+#endif
 	if (mc->mca_flags&MAF_LOADED) {
 		mc->mca_flags &= ~MAF_LOADED;
 		if (ndisc_mc_map(&mc->mca_addr, buf, dev, 0) == 0)
@@ -798,6 +875,15 @@ int ipv6_dev_mc_inc(struct net_device *dev, struct in6_addr *addr)
 	struct ifmcaddr6 *mc;
 	struct inet6_dev *idev;
 
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf[128];
+	in6_ntop(addr, abuf);
+
+	MDBG3((KERN_DEBUG
+		"ipv6_dev_mc_inc(dev=%p(%s), addr=%s)\n",
+		dev, dev->name ? dev->name :"<null>", abuf));
+#endif
+
 	idev = in6_dev_get(dev);
 
 	if (idev == NULL)
@@ -837,7 +923,7 @@ int ipv6_dev_mc_inc(struct net_device *dev, struct in6_addr *addr)
 	mc->mca_timer.function = igmp6_timer_handler;
 	mc->mca_timer.data = (unsigned long) mc;
 
-	memcpy(&mc->mca_addr, addr, sizeof(struct in6_addr));
+	ipv6_addr_copy(&mc->mca_addr, addr);
 	mc->idev = idev;
 	mc->mca_users = 1;
 	atomic_set(&mc->mca_refcnt, 2);
@@ -867,6 +953,15 @@ int ipv6_dev_mc_inc(struct net_device *dev, struct in6_addr *addr)
 static int __ipv6_dev_mc_dec(struct net_device *dev, struct inet6_dev *idev, struct in6_addr *addr)
 {
 	struct ifmcaddr6 *ma, **map;
+
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf[128];
+	in6_ntop(addr, abuf);
+
+	MDBG3((KERN_DEBUG
+		"ipv6_dev_mc_dec(dev=%p(%s), idev=%p, addr=%s)\n",
+		dev, dev->name ? dev->name : "<null>", idev, abuf));
+#endif
 
 	write_lock_bh(&idev->lock);
 	for (map = &idev->mc_list; (ma=*map) != NULL; map = &ma->next) {
@@ -913,6 +1008,15 @@ int ipv6_chk_mcast_addr(struct net_device *dev, struct in6_addr *group,
 	struct inet6_dev *idev;
 	struct ifmcaddr6 *mc;
 	int rv = 0;
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf[128], sbuf[128];
+	in6_ntop(group, abuf);
+	in6_ntop(src_addr, sbuf);
+
+	MDBG3((KERN_DEBUG
+		"ipv6_chk_mcast_addr(dev=%p(%s), group=%s, src_addr=%s)\n",
+		dev, dev->name ? dev->name : "<null>", abuf, sbuf));
+#endif
 
 	idev = in6_dev_get(dev);
 	if (idev) {
@@ -972,9 +1076,13 @@ static void igmp6_group_queried(struct ifmcaddr6 *ma, unsigned long resptime)
 {
 	unsigned long delay = resptime;
 
-	/* Do not start timer for these addresses */
-	if (ipv6_addr_is_ll_all_nodes(&ma->mca_addr) ||
-	    IPV6_ADDR_MC_SCOPE(&ma->mca_addr) < IPV6_ADDR_SCOPE_LINKLOCAL)
+	MDBG3((KERN_DEBUG
+		"igmp6_group_queried(ma=%p, resptime=%lu)\n",
+		ma, resptime));
+
+	/* Do not start timer for addresses with reserved/host scope */
+	if (IPV6_ADDR_MC_SCOPE(&ma->mca_addr) < IPV6_ADDR_SCOPE_LINKLOCAL ||
+	    ipv6_addr_is_ll_all_nodes(&ma->mca_addr))
 		return;
 
 	if (del_timer(&ma->mca_timer)) {
@@ -983,9 +1091,10 @@ static void igmp6_group_queried(struct ifmcaddr6 *ma, unsigned long resptime)
 	}
 
 	if (delay >= resptime) {
-		if (resptime)
-			delay = net_random() % resptime;
-		else
+		if (resptime) {
+			get_random_bytes(&delay, sizeof(delay));
+			delay %= resptime;
+		} else
 			delay = 1;
 	}
 
@@ -1026,6 +1135,15 @@ int igmp6_event_query(struct sk_buff *skb)
 	int group_type;
 	int mark = 0;
 	int len;
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf1[128], abuf2[128];
+
+	in6_ntop(&skb->nh.ipv6h->saddr, abuf1);
+	in6_ntop(&skb->nh.ipv6h->daddr, abuf2);
+	MDBG3((KERN_DEBUG
+		"igmp6_event_query(skb=%p): saddr=%s, daddr=%s\n",
+		skb, abuf1, abuf2));
+#endif
 
 	if (!pskb_may_pull(skb, sizeof(struct in6_addr)))
 		return -EINVAL;
@@ -1034,7 +1152,7 @@ int igmp6_event_query(struct sk_buff *skb)
 
 	/* Drop queries with not link local source */
 	if (!(ipv6_addr_type(&skb->nh.ipv6h->saddr)&IPV6_ADDR_LINKLOCAL))
-		return -EINVAL;
+ 		return -EINVAL;
 
 	idev = in6_dev_get(skb->dev);
 
@@ -1125,7 +1243,6 @@ int igmp6_event_query(struct sk_buff *skb)
 	}
 	read_unlock_bh(&idev->lock);
 	in6_dev_put(idev);
-
 	return 0;
 }
 
@@ -1137,6 +1254,16 @@ int igmp6_event_report(struct sk_buff *skb)
 	struct inet6_dev *idev;
 	struct icmp6hdr *hdr;
 	int addr_type;
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf1[128], abuf2[128];
+	unsigned long resptime;
+
+	in6_ntop(&skb->nh.ipv6h->saddr, abuf1);
+	in6_ntop(&skb->nh.ipv6h->daddr, abuf2);
+	MDBG((KERN_DEBUG
+		"igmp6_event_report(skb=%p): saddr=%s, daddr=%s\n",
+		skb, abuf1, abuf2));
+#endif
 
 	/* Our own report looped back. Ignore it. */
 	if (skb->pkt_type == PACKET_LOOPBACK)
@@ -1153,7 +1280,20 @@ int igmp6_event_report(struct sk_buff *skb)
 	    !(addr_type&IPV6_ADDR_LINKLOCAL))
 		return -EINVAL;
 
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	resptime = ntohs(hdr->icmp6_maxdelay);
+#endif
 	addrp = (struct in6_addr *) (hdr + 1);
+
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	in6_ntop(addrp, abuf1);
+	MDBG3((KERN_DEBUG
+		"igmp6_event_report(): maxdelay=%lu, addr=%s\n",
+		resptime, abuf1));
+#endif
+
+	if (!ipv6_addr_is_multicast(addrp))
+		goto drop;
 
 	idev = in6_dev_get(skb->dev);
 	if (idev == NULL)
@@ -1169,13 +1309,18 @@ int igmp6_event_report(struct sk_buff *skb)
 			spin_lock(&ma->mca_lock);
 			if (del_timer(&ma->mca_timer))
 				atomic_dec(&ma->mca_refcnt);
+#ifndef CONFIG_IPV6_MLD6_ALL_DONE
 			ma->mca_flags &= ~(MAF_LAST_REPORTER|MAF_TIMER_RUNNING);
+#else
+			ma->mca_flags &= ~MAF_TIMER_RUNNING;
+#endif
 			spin_unlock(&ma->mca_lock);
 			break;
 		}
 	}
 	read_unlock_bh(&idev->lock);
 	in6_dev_put(idev);
+  drop:
 	return 0;
 }
 
@@ -1294,6 +1439,7 @@ static void mld_sendpack(struct sk_buff *skb)
 {
 	struct ipv6hdr *pip6 = skb->nh.ipv6h;
 	struct mld2_report *pmr = (struct mld2_report *)skb->h.raw;
+	struct inet6_dev *idev;
 	int payload_len, mldlen, err;
 
 	payload_len = skb->tail - (unsigned char *)skb->nh.ipv6h -
@@ -1303,10 +1449,15 @@ static void mld_sendpack(struct sk_buff *skb)
 
 	pmr->csum = csum_ipv6_magic(&pip6->saddr, &pip6->daddr, mldlen,
 		IPPROTO_ICMPV6, csum_partial(skb->h.raw, mldlen, 0));
+	idev = in6_dev_get(skb->dev);
+
 	err = NF_HOOK(PF_INET6, NF_IP6_LOCAL_OUT, skb, NULL, skb->dev,
 		      mld_dev_queue_xmit);
 	if (!err)
-		ICMP6_INC_STATS(Icmp6OutMsgs);
+		ICMP6_INC_STATS(idev, Icmp6OutMsgs);
+
+	if (idev)
+		in6_dev_put(idev);
 }
 
 static int grec_size(struct ifmcaddr6 *pmc, int type, int gdel, int sdel)
@@ -1574,6 +1725,7 @@ void igmp6_send(struct in6_addr *addr, struct net_device *dev, int type)
 {
 	struct sock *sk = igmp6_socket->sk;
         struct sk_buff *skb;
+	struct inet6_dev *idev;
         struct icmp6hdr *hdr;
 	struct in6_addr *snd_addr;
 	struct in6_addr *addrp;
@@ -1583,6 +1735,14 @@ void igmp6_send(struct in6_addr *addr, struct net_device *dev, int type)
 	u8 ra[8] = { IPPROTO_ICMPV6, 0,
 		     IPV6_TLV_ROUTERALERT, 2, 0, 0,
 		     IPV6_TLV_PADN, 0 };
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf[128];
+	in6_ntop(addr, abuf);
+
+	MDBG3((KERN_DEBUG
+		"igmp6_send(addr=%s, dev=%p(%s), type=%d)\n",
+		abuf, dev, dev->name ? dev->name :"<null>", type));
+#endif
 
 	snd_addr = addr;
 	if (type == ICMPV6_MGM_REDUCTION) {
@@ -1606,6 +1766,8 @@ void igmp6_send(struct in6_addr *addr, struct net_device *dev, int type)
 		 * use unspecified address as the source address 
 		 * when a valid link-local address is not available.
 		 */
+		MDBG2((KERN_WARNING "igmp6: %s no linklocal address; use unspecified address\n",
+		       dev->name));
 		memset(&addr_buf, 0, sizeof(addr_buf));
 	}
 
@@ -1626,13 +1788,16 @@ void igmp6_send(struct in6_addr *addr, struct net_device *dev, int type)
 
 	err = NF_HOOK(PF_INET6, NF_IP6_LOCAL_OUT, skb, NULL, skb->dev,
 		      mld_dev_queue_xmit);
+	idev = in6_dev_get(dev);
 	if (!err) {
 		if (type == ICMPV6_MGM_REDUCTION)
-			ICMP6_INC_STATS(Icmp6OutGroupMembReductions);
+			ICMP6_INC_STATS(idev, Icmp6OutGroupMembReductions);
 		else
-			ICMP6_INC_STATS(Icmp6OutGroupMembResponses);
-		ICMP6_INC_STATS(Icmp6OutMsgs);
+			ICMP6_INC_STATS(idev, Icmp6OutGroupMembResponses);
+		ICMP6_INC_STATS(idev, Icmp6OutMsgs);
 	}
+	if (idev)
+		in6_dev_put(idev);
 
 	return;
 }
@@ -1880,13 +2045,22 @@ static void ip6_mc_clear_src(struct ifmcaddr6 *pmc)
 static void igmp6_join_group(struct ifmcaddr6 *ma)
 {
 	unsigned long delay;
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf[128];
+	in6_ntop(&ma->mca_addr, abuf);
+
+	MDBG3((KERN_DEBUG
+		"igmp6_join_group(ma=%p): mca_addr=%s\n",
+		ma, abuf));
+#endif
 
 	if (ma->mca_flags & MAF_NOREPORT)
 		return;
 
 	igmp6_send(&ma->mca_addr, ma->idev->dev, ICMPV6_MGM_REPORT);
 
-	delay = net_random() % IGMP6_UNSOLICITED_IVAL;
+	get_random_bytes(&delay, sizeof(delay));
+	delay %= IGMP6_UNSOLICITED_IVAL;
 
 	spin_lock_bh(&ma->mca_lock);
 	if (del_timer(&ma->mca_timer)) {
@@ -1918,6 +2092,15 @@ int ip6_mc_leave_src(struct sock *sk, struct ipv6_mc_socklist *iml,
 
 static void igmp6_leave_group(struct ifmcaddr6 *ma)
 {
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf[128];
+	in6_ntop(&ma->mca_addr, abuf);
+
+	MDBG3((KERN_DEBUG
+		"igmp6_leave_group(ma=%p): mca_addr=%s\n",
+		ma, abuf));
+#endif
+
 	if (MLD_V1_SEEN(ma->idev)) {
 		if (ma->mca_flags & MAF_LAST_REPORTER)
 			igmp6_send(&ma->mca_addr, ma->idev->dev,
@@ -1962,6 +2145,14 @@ static void mld_ifc_event(struct inet6_dev *idev)
 static void igmp6_timer_handler(unsigned long data)
 {
 	struct ifmcaddr6 *ma = (struct ifmcaddr6 *) data;
+#ifdef CONFIG_IPV6_MLD6_DEBUG
+	char abuf[128];
+	in6_ntop(&ma->mca_addr, abuf);
+
+	MDBG3((KERN_DEBUG
+		"igmp6_timer_handler(ma=%p): mca_addr=%s\n", 
+		ma, abuf));
+#endif
 
 	if (MLD_V1_SEEN(ma->idev))
 		igmp6_send(&ma->mca_addr, ma->idev->dev, ICMPV6_MGM_REPORT);
@@ -1980,6 +2171,9 @@ static void igmp6_timer_handler(unsigned long data)
 void ipv6_mc_down(struct inet6_dev *idev)
 {
 	struct ifmcaddr6 *i;
+
+	MDBG3((KERN_DEBUG
+		"ipv6_mc_down(idev=%p)\n", idev));
 
 	/* Withdraw multicast list */
 
@@ -2038,6 +2232,12 @@ void ipv6_mc_init_dev(struct inet6_dev *idev)
 	/* Add all-nodes address. */
 	ipv6_addr_all_nodes(&maddr);
 	ipv6_dev_mc_inc(idev->dev, &maddr);
+
+	/* Add all-routers address. */
+	if (idev->cnf.forwarding) {
+		ipv6_addr_all_routers(&maddr);
+		ipv6_dev_mc_inc(idev->dev, &maddr);
+	}
 }
 
 /*
@@ -2048,6 +2248,9 @@ void ipv6_mc_destroy_dev(struct inet6_dev *idev)
 {
 	struct ifmcaddr6 *i;
 	struct in6_addr maddr;
+
+	MDBG3((KERN_DEBUG
+		"ipv6_mc_destroy_dev(idev=%p)\n", idev));
 
 	/* Deactivate timers */
 	ipv6_mc_down(idev);
@@ -2060,6 +2263,12 @@ void ipv6_mc_destroy_dev(struct inet6_dev *idev)
 	 * fail.
 	 */
 	__ipv6_dev_mc_dec(idev->dev, idev, &maddr);
+
+	/* Delete all-routers address. */
+	if (idev->cnf.forwarding) {
+		ipv6_addr_all_routers(&maddr);
+		ipv6_dev_mc_dec(idev->dev, &maddr);
+	}
 
 	write_lock_bh(&idev->lock);
 	while ((i = idev->mc_list) != NULL) {
@@ -2216,8 +2425,8 @@ int __init igmp6_init(struct net_proto_family *ops)
 
 	igmp6_socket = sock_alloc();
 	if (igmp6_socket == NULL) {
-		printk(KERN_ERR
-		       "Failed to create the IGMP6 control socket.\n");
+		MDBG1((KERN_ERR
+		       "Failed to create the IGMP6 control socket.\n"));
 		return -1;
 	}
 	igmp6_socket->inode->i_uid = 0;
@@ -2225,9 +2434,9 @@ int __init igmp6_init(struct net_proto_family *ops)
 	igmp6_socket->type = SOCK_RAW;
 
 	if((err = ops->create(igmp6_socket, IPPROTO_ICMPV6)) < 0) {
-		printk(KERN_DEBUG 
+		MDBG1((KERN_ERR
 		       "Failed to initialize the IGMP6 control socket (err %d).\n",
-		       err);
+		       err));
 		sock_release(igmp6_socket);
 		igmp6_socket = NULL; /* For safety. */
 		return err;

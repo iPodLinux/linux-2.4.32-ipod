@@ -35,6 +35,10 @@ ifeq ($(CONFIG_BONDING),y)
   obj-y += bonding/bonding.o
 endif
 
+ifeq ($(CONFIG_KS8695),y)
+  obj-y += ks8695/ks8695e.o
+endif
+
 ifeq ($(CONFIG_ISDN_PPP),y)
   obj-$(CONFIG_ISDN) += slhc.o
 endif
@@ -54,6 +58,7 @@ subdir-$(CONFIG_SKFP) += skfp
 subdir-$(CONFIG_E100) += e100
 subdir-$(CONFIG_E1000) += e1000
 subdir-$(CONFIG_BONDING) += bonding
+subdir-$(CONFIG_KS8695) += ks8695
 
 #
 # link order important here
@@ -85,6 +90,7 @@ obj-$(CONFIG_EEPRO100) += eepro100.o mii.o
 obj-$(CONFIG_TLAN) += tlan.o
 obj-$(CONFIG_EPIC100) += epic100.o mii.o
 obj-$(CONFIG_SIS900) += sis900.o mii.o
+obj-$(CONFIG_DM9000) += dm9000.o mii.o
 obj-$(CONFIG_DM9102) += dmfe.o
 obj-$(CONFIG_YELLOWFIN) += yellowfin.o
 obj-$(CONFIG_ACENIC) += acenic.o
@@ -95,6 +101,10 @@ obj-$(CONFIG_STNIC) += stnic.o 8390.o
 obj-$(CONFIG_FEALNX) += fealnx.o mii.o
 obj-$(CONFIG_TC35815) += tc35815.o
 obj-$(CONFIG_TIGON3) += tg3.o
+
+mod-subdirs     +=	xilinx_enet
+subdir-$(CONFIG_XILINX_ENET) += xilinx_enet
+obj-$(CONFIG_XILINX_ENET) += xilinx_enet/xilinx_enet.o
 
 ifeq ($(CONFIG_E100),y)
   obj-y += e100/e100.o
@@ -155,10 +165,28 @@ obj-$(CONFIG_ES3210) += es3210.o 8390.o
 obj-$(CONFIG_LNE390) += lne390.o 8390.o
 obj-$(CONFIG_NE3210) += ne3210.o 8390.o
 obj-$(CONFIG_NET_SB1250_MAC) += sb1250-mac.o
+
+#
+# uClinux network drivers
+#
+obj-$(CONFIG_VIA_RHINE_FET) += linuxfet.o
+obj-$(CONFIG_ETH_S3C2500) += s3c2500.o
+obj-$(CONFIG_ETH_S3C4510) += s3c4510.o
+obj-$(CONFIG_ETH_S3C4530) += s3c4530.o
+obj-$(CONFIG_SMC91111) += smc91111.o
+obj-$(CONFIG_FEC) += fec.o
+obj-$(CONFIG_ETHER_NETARM) += netarmeth.o
+obj-$(CONFIG_ETHER_NS7520) += ns7520_eth.o
+obj-$(CONFIG_UCCS8900) += uCcs8900.o
+obj-$(CONFIG_SKYEYENE2k) += skyeyene2k.o
+obj-$(CONFIG_ARM_EB67DIP_OKI) += dm9000-oki.o
+obj-$(CONFIG_ETH_W90N740) += w740mac.o
+
 obj-$(CONFIG_B44) += b44.o
 obj-$(CONFIG_FORCEDETH) += forcedeth.o
 
 obj-$(CONFIG_PPP) += ppp_generic.o slhc.o
+obj-$(CONFIG_PPP) += ppp_generic.o slhc.o ppp_mppe.o
 obj-$(CONFIG_PPP_ASYNC) += ppp_async.o
 obj-$(CONFIG_PPP_SYNC_TTY) += ppp_synctty.o
 obj-$(CONFIG_PPP_DEFLATE) += ppp_deflate.o
@@ -172,6 +200,7 @@ endif
 
 obj-$(CONFIG_STRIP) += strip.o
 obj-$(CONFIG_DUMMY) += dummy.o
+obj-$(CONFIG_IMQ) += imq.o
 obj-$(CONFIG_DE600) += de600.o
 obj-$(CONFIG_DE620) += de620.o
 obj-$(CONFIG_AT1500) += lance.o
@@ -192,6 +221,7 @@ obj-$(CONFIG_EL3) += 3c509.o
 obj-$(CONFIG_3C515) += 3c515.o
 obj-$(CONFIG_EEXPRESS) += eexpress.o
 obj-$(CONFIG_EEXPRESS_PRO) += eepro.o
+obj-$(CONFIG_RTL8139) += rtl8139.o pci-scan.o
 obj-$(CONFIG_8139CP) += 8139cp.o mii.o
 obj-$(CONFIG_8139TOO) += 8139too.o mii.o
 obj-$(CONFIG_WAVELAN) += wavelan.o
@@ -234,6 +264,7 @@ obj-$(CONFIG_HYDRA) += hydra.o 8390.o
 obj-$(CONFIG_ARIADNE) += ariadne.o
 obj-$(CONFIG_CS89x0) += cs89x0.o
 obj-$(CONFIG_ARM_CIRRUS) += cirrus.o
+obj-$(CONFIG_EP93XX_ETHERNET) += ep93xx_eth.o
 obj-$(CONFIG_MACSONIC) += macsonic.o
 obj-$(CONFIG_MACMACE) += macmace.o
 obj-$(CONFIG_MAC89x0) += mac89x0.o
@@ -242,10 +273,15 @@ obj-$(CONFIG_ETHER00) +=ether00.o
 obj-$(CONFIG_DL2K) += dl2k.o
 obj-$(CONFIG_R8169) += r8169.o
 obj-$(CONFIG_AMD8111_ETH) += amd8111e.o mii.o
+obj-$(CONFIG_C5471_NET) += eth_c5471.o eth_c5471hw.o
+obj-$(CONFIG_ISL3893_ETHERNET) += isl3893eth.o
+obj-$(CONFIG_ISIL_MVCDRIVER) += intersil/islmvc.o
+obj-$(CONFIG_AX88796) += ax88796.o 8390.o mii.o
 
 # non-drivers/net drivers who want mii lib
 obj-$(CONFIG_PCMCIA_SMC91C92) += mii.o
 obj-$(CONFIG_USB_USBNET) += mii.o
+obj-$(CONFIG_AT91_ETHER) += mii.o
 
 obj-$(CONFIG_IBMVETH) += ibmveth.o
 
@@ -253,6 +289,12 @@ ifeq ($(CONFIG_ARCH_ACORN),y)
 mod-subdirs	+= ../acorn/net
 subdir-y	+= ../acorn/net
 obj-y		+= ../acorn/net/acorn-net.o
+endif
+
+subdir-$(CONFIG_CNXT_EMAC_82)	+= cnxt_emac
+obj-$(CONFIG_CNXT_EMAC_82)	+= cnxt_emac/emac_drv.o
+ifeq ($(CONFIG_CNXT_EMAC_82),m)
+	mod-subdirs	+= cnxt_emac
 endif
 
 #

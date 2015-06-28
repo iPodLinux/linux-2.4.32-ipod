@@ -14,6 +14,8 @@
 #include <asm/serial-ec3104.h>
 #elif defined (CONFIG_SH_BIGSUR)
 #include <asm/serial-bigsur.h>
+#elif defined (CONFIG_SH_KEYWEST)
+#include <asm/serial-keywest.h>
 #else
 /*
  * This assumes you have a 1.8432 MHz clock for your UART.

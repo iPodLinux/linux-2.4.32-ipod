@@ -93,7 +93,7 @@ static ssize_t read_kcore(struct file *file, char *buf, size_t count, loff_t *pp
 		read += count1;
 	}
 	if (count > 0) {
-		if (copy_to_user(buf, (void *) (PAGE_OFFSET+p-PAGE_SIZE), count))
+		if (copy_to_user(buf, (void *) (unsigned long) (PAGE_OFFSET+p-PAGE_SIZE), count))
 			return -EFAULT;
 		read += count;
 		p += count;
@@ -118,11 +118,19 @@ extern char saved_command_line[];
 
 static unsigned long get_kcore_size(int *num_vma, size_t *elf_buflen)
 {
-	unsigned long try, size;
+	unsigned long size;
+#ifndef NO_MM
+	unsigned long try;
 	struct vm_struct *m;
+#endif
 
 	*num_vma = 0;
 	size = ((size_t)high_memory - PAGE_OFFSET + PAGE_SIZE);
+#ifdef NO_MM
+	/* vmlist is not available then */
+	*elf_buflen = PAGE_SIZE;
+	return size;
+#else
 	if (!vmlist) {
 		*elf_buflen = PAGE_SIZE;
 		return (size);
@@ -142,6 +150,7 @@ static unsigned long get_kcore_size(int *num_vma, size_t *elf_buflen)
 			sizeof(struct task_struct);
 	*elf_buflen = PAGE_ALIGN(*elf_buflen);
 	return (size - PAGE_OFFSET + *elf_buflen);
+#endif
 }
 
 
@@ -199,7 +208,9 @@ static void elf_kcore_store_hdr(char *bufp, int num_vma, int dataoff)
 	struct elfhdr *elf;
 	struct memelfnote notes[3];
 	off_t offset = 0;
+#ifndef NO_MM
 	struct vm_struct *m;
+#endif
 
 	/* setup ELF header */
 	elf = (struct elfhdr *) bufp;
@@ -250,6 +261,7 @@ static void elf_kcore_store_hdr(char *bufp, int num_vma, int dataoff)
 	phdr->p_filesz	= phdr->p_memsz = ((unsigned long)high_memory - PAGE_OFFSET);
 	phdr->p_align	= PAGE_SIZE;
 
+#ifndef NO_MM
 	/* setup ELF PT_LOAD program header for every vmalloc'd area */
 	for (m=vmlist; m; m=m->next) {
 		if (m->flags & VM_IOREMAP) /* don't dump ioremap'd stuff! (TA) */
@@ -267,6 +279,7 @@ static void elf_kcore_store_hdr(char *bufp, int num_vma, int dataoff)
 		phdr->p_filesz	= phdr->p_memsz	= m->size;
 		phdr->p_align	= PAGE_SIZE;
 	}
+#endif /* NO_MM */
 
 	/*
 	 * Set up the notes in similar form to SVR4 core dumps made
@@ -325,12 +338,16 @@ static ssize_t read_kcore(struct file *file, char *buffer, size_t buflen, loff_t
 	int num_vma;
 	unsigned long start;
 
+#ifdef NO_MM
+	proc_root_kcore->size = size = get_kcore_size(&num_vma, &elf_buflen);
+#else
 	read_lock(&vmlist_lock);
 	proc_root_kcore->size = size = get_kcore_size(&num_vma, &elf_buflen);
 	if (buflen == 0 || (unsigned long long)*fpos >= size) {
 		read_unlock(&vmlist_lock);
 		return 0;
 	}
+#endif /* NO_MM */
 
 	/* trim buflen to not go beyond EOF */
 	if (buflen > size - *fpos)
@@ -345,12 +362,16 @@ static ssize_t read_kcore(struct file *file, char *buffer, size_t buflen, loff_t
 			tsz = buflen;
 		elf_buf = kmalloc(elf_buflen, GFP_ATOMIC);
 		if (!elf_buf) {
+#ifndef NO_MM
 			read_unlock(&vmlist_lock);
+#endif
 			return -ENOMEM;
 		}
 		memset(elf_buf, 0, elf_buflen);
 		elf_kcore_store_hdr(elf_buf, num_vma, elf_buflen);
+#ifndef NO_MM
 		read_unlock(&vmlist_lock);
+#endif
 		if (copy_to_user(buffer, elf_buf + *fpos, tsz)) {
 			kfree(elf_buf);
 			return -EFAULT;
@@ -364,8 +385,11 @@ static ssize_t read_kcore(struct file *file, char *buffer, size_t buflen, loff_t
 		/* leave now if filled buffer already */
 		if (buflen == 0)
 			return acc;
-	} else
+	} else {
+#ifndef NO_MM
 		read_unlock(&vmlist_lock);
+#endif
+	}
 
 	/* where page 0 not mapped, write zeros into buffer */
 #if defined (__i386__) || defined (__mc68000__) || defined(__x86_64__)
@@ -398,7 +422,7 @@ static ssize_t read_kcore(struct file *file, char *buffer, size_t buflen, loff_t
 	if ((tsz = (PAGE_SIZE - (start & ~PAGE_MASK))) > buflen)
 		tsz = buflen;
 	while (buflen) {
-		int err; 
+		int err = 0; 
 	
 		if ((start > PAGE_OFFSET) && (start < (unsigned long)high_memory)) {
 			if (kern_addr_valid(start)) {
@@ -407,6 +431,7 @@ static ssize_t read_kcore(struct file *file, char *buffer, size_t buflen, loff_t
 				err = clear_user(buffer, tsz);
 			}
 		} else {
+#ifndef NO_MM
 			char * elf_buf;
 			struct vm_struct *m;
 			unsigned long curstart = start;
@@ -448,6 +473,7 @@ static ssize_t read_kcore(struct file *file, char *buffer, size_t buflen, loff_t
 			read_unlock(&vmlist_lock);
 			err = copy_to_user(buffer, elf_buf, tsz); 
 				kfree(elf_buf);
+#endif /* NO_MM */
 			}
 		if (err)
 					return -EFAULT;

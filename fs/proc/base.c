@@ -25,6 +25,7 @@
 #include <linux/string.h>
 #include <linux/seq_file.h>
 #include <linux/namespace.h>
+#include <linux/ptrace.h>
 
 /*
  * For hysterical raisins we keep the same inumbers as in the old procfs.
@@ -53,9 +54,10 @@ static int proc_fd_link(struct inode *inode, struct dentry **dentry, struct vfsm
 
 static int proc_exe_link(struct inode *inode, struct dentry **dentry, struct vfsmount **mnt)
 {
+	int result = -ENOENT;
+#ifndef NO_MM /* DAVIDM - Some other time */
 	struct mm_struct * mm;
 	struct vm_area_struct * vma;
-	int result = -ENOENT;
 	struct task_struct *task = inode->u.proc_i.task;
 
 	task_lock(task);
@@ -68,8 +70,10 @@ static int proc_exe_link(struct inode *inode, struct dentry **dentry, struct vfs
 	down_read(&mm->mmap_sem);
 	vma = mm->mmap;
 	while (vma) {
-		if ((vma->vm_flags & VM_EXECUTABLE) && 
-		    vma->vm_file) {
+		if ((vma->vm_flags & VM_EXECUTABLE) &&
+		    vma->vm_file &&
+		    vma->vm_start <= mm->start_code && mm->start_code <= vma->vm_end
+		    ) {
 			*mnt = mntget(vma->vm_file->f_vfsmnt);
 			*dentry = dget(vma->vm_file->f_dentry);
 			result = 0;
@@ -80,6 +84,39 @@ static int proc_exe_link(struct inode *inode, struct dentry **dentry, struct vfs
 	up_read(&mm->mmap_sem);
 	mmput(mm);
 out:
+
+#else
+	struct vm_list_struct *vml;
+	struct vm_area_struct *vma;
+	struct task_struct *task = inode->u.proc_i.task;
+	struct mm_struct *mm;
+
+	task_lock(task);
+	mm = task->mm;
+	if (mm)
+		atomic_inc(&mm->mm_users);
+	task_unlock(task);
+	if (!mm)
+		goto out;
+	down_read(&mm->mmap_sem);
+	vml = mm->vmlist;
+	while (vml) {
+		vma = vml->vma;
+		if ((vma->vm_flags & VM_EXECUTABLE) && vma->vm_file &&
+		    vma->vm_start <= mm->start_code && mm->start_code <= vma->vm_end
+		    ) {
+			*mnt = mntget(vma->vm_file->f_vfsmnt);
+			*dentry = dget(vma->vm_file->f_dentry);
+			result = 0;
+			break;
+		}
+		vml = vml->next;
+	}
+	up_read(&mm->mmap_sem);
+	mmput(mm);
+out:
+
+#endif /* !NO_MM */
 	return result;
 }
 
@@ -269,6 +306,8 @@ static int proc_permission(struct inode *inode, int mask)
 }
 
 extern struct seq_operations proc_pid_maps_op;
+
+#ifndef NO_MM
 static int maps_open(struct inode *inode, struct file *file)
 {
 	struct task_struct *task = inode->u.proc_i.task;
@@ -286,6 +325,44 @@ static struct file_operations proc_maps_operations = {
 	.llseek		= seq_lseek,
 	.release	= seq_release,
 };
+
+#else
+static int maps_open(struct inode *inode, struct file *file)
+{
+	struct task_struct *task = inode->u.proc_i.task;
+	int ret = seq_open(file, &proc_pid_maps_op);
+	if (!ret) {
+		struct seq_file *m = file->private_data;
+		task_lock(task);
+		if (task->mm) {
+			atomic_inc(&task->mm->mm_users);
+			m->private = task->mm;
+		}
+		task_unlock(task);
+	}
+	return ret;
+}
+
+static int maps_release(struct inode *inode, struct file *file)
+{
+	struct seq_file *m = file->private_data;
+
+	if (m->private) {
+		struct mm_struct *mm = m->private;
+		m->private = NULL;
+		mmput(mm);
+	}
+
+	return seq_release(inode, file);
+}
+
+static struct file_operations proc_maps_operations = {
+	.open		= maps_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= maps_release,
+};
+#endif
 
 extern struct seq_operations mounts_op;
 static int mounts_open(struct inode *inode, struct file *file)

@@ -2541,6 +2541,15 @@ static void sl811_interrupt(int irq, void *__hc, struct pt_regs * r)
 	__u8 status;
 	struct sl811_hc *hc = __hc;
 
+#if defined(CONFIG_SIGNAL_MCP751)
+	/* Acknowledge interrupt */
+	{
+	volatile unsigned long *icrp;
+	icrp = (volatile unsigned long *) (MCF_MBAR + MCFSIM_ICR4);
+	*icrp = (*icrp & 0x7777777) | 0x08000000; // INT5
+	}
+#endif
+
 	status = sl811_read(hc, SL811_INTRSTS);
 	if (status == 0)
 		return ; /* Not me */

@@ -166,6 +166,10 @@ struct sk_buff *alloc_skb(unsigned int size,int gfp_mask)
 	struct sk_buff *skb;
 	u8 *data;
 
+#if defined(CONFIG_ARCH_IXP425)
+	gfp_mask |= GFP_DMA;
+#endif
+
 	if (in_interrupt() && (gfp_mask & __GFP_WAIT)) {
 		static int count = 0;
 		if (++count < 5) {
@@ -202,6 +206,10 @@ struct sk_buff *alloc_skb(unsigned int size,int gfp_mask)
 	/* Set up other state */
 	skb->len = 0;
 	skb->cloned = 0;
+#if defined(CONFIG_IMQ) || defined (CONFIG_IMQ_MODULE)
+	skb->imq_flags = 0;
+	skb->nf_info = NULL;
+#endif
 	skb->data_len = 0;
 
 	atomic_set(&skb->users, 1); 
@@ -246,9 +254,16 @@ static inline void skb_headerinit(void *p, kmem_cache_t *cache,
 #ifdef CONFIG_NETFILTER_DEBUG
 	skb->nf_debug = 0;
 #endif
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+	skb->nf_bridge	  = NULL;
+#endif
 #endif
 #ifdef CONFIG_NET_SCHED
 	skb->tc_index = 0;
+#endif
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+	skb->imq_flags = 0;
+	skb->nf_info = NULL;
 #endif
 }
 
@@ -326,6 +341,9 @@ void __kfree_skb(struct sk_buff *skb)
 	}
 #ifdef CONFIG_NETFILTER
 	nf_conntrack_put(skb->nfct);
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+	nf_bridge_put(skb->nf_bridge);
+#endif
 #endif
 	skb_headerinit(skb, NULL, 0);  /* clean state */
 	kfree_skbmem(skb);
@@ -393,6 +411,9 @@ struct sk_buff *skb_clone(struct sk_buff *skb, int gfp_mask)
 #ifdef CONFIG_NETFILTER_DEBUG
 	C(nf_debug);
 #endif
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+	C(nf_bridge);
+#endif
 #endif /*CONFIG_NETFILTER*/
 #if defined(CONFIG_HIPPI)
 	C(private);
@@ -400,11 +421,18 @@ struct sk_buff *skb_clone(struct sk_buff *skb, int gfp_mask)
 #ifdef CONFIG_NET_SCHED
 	C(tc_index);
 #endif
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+	C(imq_flags);
+	C(nf_info);
+#endif
 
 	atomic_inc(&(skb_shinfo(skb)->dataref));
 	skb->cloned = 1;
 #ifdef CONFIG_NETFILTER
 	nf_conntrack_get(skb->nfct);
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+	nf_bridge_get(skb->nf_bridge);
+#endif
 #endif
 	return n;
 }
@@ -440,9 +468,17 @@ static void copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 #ifdef CONFIG_NETFILTER_DEBUG
 	new->nf_debug=old->nf_debug;
 #endif
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+	new->nf_bridge=old->nf_bridge;
+	nf_bridge_get(new->nf_bridge);
+#endif
 #endif
 #ifdef CONFIG_NET_SCHED
 	new->tc_index = old->tc_index;
+#endif
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+	new->imq_flags=old->imq_flags;
+	new->nf_info=old->nf_info;
 #endif
 }
 
@@ -726,9 +762,9 @@ struct sk_buff *skb_copy_expand(const struct sk_buff *skb,
 	/* Set the tail pointer and length */
 	skb_put(n,skb->len);
 
-	/* Copy the data only. */
-	if (skb_copy_bits(skb, 0, n->data, skb->len))
-		BUG();
+       /* Copy the linear data and header. */
+       if (skb_copy_bits(skb, -newheadroom, n->head, newheadroom + skb->len))
+                BUG();
 
 	copy_skb_header(n, skb);
 	return n;

@@ -11,7 +11,6 @@
 #include <linux/config.h>
 #include <linux/compiler.h>
 #include <linux/signal.h>
-#include <linux/sched.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/string.h>
@@ -19,7 +18,6 @@
 #include <linux/ptrace.h>
 #include <linux/mman.h>
 #include <linux/mm.h>
-#include <linux/interrupt.h>
 #include <linux/proc_fs.h>
 #include <linux/bitops.h>
 #include <linux/init.h>
@@ -30,9 +28,7 @@
 #include <asm/pgtable.h>
 #include <asm/unaligned.h>
 
-extern void
-do_bad_area(struct task_struct *tsk, struct mm_struct *mm, unsigned long addr,
-	    int error_code, struct pt_regs *regs);
+#include "fault.h"
 
 /*
  * 32-bit misaligned trap handler (c) 1998 San Mehat (CCC) -July 1998
@@ -130,31 +126,6 @@ static int proc_alignment_write(struct file *file, const char *buffer,
 	return count;
 }
 
-/*
- * This needs to be done after sysctl_init, otherwise sys/ will be
- * overwritten.  Actually, this shouldn't be in sys/ at all since
- * it isn't a sysctl, and it doesn't contain sysctl information.
- * We now locate it in /proc/cpu/alignment instead.
- */
-static int __init alignment_init(void)
-{
-	struct proc_dir_entry *res;
-
-	res = proc_mkdir("cpu", NULL);
-	if (!res)
-		return -ENOMEM;
-
-	res = create_proc_entry("alignment", S_IWUSR | S_IRUGO, res);
-	if (!res)
-		return -ENOMEM;
-
-	res->read_proc = proc_alignment_read;
-	res->write_proc = proc_alignment_write;
-
-	return 0;
-}
-
-__initcall(alignment_init);
 #endif /* CONFIG_PROC_FS */
 
 union offset_union {
@@ -166,6 +137,18 @@ union offset_union {
 #define TYPE_FAULT	1
 #define TYPE_LDST	2
 #define TYPE_DONE	3
+
+#ifdef __ARMEB__
+#define	BE		1
+#define FIRST_BYTE_16	"mov	%1, %1, ror #8\n"
+#define FIRST_BYTE_32	"mov	%1, %1, ror #24\n"
+#define NEXT_BYTE	"ror #24"
+#else
+#define BE		0
+#define FIRST_BYTE_16
+#define FIRST_BYTE_32
+#define NEXT_BYTE	"lsr #8"
+#endif
 
 #define __get8_unaligned_check(ins,val,addr,err)	\
 	__asm__(					\
@@ -186,9 +169,10 @@ union offset_union {
 #define __get16_unaligned_check(ins,val,addr)			\
 	do {							\
 		unsigned int err = 0, v, a = addr;		\
-		__get8_unaligned_check(ins,val,a,err);		\
 		__get8_unaligned_check(ins,v,a,err);		\
-		val |= v << 8;					\
+		val =  v << ((BE) ? 8 : 0);			\
+		__get8_unaligned_check(ins,v,a,err);		\
+		val |= v << ((BE) ? 0 : 8);			\
 		if (err)					\
 			goto fault;				\
 	} while (0)
@@ -202,13 +186,14 @@ union offset_union {
 #define __get32_unaligned_check(ins,val,addr)			\
 	do {							\
 		unsigned int err = 0, v, a = addr;		\
-		__get8_unaligned_check(ins,val,a,err);		\
 		__get8_unaligned_check(ins,v,a,err);		\
-		val |= v << 8;					\
+		val =  v << ((BE) ? 24 :  0);			\
 		__get8_unaligned_check(ins,v,a,err);		\
-		val |= v << 16;					\
+		val |= v << ((BE) ? 16 :  8);			\
 		__get8_unaligned_check(ins,v,a,err);		\
-		val |= v << 24;					\
+		val |= v << ((BE) ?  8 : 16);			\
+		__get8_unaligned_check(ins,v,a,err);		\
+		val |= v << ((BE) ?  0 : 24);			\
 		if (err)					\
 			goto fault;				\
 	} while (0)
@@ -222,9 +207,9 @@ union offset_union {
 #define __put16_unaligned_check(ins,val,addr)			\
 	do {							\
 		unsigned int err = 0, v = val, a = addr;	\
-		__asm__(					\
+		__asm__( FIRST_BYTE_16				\
 		"1:	"ins"	%1, [%2], #1\n"			\
-		"	mov	%1, %1, lsr #8\n"		\
+		"	mov	%1, %1, "NEXT_BYTE"\n"		\
 		"2:	"ins"	%1, [%2]\n"			\
 		"3:\n"						\
 		"	.section .fixup,\"ax\"\n"		\
@@ -252,13 +237,13 @@ union offset_union {
 #define __put32_unaligned_check(ins,val,addr)			\
 	do {							\
 		unsigned int err = 0, v = val, a = addr;	\
-		__asm__(					\
+		__asm__( FIRST_BYTE_32				\
 		"1:	"ins"	%1, [%2], #1\n"			\
-		"	mov	%1, %1, lsr #8\n"		\
+		"	mov	%1, %1, "NEXT_BYTE"\n"		\
 		"2:	"ins"	%1, [%2], #1\n"			\
-		"	mov	%1, %1, lsr #8\n"		\
+		"	mov	%1, %1, "NEXT_BYTE"\n"		\
 		"3:	"ins"	%1, [%2], #1\n"			\
-		"	mov	%1, %1, lsr #8\n"		\
+		"	mov	%1, %1, "NEXT_BYTE"\n"		\
 		"4:	"ins"	%1, [%2]\n"			\
 		"5:\n"						\
 		"	.section .fixup,\"ax\"\n"		\
@@ -429,7 +414,7 @@ do_alignment_ldmstm(unsigned long addr, unsigned long instr, struct pt_regs *reg
 	 * For alignment faults on the ARM922T/ARM920T the MMU  makes
 	 * the FSR (and hence addr) equal to the updated base address
 	 * of the multiple access rather than the restored value.
-	 * Switch this messsage off if we've got a ARM92[02], otherwise
+	 * Switch this message off if we've got a ARM92[02], otherwise
 	 * [ls]dm alignment faults are noisy!
 	 */
 #if !(defined CONFIG_CPU_ARM922T)  && !(defined CONFIG_CPU_ARM920T)
@@ -486,7 +471,10 @@ bad:
 	return TYPE_ERROR;
 }
 
-int do_alignment(unsigned long addr, int error_code, struct pt_regs *regs)
+static int handle_unaligned_notify_count = 10;
+
+static int
+do_alignment(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 {
 	union offset_union offset;
 	unsigned long instr, instrptr;
@@ -541,7 +529,7 @@ int do_alignment(unsigned long addr, int error_code, struct pt_regs *regs)
 			case SHIFT_RORRRX:
 				if (shiftval == 0) {
 					offset.un >>= 1;
-					if (regs->ARM_cpsr & CC_C_BIT)
+					if (regs->ARM_cpsr & PSR_C_BIT)
 						offset.un |= 1 << 31;
 				} else
 					offset.un = offset.un >> shiftval |
@@ -577,7 +565,7 @@ int do_alignment(unsigned long addr, int error_code, struct pt_regs *regs)
 	/*
 	 * We got a fault - fix it up, or die.
 	 */
-	do_bad_area(current, current->mm, addr, error_code, regs);
+	do_bad_area(current, current->mm, addr, fsr, regs);
 	return 0;
 
  bad:
@@ -592,10 +580,13 @@ int do_alignment(unsigned long addr, int error_code, struct pt_regs *regs)
  user:
 	ai_user += 1;
 
-	if (ai_usermode & 1)
+	/* shout about the first ten userspace fixups */
+	if ((ai_usermode & 1) && handle_unaligned_notify_count > 0) { 
+		handle_unaligned_notify_count--;
 		printk("Alignment trap: %s (%d) PC=0x%08lx Instr=0x%08lx "
-		       "Address=0x%08lx Code 0x%02x\n", current->comm,
-			current->pid, instrptr, instr, addr, error_code);
+		       "Address=0x%08lx FSR 0x%03x\n", current->comm,
+			current->pid, instrptr, instr, addr, fsr);
+	}
 
 	if (ai_usermode & 2)
 		goto fixup;
@@ -607,3 +598,34 @@ int do_alignment(unsigned long addr, int error_code, struct pt_regs *regs)
 
 	return 0;
 }
+
+/*
+ * This needs to be done after sysctl_init, otherwise sys/ will be
+ * overwritten.  Actually, this shouldn't be in sys/ at all since
+ * it isn't a sysctl, and it doesn't contain sysctl information.
+ * We now locate it in /proc/cpu/alignment instead.
+ */
+static int __init alignment_init(void)
+{
+#ifdef CONFIG_PROC_FS
+	struct proc_dir_entry *res;
+
+	res = proc_mkdir("cpu", NULL);
+	if (!res)
+		return -ENOMEM;
+
+	res = create_proc_entry("alignment", S_IWUSR | S_IRUGO, res);
+	if (!res)
+		return -ENOMEM;
+
+	res->read_proc = proc_alignment_read;
+	res->write_proc = proc_alignment_write;
+#endif
+
+	hook_fault_code(1, do_alignment, SIGILL, "alignment exception");
+	hook_fault_code(3, do_alignment, SIGILL, "alignment exception");
+
+	return 0;
+}
+
+__initcall(alignment_init);

@@ -1,3 +1,5 @@
+/* $USAGI: ipv6_sockglue.c,v 1.40 2003/08/08 13:46:38 yoshfuji Exp $ */
+
 /*
  *	IPv6 BSD socket options interface
  *	Linux INET6 implementation 
@@ -16,8 +18,6 @@
  *
  *	FIXME: Make the setsockopt code POSIX compliant: That is
  *
- *	o	Return -EINVAL for setsockopt of short lengths
- *	o	Truncate getsockopt returns
  *	o	Return an optlen of the truncated length if need be
  *
  *	Changes:
@@ -141,9 +141,12 @@ int ipv6_setsockopt(struct sock *sk, int level, int optname, char *optval,
 	if(level!=SOL_IPV6)
 		goto out;
 
+	if (optlen < 0)
+		goto e_inval;
+
 	if (optval == NULL)
 		val=0;
-	else if (get_user(val, (int *) optval))
+	else if (get_user(val, (int *) optval) && get_user(val, (u8 *) optval))
 		return -EFAULT;
 
 	valbool = (val!=0);
@@ -152,6 +155,7 @@ int ipv6_setsockopt(struct sock *sk, int level, int optname, char *optval,
 
 	switch (optname) {
 
+	/* XXX: IPV6_ADDRFORM is deprecated */
 	case IPV6_ADDRFORM:
 		if (val == PF_INET) {
 			struct ipv6_txoptions *opt;
@@ -214,6 +218,10 @@ int ipv6_setsockopt(struct sock *sk, int level, int optname, char *optval,
 		goto e_inval;
 
 	case IPV6_V6ONLY:
+		if (optlen != sizeof(int))
+			goto e_inval;
+		if (sk->userlocks&SOCK_BINDADDR_LOCK)
+			goto e_inval;
 		if (sk->num)
 			goto e_inval;
 		np->ipv6only = valbool;
@@ -221,16 +229,22 @@ int ipv6_setsockopt(struct sock *sk, int level, int optname, char *optval,
 		break;
 
 	case IPV6_PKTINFO:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		np->rxopt.bits.rxinfo = valbool;
 		retv = 0;
 		break;
 
 	case IPV6_HOPLIMIT:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		np->rxopt.bits.rxhlim = valbool;
 		retv = 0;
 		break;
 
 	case IPV6_RTHDR:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		if (val < 0 || val > 2)
 			goto e_inval;
 		np->rxopt.bits.srcrt = val;
@@ -238,21 +252,29 @@ int ipv6_setsockopt(struct sock *sk, int level, int optname, char *optval,
 		break;
 
 	case IPV6_HOPOPTS:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		np->rxopt.bits.hopopts = valbool;
 		retv = 0;
 		break;
 
 	case IPV6_AUTHHDR:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		np->rxopt.bits.authhdr = valbool;
 		retv = 0;
 		break;
 
 	case IPV6_DSTOPTS:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		np->rxopt.bits.dstopts = valbool;
 		retv = 0;
 		break;
 
 	case IPV6_FLOWINFO:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		np->rxopt.bits.rxflow = valbool;
 		retv = 0;
 		break;
@@ -267,7 +289,7 @@ int ipv6_setsockopt(struct sock *sk, int level, int optname, char *optval,
 		fl.fl6_flowlabel = 0;
 		fl.oif = sk->bound_dev_if;
 
-		if (optlen == 0)
+		if (!optval || optlen == 0)
 			goto update;
 
 		/* 1K is probably excessive
@@ -291,7 +313,7 @@ int ipv6_setsockopt(struct sock *sk, int level, int optname, char *optval,
 		msg.msg_controllen = optlen;
 		msg.msg_control = (void*)(opt+1);
 
-		retv = datagram_send_ctl(&msg, &fl, opt, &junk);
+		retv = datagram_send_ctl(&msg, &fl, opt, &junk, &junk);
 		if (retv)
 			goto done;
 update:
@@ -320,6 +342,8 @@ done:
 		break;
 	}
 	case IPV6_UNICAST_HOPS:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		if (val > 255 || val < -1)
 			goto e_inval;
 		np->hop_limit = val;
@@ -327,6 +351,8 @@ done:
 		break;
 
 	case IPV6_MULTICAST_HOPS:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		if (sk->type == SOCK_STREAM)
 			goto e_inval;
 		if (val > 255 || val < -1)
@@ -336,11 +362,17 @@ done:
 		break;
 
 	case IPV6_MULTICAST_LOOP:
+		if (optlen != sizeof(int))
+			goto e_inval;
+		if (val != 0 && val != 1)
+			goto e_inval;
 		np->mc_loop = valbool;
 		retv = 0;
 		break;
 
 	case IPV6_MULTICAST_IF:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		if (sk->type == SOCK_STREAM)
 			goto e_inval;
 		if (sk->bound_dev_if && sk->bound_dev_if != val)
@@ -353,16 +385,19 @@ done:
 		np->mcast_oif = val;
 		retv = 0;
 		break;
-	case IPV6_ADD_MEMBERSHIP:
-	case IPV6_DROP_MEMBERSHIP:
+	case IPV6_JOIN_GROUP:
+	case IPV6_LEAVE_GROUP:
 	{
 		struct ipv6_mreq mreq;
+
+		if (optlen != sizeof(struct ipv6_mreq))
+			goto e_inval;
 
 		retv = -EFAULT;
 		if (copy_from_user(&mreq, optval, sizeof(struct ipv6_mreq)))
 			break;
 
-		if (optname == IPV6_ADD_MEMBERSHIP)
+		if (optname == IPV6_JOIN_GROUP)
 			retv = ipv6_sock_mc_join(sk, mreq.ipv6mr_ifindex, &mreq.ipv6mr_multiaddr);
 		else
 			retv = ipv6_sock_mc_drop(sk, mreq.ipv6mr_ifindex, &mreq.ipv6mr_multiaddr);
@@ -493,30 +528,66 @@ done:
 		retv = ip6_ra_control(sk, val, NULL);
 		break;
 	case IPV6_MTU_DISCOVER:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		if (val<0 || val>2)
 			goto e_inval;
 		np->pmtudisc = val;
 		retv = 0;
 		break;
 	case IPV6_MTU:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		if (val && val < IPV6_MIN_MTU)
 			goto e_inval;
 		np->frag_size = val;
 		retv = 0;
 		break;
 	case IPV6_RECVERR:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		np->recverr = valbool;
 		if (!val)
 			skb_queue_purge(&sk->error_queue);
 		retv = 0;
 		break;
 	case IPV6_FLOWINFO_SEND:
+		if (optlen != sizeof(int))
+			goto e_inval;
 		np->sndflow = valbool;
 		retv = 0;
 		break;
 	case IPV6_FLOWLABEL_MGR:
 		retv = ipv6_flowlabel_opt(sk, optval, optlen);
 		break;
+
+	case IPV6_RECVTCLASS:
+		if (optlen != sizeof(int))
+			goto e_inval;
+		np->recvopt.tclass = valbool;
+		retv = 0;
+		break;
+
+	case IPV6_TCLASS:
+		if (optlen != sizeof(int))
+			goto e_inval;
+		np->tclass = val;
+		retv = 0;
+		break;
+
+#ifdef CONFIG_IPV6_PRIVACY
+	case IPV6_PRIVACY:
+		if (optlen != sizeof(int))
+			goto e_inval;
+		if (val > 0)
+			np->use_tempaddr = 1;
+		else if (val < 0)
+			np->use_tempaddr = -1;
+		else
+			np->use_tempaddr = 0;
+		retv = 0;
+		break;
+#endif
 
 #ifdef CONFIG_NETFILTER
 	default:
@@ -549,6 +620,8 @@ int ipv6_getsockopt(struct sock *sk, int level, int optname, char *optval,
 		return -ENOPROTOOPT;
 	if (get_user(len, optlen))
 		return -EFAULT;
+	if (optlen < 0)
+		return -EINVAL;
 	switch (optname) {
 	case IPV6_PKTOPTIONS:
 	{
@@ -588,6 +661,7 @@ int ipv6_getsockopt(struct sock *sk, int level, int optname, char *optval,
 		len -= msg.msg_controllen;
 		return put_user(len, optlen);
 	}
+
 	case IPV6_MTU:
 	{
 		struct dst_entry *dst;
@@ -678,6 +752,24 @@ int ipv6_getsockopt(struct sock *sk, int level, int optname, char *optval,
 	case IPV6_FLOWINFO_SEND:
 		val = np->sndflow;
 		break;
+
+	case IPV6_JOIN_GROUP:
+	case IPV6_LEAVE_GROUP:
+		return -EOPNOTSUPP;
+
+	case IPV6_RECVTCLASS:
+                val = np->recvopt.tclass;
+                break;
+
+	case IPV6_TCLASS:
+		val = np->tclass;
+                break;
+
+#ifdef CONFIG_IPV6_PRIVACY
+	case IPV6_PRIVACY:
+		val = np->use_tempaddr;
+		break;
+#endif
 
 	default:
 #ifdef CONFIG_NETFILTER

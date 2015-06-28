@@ -1,6 +1,8 @@
 #ifndef __ASM_SH_PCI_H
 #define __ASM_SH_PCI_H
 
+#include <linux/config.h>
+
 #ifdef __KERNEL__
 
 #include <linux/config.h>
@@ -19,6 +21,15 @@
  */
 #define PCIBIOS_MIN_IO		0x2000
 #define PCIBIOS_MIN_MEM		0x10000000
+
+#elif defined(CONFIG_SH_KEYWEST)
+
+#define PCIBIOS_MIN_IO		0x2000
+#ifndef CONFIG_PCMCIA
+#define PCIBIOS_MIN_MEM		0xb8000000
+#else
+#define PCIBIOS_MIN_MEM		0xab000000
+#endif
 
 #elif defined(CONFIG_SH_DREAMCAST)
 #define PCIBIOS_MIN_IO		0x2000

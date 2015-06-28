@@ -1235,7 +1235,9 @@ static void __exit ieee1394_cleanup(void)
 	/* it's ok to pass a NULL devfs_handle to devfs_unregister */
 	devfs_unregister(ieee1394_devfs_handle);
 	
+#ifdef CONFIG_PROC_FS
 	remove_proc_entry("ieee1394", proc_bus);
+#endif
 }
 
 module_init(ieee1394_init);
@@ -1331,7 +1333,9 @@ EXPORT_SYMBOL(dma_region_init);
 EXPORT_SYMBOL(dma_region_alloc);
 EXPORT_SYMBOL(dma_region_free);
 EXPORT_SYMBOL(dma_region_sync);
+#ifndef CONFIG_ARCH_IPOD
 EXPORT_SYMBOL(dma_region_mmap);
+#endif
 EXPORT_SYMBOL(dma_region_offset_to_bus);
 
 /** iso.c **/

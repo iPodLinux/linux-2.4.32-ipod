@@ -46,23 +46,53 @@ enum ip_conntrack_status {
 	/* Connection is confirmed: originating packet has left box */
 	IPS_CONFIRMED_BIT = 3,
 	IPS_CONFIRMED = (1 << IPS_CONFIRMED_BIT),
+
+	/* Connection is destroyed (removed from lists), can not be unset. */
+	IPS_DESTROYED_BIT = 9,
+	IPS_DESTROYED = (1 << IPS_DESTROYED_BIT),
+
+	/* Connection should be logged. */
+	IPS_LOG_BIT = 10,
+	IPS_LOG = (1 << IPS_LOG_BIT),
+};
+
+/* Connection tracking event bits */
+enum ip_conntrack_events
+{
+	/* New conntrack */
+	IPCT_NEW_BIT = 0,
+	IPCT_NEW = (1 << IPCT_NEW_BIT),
+
+	/* Expected connection */
+	IPCT_RELATED_BIT = 1,
+	IPCT_RELATED = (1 << IPCT_RELATED_BIT),
+
+	/* Destroyed conntrack */
+	IPCT_DESTROY_BIT = 2,
+	IPCT_DESTROY = (1 << IPCT_DESTROY_BIT),
 };
 
 #include <linux/netfilter_ipv4/ip_conntrack_tcp.h>
 #include <linux/netfilter_ipv4/ip_conntrack_icmp.h>
+#include <linux/netfilter_ipv4/ip_conntrack_proto_gre.h>
 
 /* per conntrack: protocol private data */
 union ip_conntrack_proto {
 	/* insert conntrack proto private data here */
+	struct ip_ct_gre gre;
 	struct ip_ct_tcp tcp;
 	struct ip_ct_icmp icmp;
 };
 
 union ip_conntrack_expect_proto {
 	/* insert expect proto private data here */
+	struct ip_ct_gre_expect gre;
 };
 
 /* Add protocol helper include file here */
+#include <linux/netfilter_ipv4/ip_conntrack_h323.h>
+
+#include <linux/netfilter_ipv4/ip_conntrack_pptp.h>
 #include <linux/netfilter_ipv4/ip_conntrack_amanda.h>
 
 #include <linux/netfilter_ipv4/ip_conntrack_ftp.h>
@@ -71,6 +101,8 @@ union ip_conntrack_expect_proto {
 /* per expectation: application helper private data */
 union ip_conntrack_expect_help {
 	/* insert conntrack helper private data (expect) here */
+	struct ip_ct_h225_expect exp_h225_info;
+	struct ip_ct_pptp_expect exp_pptp_info;
 	struct ip_ct_amanda_expect exp_amanda_info;
 	struct ip_ct_ftp_expect exp_ftp_info;
 	struct ip_ct_irc_expect exp_irc_info;
@@ -85,16 +117,20 @@ union ip_conntrack_expect_help {
 /* per conntrack: application helper private data */
 union ip_conntrack_help {
 	/* insert conntrack helper private data (master) here */
+	struct ip_ct_h225_master ct_h225_info;
+	struct ip_ct_pptp_master ct_pptp_info;
 	struct ip_ct_ftp_master ct_ftp_info;
 	struct ip_ct_irc_master ct_irc_info;
 };
 
 #ifdef CONFIG_IP_NF_NAT_NEEDED
 #include <linux/netfilter_ipv4/ip_nat.h>
+#include <linux/netfilter_ipv4/ip_nat_pptp.h>
 
 /* per conntrack: nat application helper private data */
 union ip_conntrack_nat_help {
 	/* insert nat helper private data here */
+	struct ip_nat_pptp nat_pptp_info;
 };
 #endif
 
@@ -156,6 +192,12 @@ struct ip_conntrack_expect
 	union ip_conntrack_expect_help help;
 };
 
+struct ip_conntrack_counter
+{
+	u_int64_t packets;
+	u_int64_t bytes;
+};
+
 struct ip_conntrack_helper;
 
 struct ip_conntrack
@@ -172,6 +214,11 @@ struct ip_conntrack
 
 	/* Timer function; drops refcnt when it goes off. */
 	struct timer_list timeout;
+
+#ifdef CONFIG_IP_NF_CT_ACCT
+	/* Accounting Information (same cache line as other written members) */
+	struct ip_conntrack_counter counters[IP_CT_DIR_MAX];
+#endif
 
 	/* If we're expecting another related connection, this will be
            in expected linked list */
@@ -207,6 +254,9 @@ struct ip_conntrack
 	} nat;
 #endif /* CONFIG_IP_NF_NAT_NEEDED */
 
+#if defined(CONFIG_IP_NF_CONNTRACK_MARK)
+	unsigned long mark;
+#endif
 };
 
 /* get master conntrack via master expectation */
@@ -242,10 +292,17 @@ extern int invert_tuplepr(struct ip_conntrack_tuple *inverse,
 			  const struct ip_conntrack_tuple *orig);
 
 /* Refresh conntrack for this many jiffies */
-extern void ip_ct_refresh(struct ip_conntrack *ct,
-			  unsigned long extra_jiffies);
+extern void ip_ct_refresh_acct(struct ip_conntrack *ct,
+			       enum ip_conntrack_info ctinfo,
+			       struct iphdr *iph,
+			       unsigned long extra_jiffies);
 
 /* These are for NAT.  Icky. */
+/* Update TCP window tracking data after NAT successfully mangled the packet */
+extern int ip_conntrack_tcp_update(struct sk_buff *skb,
+				   struct ip_conntrack *conntrack, 
+				   int dir);
+
 /* Call me when a conntrack is destroyed. */
 extern void (*ip_conntrack_destroyed)(struct ip_conntrack *conntrack);
 
@@ -264,6 +321,67 @@ static inline int is_confirmed(struct ip_conntrack *ct)
 	return test_bit(IPS_CONFIRMED_BIT, &ct->status);
 }
 
+static inline int is_destroyed(struct ip_conntrack *ct)
+{
+	return test_bit(IPS_DESTROYED_BIT, &ct->status);
+}
+
 extern unsigned int ip_conntrack_htable_size;
+
+#ifdef CONFIG_IP_NF_CONNTRACK_EVENTS
+#include <linux/notifier.h>
+ 
+extern struct notifier_block *ip_conntrack_chain;
+
+static inline int ip_conntrack_register_notifier(struct notifier_block *nb)
+{
+	return notifier_chain_register(&ip_conntrack_chain, nb);
+}
+
+static inline int ip_conntrack_unregister_notifier(struct notifier_block *nb)
+{
+	return notifier_chain_unregister(&ip_conntrack_chain, nb);
+}
+
+static inline void ip_conntrack_event_cache_init(struct sk_buff *skb)
+{
+	/* Set to zero first 14 bits, see netfilter.h */
+	skb->nfcache &= 0xc000;
+}
+
+static inline void 
+ip_conntrack_event_cache(enum ip_conntrack_events event, struct sk_buff *skb)
+{
+	skb->nfcache |= event;
+}
+
+static inline void 
+ip_conntrack_deliver_cached_events(struct sk_buff *skb)
+{
+	struct ip_conntrack *ct;
+
+	if (!skb->nfct)
+		return;
+
+	ct = (struct ip_conntrack *)skb->nfct->master;
+	if (is_confirmed(ct) && !is_destroyed(ct) && skb->nfcache)
+		notifier_call_chain(&ip_conntrack_chain, skb->nfcache, ct);
+}
+
+static inline void ip_conntrack_event(enum ip_conntrack_events event,
+				      struct ip_conntrack *ct)
+{
+	if (is_confirmed(ct) && !is_destroyed(ct))
+		notifier_call_chain(&ip_conntrack_chain, event, ct);
+}
+#else /* CONFIG_IP_NF_CONNTRACK_EVENTS */
+static inline void ip_conntrack_event_cache_init(struct sk_buff *skb) {}
+static inline void ip_conntrack_event_cache(enum ip_conntrack_events event, 
+					    struct sk_buff *skb) {}
+static inline void ip_conntrack_event(enum ip_conntrack_events event, 
+				      struct ip_conntrack *ct) {}
+static inline void ip_conntrack_deliver_cached_events(struct sk_buff *skb) {}
+#endif /* CONFIG_IP_NF_CONNTRACK_EVENTS */
+
 #endif /* __KERNEL__ */
 #endif /* _IP_CONNTRACK_H */

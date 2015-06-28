@@ -15,6 +15,12 @@
 #define GRE_FLAGS	__constant_htons(0x00F8)
 #define GRE_VERSION	__constant_htons(0x0007)
 
+/* Ethernet frames on GRE */
+#define GRE_P_ETH_BR	__constant_htons(0x6558)
+
+/* BPDU packets on GRE */
+#define GRE_P_BPDU	__constant_htons(0x42)
+
 struct ip_tunnel_parm
 {
 	char			name[IFNAMSIZ];

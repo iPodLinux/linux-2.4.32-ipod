@@ -91,6 +91,7 @@ struct pt_dspregs {
 
 #ifdef __KERNEL__
 #define user_mode(regs) (((regs)->sr & 0x40000000)==0)
+#define user_stack(regs) ((regs)->regs[15])
 #define instruction_pointer(regs) ((regs)->pc)
 extern void show_regs(struct pt_regs *);
 #endif

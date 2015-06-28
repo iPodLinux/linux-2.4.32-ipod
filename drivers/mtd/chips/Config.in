@@ -1,6 +1,6 @@
 # drivers/mtd/chips/Config.in
 
-# $Id: Config.in,v 1.16 2002/09/03 13:30:43 joern Exp $
+# $Id: Config.in,v 1.1.1.1 2003/10/24 09:52:18 bas Exp $
 
 mainmenu_option next_comment
 
@@ -54,6 +54,7 @@ bool '  Older (theoretically obsoleted now) drivers for non-CFI chips' CONFIG_MT
 dep_tristate '  AMD compatible flash chip support (non-CFI)' CONFIG_MTD_AMDSTD $CONFIG_MTD $CONFIG_MTD_OBSOLETE_CHIPS
 dep_tristate '  pre-CFI Sharp chip support' CONFIG_MTD_SHARP $CONFIG_MTD $CONFIG_MTD_OBSOLETE_CHIPS
 dep_tristate '  JEDEC device support' CONFIG_MTD_JEDEC $CONFIG_MTD $CONFIG_MTD_OBSOLETE_CHIPS
+dep_tristate '  ST PSD4256G compatible flash chip support' CONFIG_MTD_PSD4256G $CONFIG_MTD $CONFIG_MTD_OBSOLETE_CHIPS
 
 
 endmenu

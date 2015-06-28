@@ -10,8 +10,13 @@
 #include <net/tcp.h>
 #include <net/route.h>
 
+#include <linux/netfilter_logging.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_ipv4/ipt_LOG.h>
+
+static unsigned int nflog = 1;
+MODULE_PARM(nflog, "i");
+MODULE_PARM_DESC(nflog, "register as internal netfilter logging module");
 
 #if 0
 #define DEBUGP printk
@@ -298,25 +303,35 @@ static void dump_packet(const struct ipt_log_info *info,
 	/* maxlen = 230+   91  + 230 + 252 = 803 */
 }
 
-static unsigned int
-ipt_log_target(struct sk_buff **pskb,
+static void
+ipt_log_packet(struct sk_buff **pskb,
 	       unsigned int hooknum,
 	       const struct net_device *in,
 	       const struct net_device *out,
-	       const void *targinfo,
-	       void *userinfo)
+	       const struct ipt_log_info *loginfo,
+	       const char *level_string,
+	       const char *prefix)
 {
 	struct iphdr *iph = (*pskb)->nh.iph;
-	const struct ipt_log_info *loginfo = targinfo;
-	char level_string[4] = "< >";
 
-	level_string[1] = '0' + (loginfo->level % 8);
 	spin_lock_bh(&log_lock);
 	printk(level_string);
 	printk("%sIN=%s OUT=%s ",
-	       loginfo->prefix,
+	       prefix == NULL ? loginfo->prefix : prefix,
 	       in ? in->name : "",
 	       out ? out->name : "");
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+	if ((*pskb)->nf_bridge) {
+		struct net_device *physindev = (*pskb)->nf_bridge->physindev;
+		struct net_device *physoutdev = (*pskb)->nf_bridge->physoutdev;
+
+		if (physindev && in != physindev)
+			printk("PHYSIN=%s ", physindev->name);
+		if (physoutdev && out != physoutdev)
+			printk("PHYSOUT=%s ", physoutdev->name);
+	}
+#endif
+
 	if (in && !out) {
 		/* MAC logging for input chain only. */
 		printk("MAC=");
@@ -334,8 +349,57 @@ ipt_log_target(struct sk_buff **pskb,
 	dump_packet(loginfo, iph, (*pskb)->len, 1);
 	printk("\n");
 	spin_unlock_bh(&log_lock);
+}
+
+static unsigned int
+ipt_log_target(struct sk_buff **pskb,
+	       unsigned int hooknum,
+	       const struct net_device *in,
+	       const struct net_device *out,
+	       const void *targinfo,
+	       void *userinfo)
+{
+	const struct ipt_log_info *loginfo = targinfo;
+	char level_string[4] = "< >";
+
+	level_string[1] = '0' + (loginfo->level % 8);
+	ipt_log_packet(pskb, hooknum, in, out, loginfo, level_string, NULL);
 
 	return IPT_CONTINUE;
+}
+
+static void
+ip_log_packet_fn(struct sk_buff **pskb,
+	         unsigned int hooknum,
+	         const struct net_device *in,
+	         const struct net_device *out,
+	         const char *prefix)
+{
+	struct ipt_log_info loginfo = { 
+		.level = 0, 
+		.logflags = IPT_LOG_MASK, 
+		.prefix = "" 
+	};
+
+	ipt_log_packet(pskb, hooknum, in, out, &loginfo, KERN_WARNING, prefix);
+}
+
+static void
+ip_log_fn(char *pfh, size_t len,
+	  const char *prefix)
+{
+	struct iphdr *iph = (struct iphdr *)pfh;
+	struct ipt_log_info loginfo = { 
+		.level = 0, 
+		.logflags = IPT_LOG_MASK, 
+		.prefix = "",
+	};
+
+	spin_lock_bh(&log_lock);
+	printk(KERN_WARNING "%s", prefix);
+	dump_packet(&loginfo, iph, len, 1);
+	printk("\n");
+	spin_unlock_bh(&log_lock);
 }
 
 static int ipt_log_checkentry(const char *tablename,
@@ -369,17 +433,23 @@ static int ipt_log_checkentry(const char *tablename,
 static struct ipt_target ipt_log_reg
 = { { NULL, NULL }, "LOG", ipt_log_target, ipt_log_checkentry, NULL, 
     THIS_MODULE };
+static struct nf_logging_t ip_logging_fn
+= { ip_log_packet_fn, ip_log_fn };
 
 static int __init init(void)
 {
 	if (ipt_register_target(&ipt_log_reg))
 		return -EINVAL;
-
+	if (nflog)
+		nf_log_register(PF_INET, &ip_logging_fn);
+	
 	return 0;
 }
 
 static void __exit fini(void)
 {
+	if (nflog)
+		nf_log_unregister(PF_INET, &ip_logging_fn);
 	ipt_unregister_target(&ipt_log_reg);
 }
 

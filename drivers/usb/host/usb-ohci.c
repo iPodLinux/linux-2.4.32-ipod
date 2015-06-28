@@ -77,6 +77,17 @@
 #define OHCI_USE_NPS		// force NoPowerSwitching mode
 // #define OHCI_VERBOSE_DEBUG	/* not always helpful */
 
+#if defined(CONFIG_ARCH_EP9301) || defined(CONFIG_ARCH_EP9312) || \
+    defined(CONFIG_ARCH_EP9315)
+extern struct pci_pool *pci_pool_create(const char *name, struct pci_dev *dev,
+					size_t size, size_t align,
+					size_t allocation, int flags);
+extern void pci_pool_destroy(struct pci_pool *pool);
+extern void *pci_pool_alloc(struct pci_pool *pool, int flags,
+			    dma_addr_t *handle);
+extern void pci_pool_free(struct pci_pool *pool, void *vaddr, dma_addr_t addr);
+#endif
+
 #include "usb-ohci.h"
 
 #include "../hcd.h"
@@ -2219,9 +2230,20 @@ static int hc_reset (ohci_t * ohci)
   	/* Reset USB (needed by some controllers) */
 	writel (0, &ohci->regs->control);
 
-	/* Force a state change from USBRESET to USBOPERATIONAL for ALi */
-	(void) readl (&ohci->regs->control);	/* PCI posting */
-	writel (ohci->hc_control = OHCI_USB_OPER, &ohci->regs->control);
+
+	/*
+	 * The following 2 lines cause the NEC 720101 to write a
+	 * random value at bus address 0x80 and are not necessary on
+	 * that hardware
+	 */
+	if (!((ohci->ohci_dev->vendor == 0x1033) 
+
+			&& (ohci->ohci_dev->device == 0x0035))) {
+
+		/* Force a state change from USBRESET to USBOPERATIONAL for ALi */
+		(void) readl (&ohci->regs->control);	/* PCI posting */
+		writel (ohci->hc_control = OHCI_USB_OPER, &ohci->regs->control);
+	}
 
 	/* HC Reset requires max 10 ms delay */
 	writel (OHCI_HCR,  &ohci->regs->cmdstatus);
@@ -2488,7 +2510,11 @@ static ohci_t * __devinit hc_alloc_ohci (struct pci_dev *dev, void * mem_base)
 		kfree (ohci);
 		return NULL;
 	}
+#ifdef CONFIG_PCI
 	ohci->bus->bus_name = dev->slot_name;
+#else
+	ohci->bus->bus_name = "not_pci";
+#endif
 	ohci->bus->hcpriv = (void *) ohci;
 
 	return ohci;
@@ -2539,7 +2565,7 @@ static void hc_release_ohci (ohci_t * ohci)
 
 static struct pci_driver ohci_pci_driver;
  
-static int __devinit
+int __devinit
 hc_found_ohci (struct pci_dev *dev, int irq,
 	void *mem_base, const struct pci_device_id *id)
 {
@@ -2892,10 +2918,18 @@ ohci_pci_resume (struct pci_dev *dev)
 			return -EIO;
 		}
 
-		/* Some chips likes being resumed first */
-		writel (OHCI_USB_OPER, &ohci->regs->control);
-		(void) readl (&ohci->regs->control);
-		mdelay (3);
+		/*
+		 * The following 2 lines cause the NEC 720101 to write a
+		 * random value at bus address 0x80 and are not necessary on
+		 * that hardware
+		 */
+		if (!((ohci->ohci_dev->vendor == 0x1033)
+				&& (ohci->ohci_dev->device == 0x0035))) {
+			/* Some chips likes being resumed first */
+			writel (OHCI_USB_OPER, &ohci->regs->control);
+			(void) readl (&ohci->regs->control);
+			mdelay (3);
+		}
 
 		/* Then re-enable operations */
 		spin_lock_irqsave (&ohci->ohci_lock, flags);

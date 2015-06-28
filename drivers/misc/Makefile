@@ -11,6 +11,11 @@
 
 O_TARGET := misc.o
 
+
+mod-subdirs	+=	fslfifo
+subdir-$(CONFIG_MICROBLAZE_FSLFIFO) += fslfifo
+obj-$(CONFIG_MICROBLAZE_FSLFIFO) += fslfifo/fslfifo.o
+
 include $(TOPDIR)/Rules.make
 
 fastdep:

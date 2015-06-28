@@ -239,4 +239,13 @@ DECLARE_IO(int,l,"")
 /* the following macro is depreciated */
 #define ioaddr(port)			__ioaddr((port))
 
+#define insw(p,d,l)			__raw_readsw(__ioaddr((p)),d,l)
+#define outsw(p,d,l)			__raw_writesw(__ioaddr((p)),d,l)
+
+#define __mem_pci(a)			((unsigned long)(a))
+#define __mem_isa(a)			((unsigned long)(a))
+
+#define iomem_valid_addr(iomem,size)	(1)
+#define iomem_to_phys(iomem)		(iomem)
+
 #endif

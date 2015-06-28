@@ -107,7 +107,7 @@ static struct mtd_partition iq80310_partitions[4] = {
 static struct mtd_info *mymtd;
 static struct mtd_partition *parsed_parts;
 
-extern int parse_redboot_partitions(struct mtd_info *master, struct mtd_partition **pparts);
+extern int parse_redboot_partitions(struct mtd_info *master, struct mtd_partition **pparts, unsigned long fis_origin);
 
 static int __init init_iq80310(void)
 {
@@ -130,7 +130,7 @@ static int __init init_iq80310(void)
 
 #ifdef CONFIG_MTD_REDBOOT_PARTS
 	if (parsed_nr_parts == 0) {
-		int ret = parse_redboot_partitions(mymtd, &parsed_parts);
+		int ret = parse_redboot_partitions(mymtd, &parsed_parts, 0);
 
 		if (ret > 0) {
 			part_type = "RedBoot";

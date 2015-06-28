@@ -600,7 +600,21 @@ bindv6only - BOOLEAN
 		TRUE: disable IPv4-mapped address feature
 		FALSE: enable IPv4-mapped address feature
 
-	Default: FALSE (as specified in RFC2553bis)
+	Default: FALSE (as specified in RFC3493)
+
+IPv6 Fragmentation:
+
+ip6frag_high_thresh - INTEGER
+	Maximum memory used to reassemble IPv6 fragments. When 
+	ip6frag_high_thresh bytes of memory is allocated for this purpose,
+	the fragment handler will toss packets until ip6frag_low_thresh
+	is reached.
+	
+ip6frag_low_thresh - INTEGER
+	See ip6frag_high_thresh	
+
+ip6frag_time - INTEGER
+	Time in seconds to keep an IPv6 fragment in memory.
 
 conf/default/*:
 	Change the interface-specific default settings.
@@ -701,6 +715,43 @@ router_solicitations - INTEGER
 	Number of Router Solicitations to send until assuming no 
 	routers are present.
 	Default: 3
+
+use_tempaddr - INTEGER
+	Preference for Privacy Extensions (RFC3041).
+	  <= 0 : disable Privacy Extensions
+	  == 1 : enable Privacy Extensions, but prefer public
+	         addresses over temporary addresses.
+	  >  1 : enable Privacy Extensions and prefer temporary
+	         addresses over public addresses.
+	Default:  1 (for most devices)
+		 -1 (for point-to-point devices and loopback devices)
+
+temp_valid_lft - INTEGER
+	valid lifetime (in seconds) for temporary addresses.
+	Default: 604800 (7 days)
+
+temp_prefered_lft - INTEGER
+	Preferred lifetime (in seconds) for temorary addresses.
+	Default: 86400 (1 day)
+
+max_desync_factor - INTEGER
+	Maximum value for DESYNC_FACTOR, which is a random value
+	that ensures that clients don't synchronize with each 
+	other and generage new addresses at exactly the same time.
+	value is in seconds.
+	Default: 600
+	
+regen_max_retry - INTEGER
+	Number of attempts before give up attempting to generate
+	valid temporary addresses.
+	Default: 5
+
+max_addresses - INTEGER
+	Number of maximum addresses per interface.  0 disables limitation.
+	It is recommended not set too large value (or 0) because it would 
+	be too easy way to crash kernel to allow to create too much of 
+	autoconfigured addresses.
+	Default: 16
 
 icmp/*:
 ratelimit - INTEGER

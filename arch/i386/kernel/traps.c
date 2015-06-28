@@ -1003,3 +1003,105 @@ void __init trap_init(void)
 	cobalt_init();
 #endif
 }
+
+#ifdef CONFIG_SYSCALLTIMER
+/*
+ * Stuff to instrument system calls
+ */
+
+#include <asm/timepeg.h>
+#include <linux/sys.h>
+
+static struct timepeg_slot syscall_start_tps[NR_syscalls];
+static struct timepeg_slot syscall_stop_tps[NR_syscalls];
+static struct timepeg_slot schedule_switchout_tps[NR_syscalls];
+static struct timepeg_slot schedule_switchin_tps[NR_syscalls];
+
+static char syscall_start_ids[NR_syscalls][16];
+static char syscall_stop_ids[NR_syscalls][16];
+static char schedule_switchout_ids[NR_syscalls][16];
+static char schedule_switchin_ids[NR_syscalls][16];
+static int done_init;
+static int prev_syscall_no[NR_CPUS];
+
+static void init_syscall_tps(void)
+{
+	int i;
+	for (i = 0; i < NR_syscalls; i++) {
+		sprintf(syscall_start_ids[i], "start_%04d", i);
+		sprintf(syscall_stop_ids[i], "stop_%04d", i);
+		sprintf(schedule_switchout_ids[i], "switchout_%04d", i);
+		sprintf(schedule_switchin_ids[i], "switchin_%04d", i);
+
+		syscall_start_tps[i].name = syscall_start_ids[i];
+		syscall_stop_tps[i].name = syscall_stop_ids[i];
+		schedule_switchout_tps[i].name = schedule_switchout_ids[i];
+		schedule_switchin_tps[i].name = schedule_switchin_ids[i];
+#if 0
+		/*
+		 * Make them directed timepegs so we don't get tangled with
+		 * the copy_*_user() timepegs.
+		 */
+		syscall_stop_tps[i].directee_name = syscall_start_ids[i];
+#endif
+		
+		spin_lock_init(&syscall_start_tps[i].lock);
+		spin_lock_init(&syscall_stop_tps[i].lock);
+		spin_lock_init(&schedule_switchout_tps[i].lock);
+		spin_lock_init(&schedule_switchin_tps[i].lock);
+	}
+	done_init = 1;
+}
+
+asmlinkage void timepeg_syscall_start(unsigned int syscall_no)
+{
+	if (done_init == 0)
+		init_syscall_tps();
+	timepeg_hit(&syscall_start_tps[syscall_no], TPH_MODE_START);
+	current->curr_syscall = syscall_no;
+}
+
+asmlinkage void timepeg_syscall_stop(void)
+{
+	timepeg_hit(&syscall_stop_tps[current->curr_syscall], TPH_MODE_STOP);
+	current->curr_syscall = 0;
+}
+
+/*
+ * We're called when the scheduler is about to switch to another process
+ */
+
+void timepeg_schedule_switchout(void)
+{
+	if (done_init == 0)
+		init_syscall_tps();
+	if (current->curr_syscall)
+		timepeg_hit(&schedule_switchout_tps[current->curr_syscall], TPH_MODE_STOP);
+}
+
+void timepeg_schedule_switchin(void)
+{
+	if (done_init == 0)
+		init_syscall_tps();
+	if (current->curr_syscall)
+		timepeg_hit(&schedule_switchin_tps[current->curr_syscall], TPH_MODE_START);
+}
+
+/*
+ * Fault handlers look like system call 255
+ */
+
+void timepeg_start_page_fault(void)
+{
+	if (done_init == 0)
+		init_syscall_tps();
+	timepeg_hit(&syscall_start_tps[NR_syscalls - 1], TPH_MODE_START);
+	current->curr_syscall = NR_syscalls - 1;
+}
+
+void timepeg_stop_page_fault(void)
+{
+	timepeg_hit(&syscall_stop_tps[current->curr_syscall], TPH_MODE_STOP);
+	current->curr_syscall = 0;
+}
+#endif

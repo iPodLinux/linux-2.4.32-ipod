@@ -218,6 +218,15 @@ extern int blk_nohighio;
 #define COMMAND_LINE ((char *) (PARAM+2048))
 #define COMMAND_LINE_SIZE 256
 
+#if defined(CONFIG_COMMAND_LINE)
+#undef COMMAND_LINE
+#define COMMAND_LINE	CONFIG_COMMAND_LINE_VALUE
+#elif defined(CONFIG_MTD_NETtel)
+/* Complete bastard hack for NETtel/x86 command line */
+#undef COMMAND_LINE
+#define COMMAND_LINE	((char *) 0x000e2000)
+#endif
+
 #define RAMDISK_IMAGE_START_MASK  	0x07FF
 #define RAMDISK_PROMPT_FLAG		0x8000
 #define RAMDISK_LOAD_FLAG		0x4000	
@@ -368,6 +377,9 @@ struct resource standard_io_resources[] = {
 static struct resource code_resource = { "Kernel code", 0x100000, 0 };
 static struct resource data_resource = { "Kernel data", 0, 0 };
 static struct resource vram_resource = { "Video RAM area", 0xa0000, 0xbffff, IORESOURCE_BUSY };
+#ifdef CONFIG_MTD_SNAPGEODE
+static struct resource geode_resource = { "Unknown Geode Conflict", 0x10400000, 0x3fffffff, IORESOURCE_BUSY };
+#endif
 
 /* System ROM resources */
 #define MAXROMS 6
@@ -905,6 +917,18 @@ nextchar:
 	}
 	*to = '\0';
 	*cmdline_p = command_line;
+
+#ifdef CONFIG_MTD_NETtel
+	/* Check for empty boot arguments in FLASH */
+	if (*((unsigned char *) &saved_command_line[0]) == 0xff) {
+		command_line[0] = 0;
+		saved_command_line[0] = 0;
+	}
+#endif
+#ifdef CONFIG_SNAPDOG
+	snapdog_service(NULL);
+#endif
+
 	if (userdef) {
 		printk(KERN_INFO "user-defined physical RAM map:\n");
 		print_memory_map("user");
@@ -1164,6 +1188,9 @@ static void __init register_memory(unsigned long max_low_pfn)
 		}
 	}
 	request_resource(&iomem_resource, &vram_resource);
+#ifdef CONFIG_MTD_SNAPGEODE
+	request_resource(&iomem_resource, &geode_resource);
+#endif
 
 	/* request I/O space for devices used on all i[345]86 PCs */
 	for (i = 0; i < STANDARD_IO_RESOURCES; i++)

@@ -33,6 +33,7 @@
 #include <linux/swap.h>
 
 #include <asm/uaccess.h>
+#include <asm/semaphore.h>
 
 #ifdef CONFIG_ROOT_NFS
 #include <linux/nfs_fs.h>
@@ -44,7 +45,9 @@
 extern int panic_timeout;
 extern int C_A_D;
 extern int bdf_prm[], bdflush_min[], bdflush_max[];
+#ifndef NO_MM
 extern int sysctl_overcommit_memory;
+#endif
 extern int max_threads;
 extern atomic_t nr_queued_signals;
 extern int max_queued_signals;
@@ -106,7 +109,9 @@ int proc_dol3crvec(ctl_table *table, int write, struct file *filp,
 extern int acct_parm[];
 #endif
 
+#ifndef NO_MM
 extern int pgt_cache_water[];
+#endif
 
 static int parse_table(int *, int, void *, size_t *, void *, size_t,
 		       ctl_table *, void **);
@@ -118,7 +123,9 @@ static struct ctl_table_header root_table_header =
 	{ root_table, LIST_HEAD_INIT(root_table_header.ctl_entry) };
 
 static ctl_table kern_table[];
+#ifndef NO_MM
 static ctl_table vm_table[];
+#endif
 #ifdef CONFIG_NET
 extern ctl_table net_table[];
 #endif
@@ -155,7 +162,9 @@ static void unregister_proc_table(ctl_table *, struct proc_dir_entry *);
 
 static ctl_table root_table[] = {
 	{CTL_KERN, "kernel", NULL, 0, 0555, kern_table},
+#ifndef NO_MM
 	{CTL_VM, "vm", NULL, 0, 0555, vm_table},
+#endif
 #ifdef CONFIG_NET
 	{CTL_NET, "net", NULL, 0, 0555, net_table},
 #endif
@@ -281,6 +290,7 @@ static ctl_table kern_table[] = {
 	{0}
 };
 
+#ifndef NO_MM
 static ctl_table vm_table[] = {
 	{VM_GFP_DEBUG, "vm_gfp_debug", 
 	 &vm_gfp_debug, sizeof(int), 0644, NULL, &proc_dointvec},
@@ -319,6 +329,7 @@ static ctl_table vm_table[] = {
 	 &block_dump, sizeof(int), 0644, NULL, &proc_dointvec},
 	{0}
 };
+#endif /* NO_MM */
 
 static ctl_table proc_table[] = {
 	{0}

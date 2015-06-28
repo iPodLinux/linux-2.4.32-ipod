@@ -624,18 +624,18 @@ ssize_t i2cproc_bus_read(struct file * file, char * buf,size_t count,
 	int i,j,k,order_nr,len=0;
 	size_t len_total;
 	int order[I2C_CLIENT_MAX];
+#define OUTPUT_LENGTH_PER_LINE 70
 
-	if (count > 4000)
-		return -EINVAL; 
 	len_total = file->f_pos + count;
 	/* Too bad if this gets longer (unlikely) */
-	if (len_total > 4000)
-		len_total = 4000;
+	if (len_total > (I2C_CLIENT_MAX * OUTPUT_LENGTH_PER_LINE))
+		len_total = (I2C_CLIENT_MAX * OUTPUT_LENGTH_PER_LINE);
 	for (i = 0; i < I2C_ADAP_MAX; i++)
 		if (adapters[i]->inode == inode->i_ino) {
 		/* We need a bit of slack in the kernel buffer; this makes the
 		   sprintf safe. */
-			if (! (kbuf = kmalloc(count + 80,GFP_KERNEL)))
+			if (! (kbuf = kmalloc(len_total + OUTPUT_LENGTH_PER_LINE,
+						GFP_KERNEL)))
 				return -ENOMEM;
 			/* Order will hold the indexes of the clients
 			   sorted by address */
@@ -1258,6 +1258,12 @@ static int __init i2c_init(void)
 #ifdef CONFIG_I2C_BITVIA
 	extern int i2c_bitvia_init(void);
 #endif
+#ifdef CONFIG_I2C_MCF_GPIO
+	extern int i2c_bit_mcf_gpio_init(void);
+#endif
+#ifdef CONFIG_I2C_NETARM_GPIO
+	extern int i2c_bit_netarm_gpio_init(void);
+#endif
 
 #ifdef CONFIG_I2C_ALGOPCF
 	extern int i2c_algo_pcf_init(void);	
@@ -1285,6 +1291,13 @@ static int __init i2c_init(void)
 	extern int sensors_init(void);
 #endif
 
+#ifdef CONFIG_MB93493_I2C_ALGO
+	extern int i2c_algo_mb93493_init(void);	
+#endif
+#ifdef CONFIG_MB93493_I2C_ADAP
+	extern int i2c_mb93493_init(void);
+#endif
+
 /* This is needed for automatic patch generation: sensors code starts here */
 /* This is needed for automatic patch generation: sensors code ends here   */
 
@@ -1308,6 +1321,12 @@ int __init i2c_init_all(void)
 #endif
 #ifdef CONFIG_I2C_VELLEMAN
 	i2c_bitvelle_init();
+#endif
+#ifdef CONFIG_I2C_MCF_GPIO
+	i2c_bit_mcf_gpio_init();
+#endif
+#ifdef CONFIG_I2C_NETARM_GPIO
+	i2c_bit_netarm_gpio_init();
 #endif
 
 	/* --------------------- pcf -------- */
@@ -1333,6 +1352,14 @@ int __init i2c_init_all(void)
 #endif
 #ifdef CONFIG_I2C_MAX1617
 	i2c_max1617_init();
+#endif
+
+	/* --------------------- MB93493 -------- */
+#ifdef CONFIG_MB93493_I2C_ALGO
+	i2c_algo_mb93493_init();	
+#endif
+#ifdef CONFIG_MB93493_I2C_ADAP
+	i2c_mb93493_init();
 #endif
 
 	/* -------------- proc interface ---- */

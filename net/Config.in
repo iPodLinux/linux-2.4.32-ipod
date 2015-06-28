@@ -1,3 +1,4 @@
+# $USAGI: Config.in,v 1.26 2003/11/12 05:11:58 yoshfuji Exp $
 #
 # Network configuration
 #
@@ -15,6 +16,8 @@ if [ "$CONFIG_NETFILTER" = "y" ]; then
    bool '  Network packet filtering debugging' CONFIG_NETFILTER_DEBUG
 fi
 bool 'Socket Filtering'  CONFIG_FILTER
+bool 'Address Resolution / Neighbour Discovery Debugging' CONFIG_NET_NEIGH_DEBUG
+bool 'Restrict SO_REUSEADDR only for same user' CONFIG_NET_RESTRICTED_REUSE
 tristate 'Unix domain sockets' CONFIG_UNIX
 bool 'TCP/IP networking' CONFIG_INET
 if [ "$CONFIG_INET" = "y" ]; then
@@ -40,6 +43,9 @@ if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
 	 dep_tristate '  Classical IP over ATM' CONFIG_ATM_CLIP $CONFIG_ATM
 	 if [ "$CONFIG_ATM_CLIP" != "n" ]; then
 	    bool '    Do NOT send ICMP if no neighbour' CONFIG_ATM_CLIP_NO_ICMP
+	 fi
+	 if [ "$CONFIG_IPV6" != "n" ]; then
+	    bool '  IPv6 Enhance for ATM' CONFIG_ATM_IPV6
 	 fi
       fi
       dep_tristate '  LAN Emulation (LANE) support' CONFIG_ATM_LANE $CONFIG_ATM
@@ -70,6 +76,9 @@ if [ "$CONFIG_DECNET" != "n" ]; then
    source net/decnet/Config.in
 fi
 dep_tristate '802.1d Ethernet Bridging' CONFIG_BRIDGE $CONFIG_INET
+if [ "$CONFIG_BRIDGE" != "n" -a "$CONFIG_NETFILTER" != "n" ]; then
+   source net/bridge/netfilter/Config.in
+fi
 if [ "$CONFIG_EXPERIMENTAL" = "y" ]; then
    tristate 'CCITT X.25 Packet Layer (EXPERIMENTAL)' CONFIG_X25
    tristate 'LAPB Data Link Driver (EXPERIMENTAL)' CONFIG_LAPB

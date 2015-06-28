@@ -11,6 +11,7 @@
 #include <linux/module.h>
 #include <linux/mtd/mtd.h>
 #include <linux/slab.h>
+#include <asm/semaphore.h>
 
 #ifdef CONFIG_DEVFS_FS
 #include <linux/devfs_fs_kernel.h>
@@ -115,7 +116,8 @@ static int mtd_close(struct inode *inode, struct file *file)
 /* FIXME: This _really_ needs to die. In 2.5, we should lock the
    userspace buffer down and use it directly with readv/writev.
 */
-#define MAX_KMALLOC_SIZE 0x20000
+#define MAX_KMALLOC_SIZE 0x2000
+
 
 static ssize_t mtd_read(struct file *file, char *buf, size_t count,loff_t *ppos)
 {
@@ -176,10 +178,13 @@ static ssize_t mtd_read(struct file *file, char *buf, size_t count,loff_t *ppos)
 	return total_retlen;
 } /* mtd_read */
 
+static char *write_kbuf;
+static int write_kbuf_len;
+static struct semaphore write_kbuf_sem;
+
 static ssize_t mtd_write(struct file *file, const char *buf, size_t count,loff_t *ppos)
 {
 	struct mtd_info *mtd = (struct mtd_info *)file->private_data;
-	char *kbuf;
 	size_t retlen;
 	size_t total_retlen=0;
 	loff_t pos = *ppos;
@@ -197,24 +202,30 @@ static ssize_t mtd_write(struct file *file, const char *buf, size_t count,loff_t
 	if (!count)
 		return 0;
 
-	while (count) {
-		if (count > MAX_KMALLOC_SIZE) 
-			len = MAX_KMALLOC_SIZE;
-		else
-			len = count;
+	down(&write_kbuf_sem);
 
-		kbuf=kmalloc(len,GFP_KERNEL);
-		if (!kbuf) {
-			printk("kmalloc is null\n");
+	if (!write_kbuf_len) {
+		write_kbuf_len = MAX_KMALLOC_SIZE;
+		write_kbuf = kmalloc(write_kbuf_len, GFP_KERNEL);
+		if (!write_kbuf) {
+			write_kbuf_len = 0x0;
+			up(&write_kbuf_sem);
 			return -ENOMEM;
 		}
+	}
 
-		if (copy_from_user(kbuf, buf, len)) {
-			kfree(kbuf);
+	while (count) {
+		if (count < write_kbuf_len)
+			len = count;
+		else
+			len = write_kbuf_len;
+
+		if (copy_from_user(write_kbuf, buf, len)) {
+			up(&write_kbuf_sem);
 			return -EFAULT;
 		}
 		
-	        ret = (*(mtd->write))(mtd, pos, len, &retlen, kbuf);
+	        ret = (*(mtd->write))(mtd, pos, len, &retlen, write_kbuf);
 		if (!ret) {
 			pos += retlen;
 			total_retlen += retlen;
@@ -222,14 +233,13 @@ static ssize_t mtd_write(struct file *file, const char *buf, size_t count,loff_t
 			buf += retlen;
 		}
 		else {
-			kfree(kbuf);
+			up(&write_kbuf_sem);
 			return ret;
 		}
-		
-		kfree(kbuf);
 	}
 	*ppos = pos;
 
+	up(&write_kbuf_sem);
 	return total_retlen;
 } /* mtd_write */
 
@@ -526,7 +536,7 @@ static int mtd_ioctl(struct inode *inode, struct file *file,
 
 		
 	default:
-		DEBUG(MTD_DEBUG_LEVEL0, "Invalid ioctl %x (MEMGETINFO = %x)\n", cmd, MEMGETINFO);
+		DEBUG(MTD_DEBUG_LEVEL0, "Invalid ioctl %x (MEMGETINFO = %lx)\n", cmd, MEMGETINFO);
 		ret = -ENOTTY;
 	}
 
@@ -599,6 +609,24 @@ static int __init init_mtdchar(void)
 		return -EAGAIN;
 	}
 #endif
+
+	/* XXX
+	 * Allocate and buffer and init spinlock.
+	 */
+	sema_init(&write_kbuf_sem, 1);
+
+	down(&write_kbuf_sem);
+	write_kbuf_len = 0x2000;
+	write_kbuf = kmalloc(write_kbuf_len, GFP_KERNEL);
+	if (!write_kbuf) {
+		write_kbuf_len = 0x0;
+		up(&write_kbuf_sem);
+		return -ENOMEM;
+	}
+	up(&write_kbuf_sem);
+	
+	DEBUG(MTD_DEBUG_LEVEL3,
+		"init_mtdchar: allocated major number %d.\n", MTD_CHAR_MAJOR);
 
 	return 0;
 }

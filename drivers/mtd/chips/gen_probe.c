@@ -171,6 +171,10 @@ static int genprobe_new_chip(struct map_info *map, struct chip_probe *cp,
 		cfi->device_type = CFI_DEVICETYPE_X16;
 		if (cp->probe_chip(map, 0, NULL, cfi))
 			return 1;
+			
+		cfi->device_type = CFI_DEVICETYPE_X32;
+		if (cp->probe_chip(map, 0, NULL, cfi))
+			return 1;
 #endif /* CFIDEV_INTERLEAVE_1 */
 #ifdef CFIDEV_INTERLEAVE_2
 		cfi->interleave = CFIDEV_INTERLEAVE_2;

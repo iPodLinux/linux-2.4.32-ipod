@@ -73,6 +73,14 @@ extern void au1xxx_time_init(void);
 extern void au1xxx_timer_setup(void);
 extern void set_cpuspec(void);
 
+#ifdef CONFIG_CPU_HAS_WB
+void (*__wbflush) (void);
+void au1000_wbflush(void)
+{
+	__asm__ volatile ("sync");
+}
+#endif
+
 void __init au1x00_setup(void)
 {
 	struct	cpu_spec *sp;
@@ -150,6 +158,9 @@ void __init au1x00_setup(void)
 	// au1000 does not support vra, au1500 and au1100 do
 	strcat(argptr, " au1000_audio=vra");
 	argptr = prom_getcmdline();
+#endif
+#ifdef CONFIG_CPU_HAS_WB
+	__wbflush = au1000_wbflush;
 #endif
 	_machine_restart = au1000_restart;
 	_machine_halt = au1000_halt;

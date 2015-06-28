@@ -43,7 +43,11 @@ typedef struct user_fp elf_fpregset_t;
    the loader.  We need to make sure that it is out of the way of the program
    that it will "exec", and that there is sufficient room for the brk.  */
 
+#ifdef CONFIG_ARM_FASS
+#define ELF_ET_DYN_BASE	CPD_UNMAPPED_BASE
+#else
 #define ELF_ET_DYN_BASE	(2 * TASK_SIZE / 3)
+#endif
 
 /* When the program starts, a1 contains a pointer to a function to be 
    registered with atexit, as per the SVR4 ABI.  A value of 0 means we 

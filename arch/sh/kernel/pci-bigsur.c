@@ -156,8 +156,8 @@ int pcibios_map_platform_irq(u8 slot, u8 pin)
      * Therefor the IRQ mapping is somewhat use dependent... I'l assume a linear map for
      * now, i.e. INTA=slot0,pin0... INTD=slot3,pin0...
      */ 
-    int irq = (slot + pin-1)%4 + BIGSUR_SH7751_PCI_IRQ_BASE;
-    PCIDBG(2,"PCI: Mapping Big Sur IRQ for slot %d, pin %c to irq %d\n", slot, pin-1+'A', irq);
+    int irq = (/* slot +*/ pin-1)%4 + BIGSUR_SH7751_PCI_IRQ_BASE;
+    printk("PCI: Mapping Big Sur IRQ for slot %d, pin %c to irq %d\n", slot, pin-1+'A', irq);
     return irq;
      
 }

@@ -1,3 +1,5 @@
+/* $USAGI: ip_gre.c,v 1.17 2003/11/12 05:12:00 yoshfuji Exp $ */
+
 /*
  *	Linux NET3:	GRE over IP protocol decoder. 
  *
@@ -18,6 +20,7 @@
 #include <asm/uaccess.h>
 #include <linux/skbuff.h>
 #include <linux/netdevice.h>
+#include <linux/etherdevice.h>
 #include <linux/in.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
@@ -38,7 +41,7 @@
 #include <net/checksum.h>
 #include <net/inet_ecn.h>
 
-#ifdef CONFIG_IPV6
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 #include <net/ipv6.h>
 #include <net/ip6_fib.h>
 #include <net/ip6_route.h>
@@ -119,6 +122,14 @@ static int ipgre_tunnel_init(struct net_device *dev);
 
 static int ipgre_fb_tunnel_init(struct net_device *dev);
 
+
+/*
+ * we need a special function to be able to be able to pull the ethernet
+ * buffer out.  It is nearly the same as the eth_type_trans structure except
+ * the header size is adjusted.
+ */
+unsigned short gre_eth_type_trans(struct sk_buff *skb, struct net_device *dev);
+
 static struct net_device ipgre_fb_tunnel_dev = {
 	"gre0", 0x0, 0x0, 0x0, 0x0, 0, 0, 0, 0, 0, NULL, ipgre_fb_tunnel_init,
 };
@@ -193,11 +204,11 @@ static struct ip_tunnel * ipgre_tunnel_lookup(u32 remote, u32 local, u32 key)
 	return NULL;
 }
 
-static struct ip_tunnel **ipgre_bucket(struct ip_tunnel *t)
+static __inline__ struct ip_tunnel **__ipgre_bucket(struct ip_tunnel_parm *parms)
 {
-	u32 remote = t->parms.iph.daddr;
-	u32 local = t->parms.iph.saddr;
-	u32 key = t->parms.i_key;
+	u32 remote = parms->iph.daddr;
+	u32 local = parms->iph.saddr;
+	u32 key = parms->i_key;
 	unsigned h = HASH(key);
 	int prio = 0;
 
@@ -209,6 +220,11 @@ static struct ip_tunnel **ipgre_bucket(struct ip_tunnel *t)
 	}
 
 	return &tunnels[prio][h];
+}
+
+static struct ip_tunnel **ipgre_bucket(struct ip_tunnel *t)
+{
+	return __ipgre_bucket(&t->parms);
 }
 
 static void ipgre_tunnel_link(struct ip_tunnel *t)
@@ -242,16 +258,8 @@ static struct ip_tunnel * ipgre_tunnel_locate(struct ip_tunnel_parm *parms, int 
 	u32 key = parms->i_key;
 	struct ip_tunnel *t, **tp, *nt;
 	struct net_device *dev;
-	unsigned h = HASH(key);
-	int prio = 0;
 
-	if (local)
-		prio |= 1;
-	if (remote && !MULTICAST(remote)) {
-		prio |= 2;
-		h ^= HASH(remote);
-	}
-	for (tp = &tunnels[prio][h]; (t = *tp) != NULL; tp = &t->next) {
+	for (tp = __ipgre_bucket(parms); (t = *tp) != NULL; tp = &t->next) {
 		if (local == t->parms.iph.saddr && remote == t->parms.iph.daddr) {
 			if (key == t->parms.i_key)
 				return t;
@@ -556,6 +564,10 @@ ipgre_ecn_encapsulate(u8 tos, struct iphdr *old_iph, struct sk_buff *skb)
 	return INET_ECN_encapsulate(tos, inner);
 }
 
+
+void
+br_stp_do_bpdu_lock(struct sk_buff *skb);
+
 int ipgre_rcv(struct sk_buff *skb)
 {
 	struct iphdr *iph;
@@ -566,6 +578,7 @@ int ipgre_rcv(struct sk_buff *skb)
 	u32    seqno = 0;
 	struct ip_tunnel *tunnel;
 	int    offset = 4;
+	unsigned short 	proto;
 
 	if (!pskb_may_pull(skb, 16))
 		goto drop_nolock;
@@ -573,6 +586,7 @@ int ipgre_rcv(struct sk_buff *skb)
 	iph = skb->nh.iph;
 	h = skb->data;
 	flags = *(u16*)h;
+	proto = *(u16*)(h+2);
 
 	if (flags&(GRE_CSUM|GRE_KEY|GRE_ROUTING|GRE_SEQ|GRE_VERSION)) {
 		/* - Version must be 0.
@@ -606,23 +620,6 @@ int ipgre_rcv(struct sk_buff *skb)
 
 	read_lock(&ipgre_lock);
 	if ((tunnel = ipgre_tunnel_lookup(iph->saddr, iph->daddr, key)) != NULL) {
-		skb->mac.raw = skb->nh.raw;
-		skb->nh.raw = __pskb_pull(skb, offset);
-		memset(&(IPCB(skb)->opt), 0, sizeof(struct ip_options));
-		if (skb->ip_summed == CHECKSUM_HW)
-			skb->csum = csum_sub(skb->csum,
-					     csum_partial(skb->mac.raw, skb->nh.raw-skb->mac.raw, 0));
-		skb->protocol = *(u16*)(h + 2);
-		skb->pkt_type = PACKET_HOST;
-#ifdef CONFIG_NET_IPGRE_BROADCAST
-		if (MULTICAST(iph->daddr)) {
-			/* Looped back packet, drop it! */
-			if (((struct rtable*)skb->dst)->key.iif == 0)
-				goto drop;
-			tunnel->stat.multicast++;
-			skb->pkt_type = PACKET_BROADCAST;
-		}
-#endif
 
 		if (((flags&GRE_CSUM) && csum) ||
 		    (!(flags&GRE_CSUM) && tunnel->parms.i_flags&GRE_CSUM)) {
@@ -638,6 +635,65 @@ int ipgre_rcv(struct sk_buff *skb)
 				goto drop;
 			}
 			tunnel->i_seqno = seqno + 1;
+		}
+
+#if defined(CONFIG_BRIDGE)
+		if (tunnel->dev->br_port != NULL) {
+			if (proto == GRE_P_ETH_BR) {
+
+				/* Pull off the offset. */
+				skb->mac.raw = __pskb_pull(skb, offset);
+
+				/* ensure it is linear so we can simply copy the data out */
+				skb_linearize(skb, GFP_ATOMIC);
+
+				skb->protocol = gre_eth_type_trans(skb, tunnel->dev);
+			} else if (proto == GRE_P_BPDU) {
+
+				if (!skb_pull(skb, offset)) {
+					goto drop;
+				}
+
+				skb->dev = tunnel->dev;
+				dst_release(skb->dst);
+				skb->dst = NULL;
+#ifdef CONFIG_NETFILTER
+				nf_conntrack_put(skb->nfct);
+				skb->nfct = NULL;
+#ifdef CONFIG_NETFILTER_DEBUG
+				skb->nf_debug = 0;
+#endif
+#endif
+
+				br_stp_do_bpdu_lock(skb);
+				tunnel->stat.rx_packets++;
+				tunnel->stat.rx_bytes += skb->len;
+				goto drop;
+
+			} else {
+				tunnel->stat.rx_errors++;
+				goto drop;
+			}
+		} else
+#endif
+		{
+		 	skb->mac.raw = skb->nh.raw;
+			skb->nh.raw = __pskb_pull(skb, offset);
+			memset(&(IPCB(skb)->opt), 0, sizeof(struct ip_options));
+			if (skb->ip_summed == CHECKSUM_HW)
+				skb->csum = csum_sub(skb->csum,
+							 csum_partial(skb->mac.raw, skb->nh.raw-skb->mac.raw, 0));
+			skb->protocol = *(u16*)(h + 2);
+			skb->pkt_type = PACKET_HOST;
+#ifdef CONFIG_NET_IPGRE_BROADCAST
+			if (MULTICAST(iph->daddr)) {
+				/* Looped back packet, drop it! */
+				if (((struct rtable*)skb->dst)->key.iif == 0)
+					goto drop;
+				tunnel->stat.multicast++;
+				skb->pkt_type = PACKET_BROADCAST;
+			}
+#endif
 		}
 		tunnel->stat.rx_packets++;
 		tunnel->stat.rx_bytes += skb->len;
@@ -681,6 +737,8 @@ static int ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev)
 	u32    dst;
 	int    mtu;
 
+//	printk(KERN_INFO "xmit - %d\n", skb->len);
+
 	if (tunnel->recursion++) {
 		tunnel->stat.collisions++;
 		goto tx_error;
@@ -707,30 +765,24 @@ static int ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev)
 			if ((dst = rt->rt_gateway) == 0)
 				goto tx_error_icmp;
 		}
-#ifdef CONFIG_IPV6
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 		else if (skb->protocol == htons(ETH_P_IPV6)) {
 			struct in6_addr *addr6;
-			int addr_type;
 			struct neighbour *neigh = skb->dst->neighbour;
 
 			if (neigh == NULL)
 				goto tx_error;
 
 			addr6 = (struct in6_addr*)&neigh->primary_key;
-			addr_type = ipv6_addr_type(addr6);
-
-			if (addr_type == IPV6_ADDR_ANY) {
+			if (IN6_IS_ADDR_UNSPECIFIED(addr6))
 				addr6 = &skb->nh.ipv6h->daddr;
-				addr_type = ipv6_addr_type(addr6);
-			}
-
-			if ((addr_type & IPV6_ADDR_COMPATv4) == 0)
+			if (!IN6_IS_ADDR_V4COMPAT(addr6))
 				goto tx_error_icmp;
 
 			dst = addr6->s6_addr32[3];
 		}
 #endif
-		else
+		else 
 			goto tx_error;
 	}
 
@@ -759,38 +811,60 @@ static int ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev)
 	else
 		mtu = skb->dst ? skb->dst->pmtu : dev->mtu;
 
-	if (skb->protocol == htons(ETH_P_IP)) {
-		if (skb->dst && mtu < skb->dst->pmtu && mtu >= 68)
-			skb->dst->pmtu = mtu;
-
-		df |= (old_iph->frag_off&htons(IP_DF));
-
-		if ((old_iph->frag_off&htons(IP_DF)) &&
-		    mtu < ntohs(old_iph->tot_len)) {
-			icmp_send(skb, ICMP_DEST_UNREACH, ICMP_FRAG_NEEDED, htonl(mtu));
-			ip_rt_put(rt);
-			goto tx_error;
-		}
-	}
-#ifdef CONFIG_IPV6
-	else if (skb->protocol == htons(ETH_P_IPV6)) {
-		struct rt6_info *rt6 = (struct rt6_info*)skb->dst;
-
-		if (rt6 && mtu < rt6->u.dst.pmtu && mtu >= IPV6_MIN_MTU) {
-			if ((tunnel->parms.iph.daddr && !MULTICAST(tunnel->parms.iph.daddr)) ||
-			    rt6->rt6i_dst.plen == 128) {
-				rt6->rt6i_flags |= RTF_MODIFIED;
+	/*
+	 * If we are not being used as an ethernet bridge, then we want to
+	 * honour fragmentation stuff.
+	 */
+	if (!dev->br_port) {
+		if (skb->protocol == __constant_htons(ETH_P_IP)) {
+			if (skb->dst && mtu < skb->dst->pmtu && mtu >= 68)
 				skb->dst->pmtu = mtu;
+
+			df |= (old_iph->frag_off&__constant_htons(IP_DF));
+
+			if ((old_iph->frag_off&__constant_htons(IP_DF)) &&
+				mtu < ntohs(old_iph->tot_len)) {
+				icmp_send(skb, ICMP_DEST_UNREACH, ICMP_FRAG_NEEDED, htonl(mtu));
+				ip_rt_put(rt);
+				goto tx_error;
 			}
 		}
-
-		if (mtu >= IPV6_MIN_MTU && mtu < skb->len - tunnel->hlen + gre_hlen) {
-			icmpv6_send(skb, ICMPV6_PKT_TOOBIG, 0, mtu, dev);
-			ip_rt_put(rt);
-			goto tx_error;
-		}
-	}
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+		else if (skb->protocol == __constant_htons(ETH_P_IPV6)) {
+			struct rt6_info *rt6 = (struct rt6_info*)skb->dst;
+#if defined(CONFIG_IPV6_MODULE_IP_GRE) && !defined(CONFIG_IPV6)
+			void (*icmpv6_send)(struct sk_buff *skb,
+					int type, int code,
+					__u32 info,
+					struct net_device *dev) = inter_module_get(IM_ICMPV6_SEND);
+			if (!icmpv6_send)
+				goto skip_ipv6;
 #endif
+			if (rt6 && mtu < rt6->u.dst.pmtu && mtu >= IPV6_MIN_MTU) {
+				if ((tunnel->parms.iph.daddr && !MULTICAST(tunnel->parms.iph.daddr)) ||
+					rt6->rt6i_dst.plen == 128) {
+					rt6->rt6i_flags |= RTF_MODIFIED;
+					skb->dst->pmtu = mtu;
+				}
+			}
+
+			if (mtu >= IPV6_MIN_MTU && mtu < skb->len - tunnel->hlen + gre_hlen) {
+#ifdef CONFIG_IPV6
+				icmpv6_send(skb, ICMPV6_PKT_TOOBIG, 0, mtu, dev);
+#elif defined(CONFIG_IPV6_MODULE_IP_GRE)
+				(*icmpv6_send)(skb, ICMPV6_PKT_TOOBIG, 0, mtu, dev);
+				inter_module_put(IM_ICMPV6_SEND);
+#endif
+				ip_rt_put(rt);
+				goto tx_error;
+			}
+#if defined(CONFIG_IPV6_MODULE_IP_GRE) && !defined(CONFIG_IPV6)
+			inter_module_put(IM_ICMPV6_SEND);
+skip_ipv6:
+#endif
+		}
+#endif
+	}
 
 	if (tunnel->err_count > 0) {
 		if (jiffies - tunnel->err_time < IPTUNNEL_ERR_TIMEO) {
@@ -800,6 +874,11 @@ static int ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev)
 		} else
 			tunnel->err_count = 0;
 	}
+
+	/*
+	 * This is only the case for ethernet frames!!
+	 */
+	skb->h.raw = skb->mac.raw;
 
 	max_headroom = ((tdev->hard_header_len+15)&~15)+ gre_hlen;
 
@@ -824,6 +903,7 @@ static int ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev)
 	memset(&(IPCB(skb)->opt), 0, sizeof(IPCB(skb)->opt));
 	dst_release(skb->dst);
 	skb->dst = &rt->u.dst;
+//	printk("%d-%s", skb->len, rt->u.dst.dev->name);
 
 	/*
 	 *	Push down and install the IPIP header.
@@ -832,7 +912,7 @@ static int ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev)
 	iph 			=	skb->nh.iph;
 	iph->version		=	4;
 	iph->ihl		=	sizeof(struct iphdr) >> 2;
-	iph->frag_off		=	df;
+	iph->frag_off		=	0;//__constant_htons(IP_DF);
 	iph->protocol		=	IPPROTO_GRE;
 	iph->tos		=	ipgre_ecn_encapsulate(tos, old_iph, skb);
 	iph->daddr		=	rt->rt_dst;
@@ -840,8 +920,13 @@ static int ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	if ((iph->ttl = tiph->ttl) == 0) {
 		if (skb->protocol == htons(ETH_P_IP))
-			iph->ttl = old_iph->ttl;
-#ifdef CONFIG_IPV6
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+			if (skb->nf_bridge != NULL)
+				iph->ttl = sysctl_ip_default_ttl;
+			else
+#endif
+				iph->ttl = old_iph->ttl;
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 		else if (skb->protocol == htons(ETH_P_IPV6))
 			iph->ttl = ((struct ipv6hdr*)old_iph)->hop_limit;
 #endif
@@ -850,7 +935,11 @@ static int ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev)
 	}
 
 	((u16*)(iph+1))[0] = tunnel->parms.o_flags;
-	((u16*)(iph+1))[1] = skb->protocol;
+
+	if (dev->br_port)
+		((u16*)(iph+1))[1] = GRE_P_ETH_BR;
+	else
+		((u16*)(iph+1))[1] = skb->protocol;
 
 	if (tunnel->parms.o_flags&(GRE_KEY|GRE_CSUM|GRE_SEQ)) {
 		u32 *ptr = (u32*)(((u8*)iph) + tunnel->hlen - 4);
@@ -1241,6 +1330,63 @@ int __init ipgre_fb_tunnel_init(struct net_device *dev)
 	dev_hold(dev);
 	tunnels_wc[0]		= &ipgre_fb_tunnel;
 	return 0;
+}
+
+unsigned short gre_eth_type_trans(struct sk_buff *skb, struct net_device *dev)
+{
+	struct ethhdr *eth;
+	unsigned char *rawp;
+
+	skb->mac.raw=skb->data;
+
+	/*
+	 * hack - we don't actually want to pull the hard header length, we
+	 * want to pull the ethernet frame header.
+	 */
+	skb_pull(skb, ETH_HLEN);
+	eth= skb->mac.ethernet;
+	
+	if(*eth->h_dest&1)
+	{
+		if(memcmp(eth->h_dest,dev->broadcast, ETH_ALEN)==0)
+			skb->pkt_type=PACKET_BROADCAST;
+		else
+			skb->pkt_type=PACKET_MULTICAST;
+	}
+	
+	/*
+	 *	This ALLMULTI check should be redundant by 1.4
+	 *	so don't forget to remove it.
+	 *
+	 *	Seems, you forgot to remove it. All silly devices
+	 *	seems to set IFF_PROMISC.
+	 */
+	 
+	else if(1 /*dev->flags&IFF_PROMISC*/)
+	{
+		if(memcmp(eth->h_dest,dev->dev_addr, ETH_ALEN))
+			skb->pkt_type=PACKET_OTHERHOST;
+	}
+	
+	if (ntohs(eth->h_proto) >= 1536)
+		return eth->h_proto;
+		
+	rawp = skb->data;
+	
+	/*
+	 *	This is a magic hack to spot IPX packets. Older Novell breaks
+	 *	the protocol design and runs IPX over 802.3 without an 802.2 LLC
+	 *	layer. We look for FFFF which isn't a used 802.2 SSAP/DSAP. This
+	 *	won't work for fault tolerant netware but does for the rest.
+	 */
+	if (*(unsigned short *)rawp == 0xFFFF)
+		return htons(ETH_P_802_3);
+		
+	/*
+	 *	Real 802.2 LLC
+	 */
+	return htons(ETH_P_802_2);
+	
 }
 
 

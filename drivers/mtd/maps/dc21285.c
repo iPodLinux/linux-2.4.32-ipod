@@ -108,7 +108,7 @@ struct map_info dc21285_map = {
 /* Partition stuff */
 static struct mtd_partition *dc21285_parts;
 		      
-extern int parse_redboot_partitions(struct mtd_info *, struct mtd_partition **);
+extern int parse_redboot_partitions(struct mtd_info *, struct mtd_partition **, unsigned long fis_origin);
 
 int __init init_dc21285(void)
 {
@@ -146,7 +146,7 @@ int __init init_dc21285(void)
 		/* partition fixup */
 
 #ifdef CONFIG_MTD_REDBOOT_PARTS
-		nrparts = parse_redboot_partitions(mymtd, &dc21285_parts);
+		nrparts = parse_redboot_partitions(mymtd, &dc21285_parts, 0);
 #endif
 		if (nrparts > 0) {
 			add_mtd_partitions(mymtd, dc21285_parts, nrparts);

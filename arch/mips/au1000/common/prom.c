@@ -39,6 +39,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/string.h>
+#include <linux/config.h>
 
 #include <asm/bootinfo.h>
 
@@ -57,6 +58,14 @@ typedef struct
 
 char * prom_getcmdline(void)
 {
+#ifdef CONFIG_MIPS_VEGAS
+	unsigned long 	*reg;
+		
+	if ((*(volatile unsigned long *)0xbfc20000) != 0xffffffff) {
+		reg = (unsigned long *) 0xbfc20000;
+		strcpy(arcs_cmdline, reg);
+	}
+#endif
 	return &(arcs_cmdline[0]);
 }
 

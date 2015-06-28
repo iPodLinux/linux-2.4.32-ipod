@@ -13,6 +13,9 @@ clean:
 O_TARGET := kernel.o
 
 export-objs	:= io.o io_generic.o io_hd64461.o setup_hd64461.o sh_ksyms.o \
+		   hd64465_gpio.o io_hd64465.o setup_keywest.o io_keywest.o \
+		   io_bigsur.o \
+		   setup_hd64465.o \
 		   dma.o
 
 obj-y	:= process.o signal.o entry.o traps.o irq.o irq_ipr.o \
@@ -63,6 +66,13 @@ machine-specific-objs          	+= mach_shmse.o setup_shmse.o \
 obj-$(CONFIG_SH_BIGSUR)		+= mach_bigsur.o setup_bigsur.o io_bigsur.o led_bigsur.o
 machine-specific-objs		+= mach_bigsur.o setup_bigsur.o io_bigsur.o led_bigsur.o
 
+obj-$(CONFIG_SH_SECUREEDGE5410)+= mach_snapgear.o setup_snapgear.o io_snapgear.o
+machine-specific-objs		 += mach_snapgear.o setup_snapgear.o io_snapgear.o
+ifeq ($(CONFIG_RTC),y)
+obj-$(CONFIG_SH_SECUREEDGE5410) += rtc-snapgear.o
+machine-specific-objs		    += rtc-snapgear.o
+endif
+
 obj-$(CONFIG_SH_SH2000)		+= setup_sh2000.o io_sh2000.o
 machine-specific-objs		+= setup_sh2000.o io_sh2000.o
 
@@ -71,6 +81,9 @@ machine-specific-objs		+= mach_cat68701.o io_cat68701.o
 
 obj-$(CONFIG_SH_CQREEK)		+= setup_cqreek.o
 machine-specific-objs		+= setup_cqreek.o
+
+obj-$(CONFIG_SH_KEYWEST)    += mach_keywest.o setup_keywest.o io_keywest.o
+machine-specific-objs       += mach_keywest.o setup_keywest.o io_keywest.o
 
 obj-$(CONFIG_SH_UNKNOWN)	+= mach_unknown.o io_unknown.o
 machine-specific-objs		+= mach_unknown.o io_unknown.o

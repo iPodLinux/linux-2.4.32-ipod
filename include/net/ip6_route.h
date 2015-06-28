@@ -1,10 +1,14 @@
+/* $USAGI: ip6_route.h,v 1.15 2003/12/25 00:41:00 yoshfuji Exp $ */
+
 #ifndef _NET_IP6_ROUTE_H
 #define _NET_IP6_ROUTE_H
 
 #define IP6_RT_PRIO_FW		16
-#define IP6_RT_PRIO_USER	1024
+#define IP6_RT_PRIO_MIPV6      	64
 #define IP6_RT_PRIO_ADDRCONF	256
 #define IP6_RT_PRIO_KERN	512
+#define IP6_RT_PRIO_USER	1024
+#define IP6_RT_PRIO_ALLONLINK	2048
 #define IP6_RT_FLOW_MASK	0x00ff
 
 #ifdef __KERNEL__
@@ -58,6 +62,9 @@ extern void			rt6_sndmsg(int type, struct in6_addr *dst,
 					   int dstlen, int srclen,
 					   int metric, __u32 flags);
 
+#define RT6_LOOKUP_FLAG_STRICT	0x1
+#define RT6_LOOKUP_FLAG_NOUSE	0x2
+
 extern struct rt6_info		*rt6_lookup(struct in6_addr *daddr,
 					    struct in6_addr *saddr,
 					    int oif, int flags);
@@ -69,13 +76,16 @@ extern struct rt6_info		*rt6_lookup(struct in6_addr *daddr,
 extern struct rt6_info *	rt6_get_dflt_router(struct in6_addr *addr,
 						    struct net_device *dev);
 extern struct rt6_info *	rt6_add_dflt_router(struct in6_addr *gwaddr,
-						    struct net_device *dev);
+						    struct net_device *dev,
+						    int pref);
+extern struct rt6_info *	rt6_exist_dflt_router(void);
 
 extern void			rt6_purge_dflt_routers(int lst_resort);
 
 extern void			rt6_redirect(struct in6_addr *dest,
 					     struct in6_addr *saddr,
 					     struct neighbour *neigh,
+					     u8 *lladdr,
 					     int on_link);
 
 extern void			rt6_pmtu_discovery(struct in6_addr *daddr,
@@ -101,7 +111,8 @@ extern rwlock_t rt6_lock;
  */
 
 static inline void ip6_dst_store(struct sock *sk, struct dst_entry *dst,
-				     struct in6_addr *daddr)
+				 struct in6_addr *daddr, 
+				 struct in6_addr *saddr)
 {
 	struct ipv6_pinfo *np = &sk->net_pinfo.af_inet6;
 	struct rt6_info *rt = (struct rt6_info *) dst;
@@ -109,9 +120,16 @@ static inline void ip6_dst_store(struct sock *sk, struct dst_entry *dst,
 	write_lock(&sk->dst_lock);
 	__sk_dst_set(sk, dst);
 	np->daddr_cache = daddr;
+#ifdef CONFIG_IPV6_SUBTREES
+	np->saddr_cache = saddr;
+#endif
 	np->dst_cookie = rt->rt6i_node ? rt->rt6i_node->fn_sernum : 0;
 	write_unlock(&sk->dst_lock);
 }
 
+/* Netfilter */
+#ifdef CONFIG_NETFILTER
+int route6_me_harder(struct sk_buff *skb);
+#endif
 #endif
 #endif

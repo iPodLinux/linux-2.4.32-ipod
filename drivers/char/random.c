@@ -837,6 +837,7 @@ void add_blkdev_randomness(int major)
 	add_timer_randomness(blkdev_timer_state[major], 0x200+major);
 }
 
+
 /******************************************************************
  *
  * Hash function definition

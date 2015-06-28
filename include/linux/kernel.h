@@ -90,6 +90,8 @@ extern char *get_options(char *str, int nints, int *ints);
 extern unsigned long long memparse(char *ptr, char **retptr);
 extern void dev_probe_lock(void);
 extern void dev_probe_unlock(void);
+struct pt_regs;
+extern struct task_struct *copy_process(unsigned long, unsigned long, struct pt_regs*, unsigned long, int*, int*);
 
 extern int session_of_pgrp(int pgrp);
 
@@ -175,6 +177,18 @@ extern void dump_stack(void);
 	({ type __x = (x); type __y = (y); __x < __y ? __x: __y; })
 #define max_t(type,x,y) \
 	({ type __x = (x); type __y = (y); __x > __y ? __x: __y; })
+
+/**
+ * container_of - cast a member of a structure out to the containing structure
+ *
+ * @ptr:	the pointer to the member.
+ * @type:	the type of the container struct this is embedded in.
+ * @member:	the name of the member within the struct.
+ *
+ */
+#define container_of(ptr, type, member) ({			\
+        const typeof( ((type *)0)->member ) *__mptr = (ptr);	\
+        (type *)( (char *)__mptr - offsetof(type,member) );})
 
 extern void __out_of_line_bug(int line) ATTRIB_NORET;
 #define out_of_line_bug() __out_of_line_bug(__LINE__)

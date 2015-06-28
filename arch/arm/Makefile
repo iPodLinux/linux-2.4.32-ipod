@@ -16,11 +16,25 @@ ifeq ($(CONFIG_FRAME_POINTER),y)
 CFLAGS		:=$(CFLAGS:-fomit-frame-pointer=-mapcs -mno-sched-prolog)
 endif
 
-CFLAGS		:=$(CFLAGS:-O2=-Os)
+CFLAGS		:=$(CFLAGS:-O2=-O)
 
 ifeq ($(CONFIG_DEBUG_INFO),y)
 CFLAGS		+=-g
 endif
+
+ifeq ($(CONFIG_CPU_BIG_ENDIAN),y)
+CC		+= -mbig-endian
+AS		+= -EB
+LD		+= -EB
+endif
+
+
+#
+# Determine GCC version for proper compiler options
+#
+GCC_VERSION	:= $(shell $(CROSS_COMPILE)gcc  -v 2>&1 | grep version | cut -f3 -d' ' | cut -f1 -d.)
+
+check_gcc = $(shell if $(CC) $(CFLAGS) $(1) -S -o /dev/null -xc /dev/null > /dev/null 2>&1; then echo "$(1)"; else echo "$(2)"; fi ;)
 
 # Select CPU dependent flags.  Note that order of declaration is important;
 # the options further down the list override previous items.
@@ -28,7 +42,7 @@ endif
 # Note!  For APCS-26 YOU MUST HAVE AN APCS-26 LIBGCC.A
 #
 apcs-y				:=-mapcs-32
-apcs-$(CONFIG_CPU_26)		:=-mapcs-26 -mcpu=arm3 -Os
+apcs-$(CONFIG_CPU_26)		:=-mapcs-26 -mcpu=arm3 -O
 
 # This selects which instruction set is used.
 # Note that GCC is lame - it doesn't numerically define an
@@ -38,6 +52,13 @@ arch-y				:=
 arch-$(CONFIG_CPU_32v3)		:=-D__LINUX_ARM_ARCH__=3 -march=armv3
 arch-$(CONFIG_CPU_32v4)		:=-D__LINUX_ARM_ARCH__=4 -march=armv4
 arch-$(CONFIG_CPU_32v5)		:=-D__LINUX_ARM_ARCH__=5 -march=armv5
+ifeq ($(GCC_VERSION),3)
+  # The -march=armv5te doesn't seem to really enable XScale features... Why?
+  #arch-$(CONFIG_CPU_XSCALE)    :=-D__LINUX_ARM_ARCH__=5 -march=armv5te
+  arch-$(CONFIG_CPU_XSCALE)     :=-D__LINUX_ARM_ARCH__=5 -mcpu=xscale
+else
+  arch-$(CONFIG_CPU_XSCALE)     :=-D__LINUX_ARM_ARCH__=5 -march=armv4 -Wa,-mxscale
+endif
 
 # This selects how we optimise for the processor.
 tune-y				:=
@@ -49,10 +70,17 @@ tune-$(CONFIG_CPU_ARM922T)	:=-mtune=arm9tdmi
 tune-$(CONFIG_CPU_ARM926T)	:=-mtune=arm9tdmi
 tune-$(CONFIG_CPU_SA110)	:=-mtune=strongarm110
 tune-$(CONFIG_CPU_SA1100)	:=-mtune=strongarm1100
+ifeq ($(GCC_VERSION),3)
+  tune-$(CONFIG_CPU_XSCALE)	:=-mtune=xscale
+else
+  tune-$(CONFIG_CPU_XSCALE)	:=-mtune=strongarm
+endif
 
-CFLAGS_BOOT	:=$(apcs-y) $(arch-y) $(tune-y) -mshort-load-bytes -msoft-float -Uarm
-CFLAGS		+=$(apcs-y) $(arch-y) $(tune-y) -mshort-load-bytes -msoft-float -Uarm
-AFLAGS		+=$(apcs-y) $(arch-y) -mno-fpu -msoft-float
+load-y				:= $(call check_gcc,-mshort-load-bytes,-malignment-traps)
+
+CFLAGS_BOOT	:=$(apcs-y) $(arch-y) $(tune-y) $(load-y) -msoft-float -Uarm
+CFLAGS		+=$(apcs-y) $(arch-y) $(tune-y) $(load-y) -msoft-float -Uarm
+AFLAGS		+=$(apcs-y) $(arch-y) -msoft-float
 
 ifeq ($(CONFIG_CPU_26),y)
 PROCESSOR	:= armo
@@ -68,7 +96,7 @@ endif
 
 ifeq ($(CONFIG_CPU_32),y)
 PROCESSOR	 = armv
-TEXTADDR	 = 0xC0008000
+TEXTADDR	 = 0x$(shell echo $(CONFIG_KERNEL_START)|sed -e's/0000$$/8000/'|sed -e's/^0x//')
 LDSCRIPT	 = arch/arm/vmlinux-armv.lds.in
 endif
 
@@ -135,6 +163,10 @@ ifeq ($(CONFIG_ARCH_INTEGRATOR),y)
 MACHINE		 = integrator
 endif
 
+ifeq ($(CONFIG_ARCH_KS8695),y)
+MACHINE		 = ks8695
+endif
+
 ifeq ($(CONFIG_ARCH_AT91RM9200),y)
 MACHINE		 = at91rm9200
 endif
@@ -152,6 +184,35 @@ TEXTADDR	 = 0xc0028000
 MACHINE		 = clps711x
 endif
 
+ifeq ($(CONFIG_ARCH_EDB7312),y)
+TEXTADDR	 = 0xc0038000
+endif
+
+ifeq ($(CONFIG_ARCH_EDB9301),y)
+TEXTADDR	 = 0xc0008000
+MACHINE		 = ep93xx
+endif
+
+ifeq ($(CONFIG_ARCH_EDB9302),y)
+TEXTADDR	 = 0xc0008000
+MACHINE		 = ep93xx
+endif
+
+ifeq ($(CONFIG_ARCH_EDB9312),y)
+TEXTADDR	 = 0xc0008000
+MACHINE		 = ep93xx
+endif
+
+ifeq ($(CONFIG_ARCH_EDB9315),y)
+TEXTADDR	 = 0xc0008000
+MACHINE		 = ep93xx
+endif
+
+ifeq ($(CONFIG_MACH_IPD),y)
+TEXTADDR	 = 0xc0218000
+MACHINE		 = ep93xx
+endif
+
 ifeq ($(CONFIG_ARCH_FORTUNET),y)
 TEXTADDR	 = 0xc0208000
 endif
@@ -162,6 +223,26 @@ endif
 
 ifeq ($(CONFIG_ARCH_OMAHA),y)
 MACHINE                = omaha
+endif
+
+ifeq ($(CONFIG_ARCH_IOP3XX),y)
+MACHINE		= iop3xx
+endif
+
+ifeq ($(CONFIG_ARCH_IXP1200),y)
+MACHINE		= ixp1200
+endif
+
+ifeq ($(CONFIG_ARCH_ADIFCC),y)
+MACHINE		= adifcc
+endif
+
+ifeq ($(CONFIG_ARCH_IXP425),y)
+MACHINE		= ixp425
+endif
+
+ifeq ($(CONFIG_ARCH_IXP2000),y)
+MACHINE		= ixp2000
 endif
 
 export	MACHINE PROCESSOR TEXTADDR GZFLAGS CFLAGS_BOOT OBJCOPYFLAGS
@@ -202,12 +283,13 @@ LIBS		:=arch/arm/fastfpe/fast-math-emu.o $(LIBS)
 endif
 endif
 
-ifeq ($(findstring y,$(CONFIG_USB_OHCI_SA1111) $(CONFIG_USB_OHCI_AT91)),y)
+ifeq ($(findstring y,$(CONFIG_USB_OHCI_SA1111) $(CONFIG_USB_OHCI_AT91) $(CONFIG_USB_OHCI_EP93XX)),y)
    SUBDIRS	+=arch/arm/common
    CORE_FILES	+=arch/arm/common/nopci.o
 endif
 
-ifeq ($(findstring y,$(CONFIG_ARCH_CLPS7500) $(CONFIG_ARCH_L7200)),y)
+#ifeq ($(findstring y,$(CONFIG_ARCH_CLPS7500) $(CONFIG_ARCH_L7200)),y)
+ifeq ($(CONFIG_ARCH_L7200),y)
 SUBDIRS		+=drivers/acorn/char
 DRIVERS		+=drivers/acorn/char/acorn-char.o
 endif
@@ -266,10 +348,18 @@ arch/arm/vmlinux.lds: arch/arm/Makefile $(LDSCRIPT) \
 	@echo '  Generating $@'
 	@sed 's/TEXTADDR/$(TEXTADDR)/;s/DATAADDR/$(DATAADDR)/' $(LDSCRIPT) >$@
 
+#
+# If you want the kernel build to build modules outside of the tree
+# then define this and pass it to the main linux makefile
+#
+ifdef EXTRA_MODULE_DIRS
+SUBDIRS += $(EXTRA_MODULE_DIRS)
+endif
+
 arch/arm/kernel arch/arm/mm arch/arm/lib: dummy
 	$(MAKE) CFLAGS="$(CFLAGS) $(CFLAGS_KERNEL)" $(subst $@, _dir_$@, $@)
 
-bzImage zImage zinstall Image bootpImage install: vmlinux
+bzImage zImage zinstall Image bootpImage install zsrec %.swap: vmlinux
 	@$(MAKEBOOT) $@
 
 CLEAN_FILES	+= \

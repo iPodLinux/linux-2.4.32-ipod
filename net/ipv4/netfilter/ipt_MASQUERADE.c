@@ -95,7 +95,7 @@ masquerade_target(struct sk_buff **pskb,
                 /* Funky routing can do this. */
                 if (net_ratelimit())
                         printk("MASQUERADE:"
-                               " No route: Rusty's brain broke!\n");
+                               " No route.\n");
                 return NF_DROP;
         }
         if (rt->u.dst.dev != out) {

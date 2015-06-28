@@ -549,7 +549,7 @@ void free_irq(unsigned int irq, void *dev_id)
 		kfree(action);
 		goto out;
 	}
-	printk(KERN_ERR "Trying to free free IRQ%d\n",irq);
+	printk(KERN_ERR "Trying to free IRQ%d\n",irq);
 #ifdef CONFIG_DEBUG_ERRORS
 	__backtrace();
 #endif

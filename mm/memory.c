@@ -402,7 +402,7 @@ void zap_page_range(struct mm_struct *mm, unsigned long address, unsigned long s
 /*
  * Do a quick page-table lookup for a single page. 
  */
-static struct page * follow_page(struct mm_struct *mm, unsigned long address, int write) 
+struct page * follow_page(struct mm_struct *mm, unsigned long address, int write) 
 {
 	pgd_t *pgd;
 	pmd_t *pmd;

@@ -43,9 +43,10 @@ static inline int qry_present(struct map_info *map, __u32 base,
 	    cfi_read(map,base+osf*0x11)==cfi_build_cmd('R',map,cfi) &&
 	    cfi_read(map,base+osf*0x12)==cfi_build_cmd('Y',map,cfi))
 		return 1;	// ok !
-
+	
 	return 0; 	// nothing found
 }
+
 
 static int cfi_probe_chip(struct map_info *map, __u32 base,
 			  struct flchip *chips, struct cfi_private *cfi)

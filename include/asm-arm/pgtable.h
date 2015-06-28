@@ -160,6 +160,11 @@ extern pgd_t swapper_pg_dir[PTRS_PER_PGD];
 
 #include <asm-generic/pgtable.h>
 
+#ifdef CONFIG_ARM_FASS
+/* FASS defines arch_get_unmapped_area */
+#define HAVE_ARCH_UNMAPPED_AREA
+#endif
+
 extern void pgtable_cache_init(void);
 
 /*

@@ -96,6 +96,20 @@ static void unmask_irq_int2(unsigned int irq)
 	clps_writel(intmr2, INTMR2);
 }
 
+void edb7312_enable_eint1(void)
+{
+	static int iCount = 0;
+
+	/*
+	 * Enable EINT1 after two enables (keyboard and USB).
+	 */
+	iCount++;
+	if(iCount == 2) {
+		irq_desc[IRQ_EINT1].disable_depth = 0;
+		irq_desc[IRQ_EINT1].unmask(IRQ_EINT1);
+	}
+}
+
 void __init clps711x_init_irq(void)
 {
 	unsigned int i;
@@ -122,6 +136,11 @@ void __init clps711x_init_irq(void)
 	}
 
 	/*
+	 * Disable auto-enable for the external interrupt 1.
+	 */
+	irq_desc[IRQ_EINT1].noautoenable = 1;
+
+	/*
 	 * Disable interrupts
 	 */
 	clps_writel(0, INTMR1);
@@ -138,4 +157,6 @@ void __init clps711x_init_irq(void)
 	clps_writel(0, UMSEOI);
 	clps_writel(0, SYNCIO);
 	clps_writel(0, KBDEOI);
+	
+	//init_FIQ();
 }

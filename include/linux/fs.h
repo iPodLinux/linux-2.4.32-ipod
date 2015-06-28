@@ -412,9 +412,14 @@ struct address_space {
 	unsigned long		nrpages;	/* number of total pages */
 	struct address_space_operations *a_ops;	/* methods */
 	struct inode		*host;		/* owner: inode, block_device */
+#ifndef NO_MM
 	struct vm_area_struct	*i_mmap;	/* list of private mappings */
 	struct vm_area_struct	*i_mmap_shared; /* list of shared mappings */
 	spinlock_t		i_shared_lock;  /* and spinlock protecting it */
+#else
+	int			membacked;	/* backed by real memory (eg: ramfs) - can support
+						 * shared-writable mappings */
+#endif /* NO_MM */
 	int			gfp_mask;	/* how to allocate the pages */
 };
 
@@ -851,6 +856,9 @@ struct block_device_operations {
 	int (*check_media_change) (kdev_t);
 	int (*revalidate) (kdev_t);
 	struct module *owner;
+#ifdef MAGIC_ROM_PTR
+	int (*romptr) (kdev_t, struct vm_area_struct *);
+#endif /* MAGIC_ROM_PTR */
 };
 
 /*
@@ -877,6 +885,9 @@ struct file_operations {
 	ssize_t (*writev) (struct file *, const struct iovec *, unsigned long, loff_t *);
 	ssize_t (*sendpage) (struct file *, struct page *, int, size_t, loff_t *, int);
 	unsigned long (*get_unmapped_area)(struct file *, unsigned long, unsigned long, unsigned long, unsigned long);
+#ifdef MAGIC_ROM_PTR
+	int (*romptr) (struct file *, struct vm_area_struct *);
+#endif /* MAGIC_ROM_PTR */
 };
 
 struct inode_operations {

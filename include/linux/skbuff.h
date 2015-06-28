@@ -1,3 +1,5 @@
+/* $USAGI: skbuff.h,v 1.9 2003/08/08 13:46:35 yoshfuji Exp $ */
+
 /*
  *	Definitions for the 'struct sk_buff' memory handlers.
  *
@@ -82,6 +84,9 @@
 #else
 #define NET_CALLER(arg) __builtin_return_address(0)
 #endif
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+struct nf_info;
+#endif
 
 #ifdef CONFIG_NETFILTER
 struct nf_conntrack {
@@ -92,6 +97,20 @@ struct nf_conntrack {
 struct nf_ct_info {
 	struct nf_conntrack *master;
 };
+
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+struct nf_bridge_info {
+	atomic_t use;
+	struct net_device *physindev;
+	struct net_device *physoutdev;
+#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+	struct net_device *netoutdev;
+#endif
+	unsigned int mask;
+	unsigned long hh[32 / sizeof(unsigned long)];
+};
+#endif
+
 #endif
 
 struct sk_buff_head {
@@ -146,6 +165,7 @@ struct sk_buff {
 		struct tcphdr	*th;
 		struct udphdr	*uh;
 		struct icmphdr	*icmph;
+		struct icmp6hdr	*icmp6h;
 		struct igmphdr	*igmph;
 		struct iphdr	*ipiph;
 		struct spxhdr	*spxh;
@@ -182,7 +202,7 @@ struct sk_buff {
 	unsigned int 	len;			/* Length of actual data			*/
  	unsigned int 	data_len;
 	unsigned int	csum;			/* Checksum 					*/
-	unsigned char 	__unused,		/* Dead field, may be reused			*/
+	unsigned char 	imq_flags,		/* intermediate queueing device	*/
 			cloned, 		/* head may be cloned (check refcnt to be sure). */
   			pkt_type,		/* Packet class					*/
   			ip_summed;		/* Driver fed us an IP checksum			*/
@@ -208,6 +228,9 @@ struct sk_buff {
 #ifdef CONFIG_NETFILTER_DEBUG
         unsigned int nf_debug;
 #endif
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+	struct nf_bridge_info	*nf_bridge;	/* Saved data about a bridged frame - see br_netfilter.c */
+#endif
 #endif /*CONFIG_NETFILTER*/
 
 #if defined(CONFIG_HIPPI)
@@ -218,6 +241,9 @@ struct sk_buff {
 
 #ifdef CONFIG_NET_SCHED
        __u32           tc_index;               /* traffic control index */
+#endif
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+       struct nf_info	*nf_info;
 #endif
 };
 
@@ -1162,6 +1188,20 @@ nf_conntrack_get(struct nf_ct_info *nfct)
 	if (nfct)
 		atomic_inc(&nfct->master->use);
 }
+
+#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+static inline void nf_bridge_put(struct nf_bridge_info *nf_bridge)
+{
+	if (nf_bridge && atomic_dec_and_test(&nf_bridge->use))
+		kfree(nf_bridge);
+}
+static inline void nf_bridge_get(struct nf_bridge_info *nf_bridge)
+{
+	if (nf_bridge)
+		atomic_inc(&nf_bridge->use);
+}
+#endif
+
 static inline void
 nf_reset(struct sk_buff *skb)
 {

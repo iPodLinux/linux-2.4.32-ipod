@@ -103,6 +103,15 @@ static irq_info_t irq_table[NR_IRQS] = { { 0, 0, 0 }, /* etc */ };
     Linux resource management extensions
 
 ======================================================================*/
+#ifdef CONFIG_FUJITSU_MB93493
+
+#include <asm/mb93493-regs.h>
+
+static struct resource pccard_ioport_resource = { "PCMCIA IO", (u_long)__addr_MB93493_PCMCIA(0xe000),
+						  (u_long)__addr_MB93493_PCMCIA(0xffff), IORESOURCE_IO };
+static struct resource pccard_iomem_resource = { "PCMCIA mem", (u_long)__addr_MB93493_PCMCIA(0),
+						 (u_long)__addr_MB93493_PCMCIA(0xdfff), IORESOURCE_MEM };
+#endif
 
 static struct resource *resource_parent(unsigned long b, unsigned long n,
 					int flags, struct pci_dev *dev)
@@ -119,9 +128,15 @@ static struct resource *resource_parent(unsigned long b, unsigned long n,
 			return pr;
 	}
 #endif /* CONFIG_PCI */
+#ifdef CONFIG_FUJITSU_MB93493
+	if (flags & IORESOURCE_MEM)
+		return &pccard_iomem_resource;
+	return &pccard_ioport_resource;
+#else
 	if (flags & IORESOURCE_MEM)
 		return &iomem_resource;
 	return &ioport_resource;
+#endif
 }
 
 static inline int check_io_resource(unsigned long b, unsigned long n,

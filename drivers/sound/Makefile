@@ -4,13 +4,16 @@
 # Rewritten to use lists instead of if-statements.
 
 
+USE_STANDARD_AS_RULE := true
+
 # All of the (potential) objects that export symbols.
 # This list comes from 'grep -l EXPORT_SYMBOL *.[hc]'.
 
 export-objs	:=  ad1848.o audio_syms.o midi_syms.o mpu401.o \
 		    msnd.o opl3.o sb_common.o sequencer_syms.o \
 		    sound_core.o sound_syms.o uart401.o	\
-		    nm256_audio.o ac97.o ac97_codec.o aci.o
+		    nm256_audio.o ac97.o ac97_codec.o aci.o \
+		    ep93xx-audio.o
 
 # Each configuration option enables a list of files.
 
@@ -78,11 +81,14 @@ obj-$(CONFIG_SOUND_MAESTRO3)	+= maestro3.o ac97_codec.o
 obj-$(CONFIG_SOUND_FORTE)	+= forte.o ac97_codec.o
 obj-$(CONFIG_SOUND_TRIDENT)	+= trident.o ac97_codec.o
 obj-$(CONFIG_SOUND_HARMONY)	+= harmony.o
+obj-$(CONFIG_SOUND_EP93XX_I2S)	+= ep93xx-audio.o ep93xx-i2s.o
+obj-$(CONFIG_SOUND_EP93XX_AC97)	+= ep93xx-audio.o ep93xx-ac97.o
 obj-$(CONFIG_SOUND_EMU10K1)	+= ac97_codec.o
 obj-$(CONFIG_SOUND_BCM_CS4297A)	+= swarm_cs4297a.o
 obj-$(CONFIG_SOUND_RME96XX)     += rme96xx.o
 obj-$(CONFIG_SOUND_BT878)	+= btaudio.o
 obj-$(CONFIG_SOUND_IT8172)	+= ite8172.o ac97_codec.o
+obj-$(CONFIG_SOUND_7212)	+= ep7212_audio.o ep7212_audiodma.o cs43l42.o
 obj-$(CONFIG_SOUND_AD1980)	+= ac97_plugin_ad1980.o
 obj-$(CONFIG_SOUND_WM97XX)	+= ac97_plugin_wm97xx.o
 
@@ -107,6 +113,7 @@ ifeq ($(CONFIG_DMASOUND),y)
   obj-y += dmasound/dmasound.o
 endif
 
+obj-$(CONFIG_FUJITSU_MB93493_AUDIO) += mb93493.o
 
 # Declare multi-part drivers.
 

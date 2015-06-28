@@ -10,7 +10,7 @@
 
 O_TARGET := pcmcia.o
 
-export-objs := ds.o cs.o yenta.o pci_socket.o
+export-objs := ds.o cs.o yenta.o pci_socket.o ivpnss.o ks.o
 
 list-multi := pcmcia_core.o yenta_socket.o
 
@@ -65,6 +65,7 @@ au1000_ss-objs-$(CONFIG_PCMCIA_PB1X00)		+= au1000_pb1x00.o
 au1000_ss-objs-$(CONFIG_PCMCIA_DB1X00)		+= au1000_db1x00.o
 au1000_ss-objs-$(CONFIG_PCMCIA_XXS1500) 	+= au1000_xxs1500.o
 
+obj-$(CONFIG_PCMCIA_EP9315)	+= ep9315_pcmcia.o
 obj-$(CONFIG_PCMCIA_SA1100)	+= sa1100_cs.o
 obj-$(CONFIG_PCMCIA_M8XX)	+= m8xx_pcmcia.o
 obj-$(CONFIG_PCMCIA_SIBYTE)	+= sibyte_generic.o
@@ -90,6 +91,8 @@ sa1100_cs-objs-$(CONFIG_SA1100_XP860)		+= sa1100_xp860.o sa1111_generic.o
 sa1100_cs-objs-$(CONFIG_SA1100_YOPY)		+= sa1100_yopy.o
 
 obj-$(CONFIG_PCMCIA_VRC4173)	+= vrc4173_cardu.o
+obj-$(CONFIG_PCMCIA_IVPN)	+= ivpnss.o
+obj-$(CONFIG_PCMCIA_KS)		+= ks.o
 
 include $(TOPDIR)/Rules.make
 

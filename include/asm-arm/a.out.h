@@ -28,8 +28,20 @@ struct exec
 #define M_ARM 103
 
 #ifdef __KERNEL__
+
+#ifdef CONFIG_ARM_FASS
+/* FASS sets STACK_TOP to top of PID relocated memory, ie 32MB. In all reality
+ *   there should be some heuristic for selecting of the old STACK_TOP or
+ *   32MB should be set or not. This basically boils down to if a non-zero PID
+ *   is going to be used. Unfortunately when the stack is set in exec() that is
+ *   too difficult to work out.
+ */
+#define STACK_TOP ARMPID_TASK_SIZE
+#else
 #define STACK_TOP	((current->personality == PER_LINUX_32BIT) ? \
 			 TASK_SIZE : TASK_SIZE_26)
+#endif /* CONFIG_ARM_FASS */
+
 #endif
 
 #ifndef LIBRARY_START_TEXT

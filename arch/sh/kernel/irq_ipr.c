@@ -241,6 +241,31 @@ void __init init_IRQ(void)
 	 * registers to their power on values
 	 */ 
 
+#ifdef CONFIG_SH_KEYWEST
+	/*
+	 * XXX: I think that this is the job of boot loader. -- gniibe
+	 *
+	 * When Takeshi released new boot loader following setting
+	 * will be removed shortly.
+	 */
+	ctrl_outb(0, INTC_IRR0);
+	ctrl_outb(0, INTC_IRR1);
+	ctrl_outb(0, INTC_IRR2);
+
+	ctrl_outw(0, INTC_ICR0);
+	/*
+	 * we have to run hd64465 (IRQ1) in level mode or we get spurious ints
+	 */
+	ctrl_outw(0x0108, INTC_ICR1);
+	ctrl_outw(0x0003, INTC_ICR2);
+	ctrl_outw(0, INTC_INTER);
+	ctrl_outw(0, INTC_IPRA);
+	ctrl_outw(0, INTC_IPRB);
+	ctrl_outw(0, INTC_IPRC);
+	ctrl_outw(0, INTC_IPRD);
+	ctrl_outw(0, INTC_IPRE);
+#endif
+
 	/*
 	 * Enable external irq (INTC IRQ mode).
 	 * You should set corresponding bits of PFC to "00"

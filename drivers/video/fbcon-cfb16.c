@@ -111,12 +111,19 @@ void fbcon_cfb16_clear(struct vc_data *conp, struct display *p, int sy, int sx,
     dest = p->screen_base + sy * fontheight(p) * bytes + sx * fontwidth(p) * 2;
 
     bgx = ((u16 *)p->dispsw_data)[attr_bgcol_ec(p, conp)];
-
+#ifdef CONFIG_ARCH_EDB7312
+	width = width * fontwidth(p);
+	if (width * 2 == bytes)
+		rectfill(dest, lines * width, 1, bgx, bytes);
+	else
+		rectfill(dest, width, lines, bgx, bytes);
+#else
     width *= fontwidth(p)/4;
     if (width * 8 == bytes)
 	rectfill(dest, lines * width * 4, 1, bgx, bytes);
     else
 	rectfill(dest, width * 4, lines, bgx, bytes);
+#endif
 }
 
 void fbcon_cfb16_putc(struct vc_data *conp, struct display *p, int c, int yy,
@@ -136,14 +143,16 @@ void fbcon_cfb16_putc(struct vc_data *conp, struct display *p, int c, int yy,
 
     switch (fontwidth(p)) {
     case 4:
+    case 6:
     case 8:
 	cdat = p->fontdata + (c & p->charmask) * fontheight(p);
 	for (rows = fontheight(p); rows--; dest += bytes) {
 	    bits = *cdat++;
 	    fb_writel((tab_cfb16[bits >> 6] & eorx) ^ bgx, dest);
 	    fb_writel((tab_cfb16[bits >> 4 & 3] & eorx) ^ bgx, dest+4);
-	    if (fontwidth(p) == 8) {
+	    if (fontwidth(p) >= 6) {
 		fb_writel((tab_cfb16[bits >> 2 & 3] & eorx) ^ bgx, dest+8);
+		if (fontwidth(p) == 8)
 		fb_writel((tab_cfb16[bits & 3] & eorx) ^ bgx, dest+12);
 	    }
 	}
@@ -187,6 +196,7 @@ void fbcon_cfb16_putcs(struct vc_data *conp, struct display *p,
 
     switch (fontwidth(p)) {
     case 4:
+    case 6:
     case 8:
 	while (count--) {
 	    c = scr_readw(s++) & p->charmask;
@@ -195,8 +205,9 @@ void fbcon_cfb16_putcs(struct vc_data *conp, struct display *p,
 		u8 bits = *cdat++;
 	        fb_writel((tab_cfb16[bits >> 6] & eorx) ^ bgx, dest);
 	        fb_writel((tab_cfb16[bits >> 4 & 3] & eorx) ^ bgx, dest+4);
-		if (fontwidth(p) == 8) {
+		if (fontwidth(p) >= 6) {
 		    fb_writel((tab_cfb16[bits >> 2 & 3] & eorx) ^ bgx, dest+8);
+		    if (fontwidth(p) == 8)
 		    fb_writel((tab_cfb16[bits & 3] & eorx) ^ bgx, dest+12);
 		}
 	    }
@@ -245,8 +256,10 @@ void fbcon_cfb16_revc(struct display *p, int xx, int yy)
 	    fb_writel(fb_readl(dest+20) ^ 0xffffffff, dest+20);
 	    /* FALL THROUGH */
 	case 8:
-	    fb_writel(fb_readl(dest+8) ^ 0xffffffff, dest+8);
 	    fb_writel(fb_readl(dest+12) ^ 0xffffffff, dest+12);
+	    /* FALL THROUGH */
+	case 6:
+	    fb_writel(fb_readl(dest+8) ^ 0xffffffff, dest+8);
 	    /* FALL THROUGH */
 	case 4:
 	    fb_writel(fb_readl(dest+0) ^ 0xffffffff, dest+0);
@@ -288,7 +301,7 @@ struct display_switch fbcon_cfb16 = {
     putcs:		fbcon_cfb16_putcs,
     revc:		fbcon_cfb16_revc,
     clear_margins:	fbcon_cfb16_clear_margins,
-    fontwidthmask:	FONTWIDTH(4)|FONTWIDTH(8)|FONTWIDTH(12)|FONTWIDTH(16)
+    fontwidthmask:	FONTWIDTH(4)|FONTWIDTH(6)|FONTWIDTH(8)|FONTWIDTH(12)|FONTWIDTH(16)
 };
 
 

@@ -65,7 +65,7 @@ match(const struct sk_buff *skb,
 	len = skb->len - ptr;
 	temp = 0;
 
-        while (ip6t_ext_hdr(nexthdr)) {
+        while (ipv6_ext_hdr(nexthdr)) {
         	struct ipv6_opt_hdr *hdr;
         	int hdrlen;
 
@@ -84,7 +84,7 @@ match(const struct sk_buff *skb,
 			break;
 		}
 
-		hdr=(struct ipv6_opt_hdr *)skb->data+ptr;
+		hdr=skb->data+ptr;
 
 		/* Calculate the header length */
                 if (nexthdr == NEXTHDR_FRAGMENT) {

@@ -3,6 +3,7 @@
 
 #include <linux/config.h>
 #include <asm/pgalloc.h>
+#include <asm/kmap_types.h>
 
 #ifdef CONFIG_HIGHMEM
 
@@ -33,18 +34,8 @@ static inline char *bh_kmap_irq(struct buffer_head *bh, unsigned long *flags)
 {
 	unsigned long addr;
 
-	__save_flags(*flags);
+	local_irq_save(*flags);
 
-	/*
-	 * could be low
-	 */
-	if (!PageHighMem(bh->b_page))
-		return bh->b_data;
-
-	/*
-	 * it's a highmem page
-	 */
-	__cli();
 	addr = (unsigned long) kmap_atomic(bh->b_page, KM_BH_IRQ);
 
 	if (addr & ~PAGE_MASK)
@@ -58,7 +49,7 @@ static inline void bh_kunmap_irq(char *buffer, unsigned long *flags)
 	unsigned long ptr = (unsigned long) buffer & PAGE_MASK;
 
 	kunmap_atomic((void *) ptr, KM_BH_IRQ);
-	__restore_flags(*flags);
+	local_irq_restore(*flags);
 }
 
 #else /* CONFIG_HIGHMEM */

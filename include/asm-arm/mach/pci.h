@@ -27,6 +27,17 @@ struct hw_pci {
 	int		(*map_irq)(struct pci_dev *dev, u8 slot, u8 pin);
 };
 
+struct pci_sys_data {
+    /*
+     * The hardware we are attached to
+     */
+    struct hw_pci   *hw;
+    unsigned long   mem_offset;
+    /*
+     * These are the resources for the root bus.
+     */
+    struct resource *resource[3];
+};
 extern u8 no_swizzle(struct pci_dev *dev, u8 *pin);
 extern void __init dc21285_setup_resources(struct resource **resource);
 extern void __init dc21285_init(void *sysdata);

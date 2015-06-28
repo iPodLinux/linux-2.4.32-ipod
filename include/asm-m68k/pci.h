@@ -55,4 +55,31 @@ static inline void pcibios_penalize_isa_irq(int irq)
  */
 #define PCI_DMA_BUS_IS_PHYS	(1)
 
+
+/* Map a single buffer of the indicated size for DMA in streaming mode.
+ * The 32-bit bus address to use is returned.
+ *
+ * Once the device is given the dma address, the device owns this memory
+ * until either pci_unmap_single or pci_dma_sync_single is performed.
+ */
+extern inline dma_addr_t
+pci_map_single(struct pci_dev *hwdev, void *ptr, size_t size, int direction)
+{
+	return ptr;
+}
+
+/* Unmap a single streaming mode DMA translation.  The dma_addr and size
+ * must match what was provided for in a previous pci_map_single call.  All
+ * other usages are undefined.
+ *
+ * After this call, reads by the cpu to the buffer are guarenteed to see
+ * whatever the device wrote there.
+ */
+extern inline void
+pci_unmap_single(struct pci_dev *hwdev, dma_addr_t dma_addr, size_t size, int direction)
+{
+	/* nothing to do */
+}
+
+
 #endif /* _ASM_M68K_PCI_H */

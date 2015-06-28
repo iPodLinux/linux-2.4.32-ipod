@@ -1,3 +1,5 @@
+/* $USAGI: if_arcnet.h,v 1.4 2003/08/08 13:46:35 yoshfuji Exp $ */
+
 /*
  * INET         An implementation of the TCP/IP protocol suite for the LINUX
  *              operating system.  INET is implemented using the  BSD Socket
@@ -24,6 +26,7 @@
  */
 
 /* RFC1201 Protocol ID's */
+#define ARC_P_IPV6		196	/* 0xC4: RFC2497 */
 #define ARC_P_IP		212	/* 0xD4 */
 #define ARC_P_IPV6		196	/* 0xC4: RFC2497 */
 #define ARC_P_ARP		213	/* 0xD5 */

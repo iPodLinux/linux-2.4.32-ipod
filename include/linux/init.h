@@ -49,7 +49,7 @@
 typedef int (*initcall_t)(void);
 typedef void (*exitcall_t)(void);
 
-extern initcall_t __initcall_start, __initcall_end;
+extern initcall_t __initcall_start[], __initcall_end[];
 
 #define __initcall(fn)								\
 	static initcall_t __initcall_##fn __attribute_used__ __init_call = fn
@@ -64,7 +64,7 @@ struct kernel_param {
 	int (*setup_func)(char *);
 };
 
-extern struct kernel_param __setup_start, __setup_end;
+extern struct kernel_param __setup_start[], __setup_end[];
 
 #define __setup(str, fn)								\
 	static char __setup_str_##fn[] __initdata = str;				\
@@ -76,8 +76,13 @@ extern struct kernel_param __setup_start, __setup_end;
  * Mark functions and data as being only used at initialization
  * or exit time.
  */
+#ifndef NO_TEXT_SECTIONS
 #define __init		__attribute__ ((__section__ (".text.init")))
 #define __exit		__attribute_used__ __attribute__ (( __section__(".text.exit")))
+#else
+#define __init
+#define __exit		__attribute__ ((unused))
+#endif
 #define __initdata	__attribute__ ((__section__ (".data.init")))
 #define __exitdata	__attribute_used__ __attribute__ ((__section__ (".data.exit")))
 #define __initsetup	__attribute_used__ __attribute__ ((__section__ (".setup.init")))

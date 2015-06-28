@@ -37,7 +37,15 @@
 #include <linux/timex.h>
 #include <linux/irq.h>
 
+#ifdef CONFIG_KEYWEST
+#define PHCR 0xa400010e
+#define PHCR_IINT (~0xc000)
+#define TMU_TOCR_INIT	0x01
+#else
 #define TMU_TOCR_INIT	0x00	/* Don't output RTC clock */
+#endif
+#define TMU0_TCR_INIT	0x0020
+#define TMU_TSTR_INIT	1
 
 #define TMU0_TCR_INIT	0x0020	/* Clock/4, rising edge; interrupt on */
 #define TMU0_TCR_CALIB	0x0000	/* Clock/4, rising edge; no interrupt */
@@ -271,7 +279,6 @@ static void timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	timer_status = ctrl_inw(TMU0_TCR);
 	timer_status &= ~0x100;
 	ctrl_outw(timer_status, TMU0_TCR);
-
 	/*
 	 * Here we are in the timer irq handler. We just have irqs locally
 	 * disabled but we don't know if the timer_bh is running on the other
@@ -294,7 +301,7 @@ static unsigned int __init get_timer_frequency(void)
 	/* Setup the timer:  We don't want to generate interrupts, just
 	 * have it count down at its natural rate.
 	 */
-	ctrl_outb(0, TMU_TSTR);
+	ctrl_outb(ctrl_inb(TMU_TSTR) & ~1, TMU_TSTR);
 #if !defined(CONFIG_CPU_SUBTYPE_SH7300)
 	ctrl_outb(TMU_TOCR_INIT, TMU_TOCR);
 #endif
@@ -302,17 +309,17 @@ static unsigned int __init get_timer_frequency(void)
 	ctrl_outl(0xffffffff, TMU0_TCOR);
 	ctrl_outl(0xffffffff, TMU0_TCNT);
 
-	rtc_gettimeofday(&tv2);
+	sh_rtc_gettimeofday(&tv2);
 
 	do {
-		rtc_gettimeofday(&tv1);
+		sh_rtc_gettimeofday(&tv1);
 	} while (tv1.tv_usec == tv2.tv_usec && tv1.tv_sec == tv2.tv_sec);
 
 	/* actually start the timer */
-	ctrl_outb(TMU0_TSTR_INIT, TMU_TSTR);
+	ctrl_outb(ctrl_inb(TMU_TSTR) | TMU_TSTR_INIT, TMU_TSTR);
 
 	do {
-		rtc_gettimeofday(&tv2);
+		sh_rtc_gettimeofday(&tv2);
 	} while (tv1.tv_usec == tv2.tv_usec && tv1.tv_sec == tv2.tv_sec);
 
 	freq = 0xffffffff - ctrl_inl(TMU0_TCNT);
@@ -434,6 +441,8 @@ void __init time_init(void)
 
 	setup_irq(TIMER_IRQ, &irq0);
 
+	timer_freq = get_timer_frequency();
+
 	if( sh_pclk_freq ){
 		module_clock = sh_pclk_freq;
 	}else{
@@ -534,8 +543,6 @@ void __init time_init(void)
 	       (module_clock/1000000), (module_clock % 1000000)/10000);
 	interval = (module_clock/4 + HZ/2) / HZ;
 
-	printk("Interval = %ld\n", interval);
-
 	current_cpu_data.cpu_clock    = cpu_clock;
 	current_cpu_data.master_clock = master_clock;
 	current_cpu_data.bus_clock    = bus_clock;
@@ -544,8 +551,14 @@ void __init time_init(void)
 #endif
 	current_cpu_data.module_clock = module_clock;
 
+#ifdef CONFIG_SH_KEYWEST
+#ifdef CONFIG_FB_MQ400
+	ctrl_outw(ctrl_inw(PHCR) & PHCR_INIT, PHCR); /* for MQ200 */
+#endif
+#endif
+
 	/* Stop all timers */
-	ctrl_outb(0, TMU_TSTR);
+	ctrl_outb(ctrl_inb(TMU_TSTR) & ~1, TMU_TSTR);
 #if !defined(CONFIG_CPU_SUBTYPE_SH7300)
 	ctrl_outb(TMU_TOCR_INIT, TMU_TOCR);
 #endif
@@ -554,7 +567,7 @@ void __init time_init(void)
 	ctrl_outw(TMU0_TCR_INIT, TMU0_TCR);
 	ctrl_outl(interval, TMU0_TCOR);
 	ctrl_outl(interval, TMU0_TCNT);
-	ctrl_outb(TMU0_TSTR_INIT, TMU_TSTR);
+	ctrl_outb(ctrl_inb(TMU_TSTR) | TMU_TSTR_INIT, TMU_TSTR);
 
 #if defined(CONFIG_START_TMU1)
 	/* Start TMU1 (free-running) */

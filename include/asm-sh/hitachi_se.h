@@ -33,10 +33,17 @@
 #define PA_83902_RST	0xb0080000	/* DP83902A reset port */
 
 #define PA_SUPERIO	0xb0400000	/* SMC37C935A super io chip */
+#if defined(CONFIG_CPU_SUBTYPE_SH7751)
+#define PA_DIPSW0  0xb9000000  /* Dip switch 5,6 */
+#define PA_DIPSW1  0xb9000002  /* Dip switch 7,8 */
+#define PA_LED     0xba000000  /* LED */
+#define PA_BCR          0xbb000000      /* FPGA for SE7751 */
+#else
 #define PA_DIPSW0	0xb0800000	/* Dip switch 5,6 */
 #define PA_DIPSW1	0xb0800002	/* Dip switch 7,8 */
 #define PA_LED		0xb0c00000	/* LED */
 #define PA_BCR		0xb1400000	/* FPGA */
+#endif
 
 #define PA_MRSHPC	0xb83fffe0	/* MR-SHPC-01 PCMCIA controller */
 #define PA_MRSHPC_MW1	0xb8400000	/* MR-SHPC-01 memory window base */

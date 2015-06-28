@@ -380,6 +380,8 @@ static int proc_info (char *buffer, char **start, off_t offset, int length,
 	SPRINTF("       Vendor: %s\n", us->vendor);
 	SPRINTF("      Product: %s\n", us->product);
 	SPRINTF("Serial Number: %s\n", us->serial);
+	SPRINTF("     VendorID: %04x\n", us->vendor_id);
+	SPRINTF("    ProductID: %04x\n", us->product_id);
 
 	/* show the protocol and transport */
 	SPRINTF("     Protocol: %s\n", us->protocol_name);

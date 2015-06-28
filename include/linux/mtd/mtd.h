@@ -93,8 +93,21 @@ struct region_info_user {
 #define MEMUNLOCK               _IOW('M', 6, struct erase_info_user)
 #define MEMGETREGIONCOUNT	_IOR('M', 7, int)
 #define MEMGETREGIONINFO	_IOWR('M', 8, struct region_info_user)
-#define	MEMREADDATA             _IOWR('M', 9, struct mtd_oob_buf)
-#define	MEMWRITEDATA            _IOWR('M', 10, struct mtd_oob_buf)
+
+/*
+ * some place holder definitions from 2.6
+ *
+#define MEMSETOOBSEL		_IOW('M', 9, struct nand_oobinfo)
+#define MEMGETOOBSEL		_IOR('M', 10, struct nand_oobinfo)
+#define MEMGETBADBLOCK		_IOW('M', 11, loff_t)
+#define MEMSETBADBLOCK		_IOW('M', 12, loff_t)
+ */
+
+/*
+ * until these are part of the linux kernel,  put them out of harms way
+ */
+#define	MEMREADDATA             _IOWR('M', 64, struct mtd_oob_buf)
+#define	MEMWRITEDATA            _IOWR('M', 65, struct mtd_oob_buf)
 
 #ifndef __KERNEL__
 

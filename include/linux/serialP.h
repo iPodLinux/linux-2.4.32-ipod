@@ -126,11 +126,14 @@ struct rs_multiport_struct {
 	int		port_monitor;
 };
 
-#if defined(__alpha__) && !defined(CONFIG_PCI)
+#if (defined(__alpha__) && !defined(CONFIG_PCI)) || defined(CONFIG_SERIAL_CDB4)
 /*
  * Digital did something really horribly wrong with the OUT1 and OUT2
  * lines on at least some ALPHA's.  The failure mode is that if either
  * is cleared, the machine locks up with endless interrupts.
+ *
+ * CDB4 board has the very same problem, so we're using the very same
+ * workaround.
  */
 #define ALPHA_KLUDGE_MCR  (UART_MCR_OUT2 | UART_MCR_OUT1)
 #else

@@ -1,3 +1,5 @@
+/* $USAGI: pcnet32.c,v 1.21 2003/11/12 05:11:28 yoshfuji Exp $ */
+
 /* pcnet32.c: An AMD PCnet32 ethernet driver for linux. */
 /*
  *	Copyright 1996-1999 Thomas Bogendoerfer
@@ -46,6 +48,10 @@ DRV_NAME ".c:v" DRV_VERSION " " DRV_RELDATE " tsbogend@alpha.franken.de\n";
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
 #include <linux/spinlock.h>
+
+#ifdef CONFIG_LEDMAN
+#include <linux/ledman.h>
+#endif
 
 #include <asm/bitops.h>
 #include <asm/dma.h>
@@ -1697,6 +1703,11 @@ pcnet32_start_xmit(struct sk_buff *skb, struct net_device *dev)
     int entry;
     unsigned long flags;
 
+#ifdef CONFIG_LEDMAN
+    ledman_cmd(LEDMAN_CMD_SET,
+	(dev->name[3] == '0') ? LEDMAN_LAN1_TX : LEDMAN_LAN2_TX);
+#endif
+
     spin_lock_irqsave(&lp->lock, flags);
 
     if (netif_msg_tx_queued(lp)) {
@@ -1916,6 +1927,11 @@ pcnet32_rx(struct net_device *dev)
     int entry = lp->cur_rx & RX_RING_MOD_MASK;
     int boguscnt = RX_RING_SIZE / 2;
 
+#ifdef CONFIG_LEDMAN
+    ledman_cmd(LEDMAN_CMD_SET,
+	(dev->name[3] == '0') ? LEDMAN_LAN1_RX : LEDMAN_LAN2_RX);
+#endif
+
     /* If we own the next entry, it's a new packet. Send it up. */
     while ((short)le16_to_cpu(lp->rx_ring[entry].status) >= 0) {
 	int status = (short)le16_to_cpu(lp->rx_ring[entry].status) >> 8;
@@ -1951,6 +1967,9 @@ pcnet32_rx(struct net_device *dev)
 		lp->stats.rx_errors++;
 	    } else {
 		int rx_in_place = 0;
+#ifdef CONFIG_PCNET32_VMWARE
+		int rx_revbytes = 0;
+#endif
 
 		if (pkt_len > rx_copybreak) {
 		    struct sk_buff *newskb;
@@ -2005,10 +2024,23 @@ pcnet32_rx(struct net_device *dev)
 			    pkt_len,0);
 		}
 		lp->stats.rx_bytes += skb->len;
+#ifdef CONFIG_PCNET32_VMWARE
+		rx_revbytes = skb->len;
+#endif
 		skb->protocol=eth_type_trans(skb,dev);
+#ifdef CONFIG_PCNET32_VMWARE
+		if (skb->protocol == 0) {
+			dev_kfree_skb(skb);
+			lp->stats.rx_bytes -= rx_revbytes;
+		} else {
+			netif_rx(skb);
+			lp->stats.rx_packets++;
+		}
+#else
 		netif_rx(skb);
 		dev->last_rx = jiffies;
 		lp->stats.rx_packets++;
+#endif
 	    }
 	}
 	/*

@@ -227,6 +227,7 @@ static int DoC_IdentChip(struct DiskOnChip *doc, int floor, int chip)
 			doc->mfr = mfr;
 			doc->id = id;
 			doc->chipshift = nand_flash_ids[i].chipshift;
+			doc->erasesize = nand_flash_ids[i].erasesize;
 			break;
 		}
 	}
@@ -361,9 +362,7 @@ static void DoCMil_init(struct mtd_info *mtd)
 	mtd->flags = MTD_CAP_NANDFLASH;
 	mtd->size = 0;
 
-	/* FIXME: erase size is not always 8kB */
-	mtd->erasesize = 0x2000;
-
+	mtd->erasesize = 0;
 	mtd->oobblock = 512;
 	mtd->oobsize = 16;
 	mtd->module = THIS_MODULE;
@@ -393,6 +392,7 @@ static void DoCMil_init(struct mtd_info *mtd)
 		this->nextdoc = docmillist;
 		docmillist = mtd;
 		mtd->size  = this->totlen;
+		mtd->erasesize = this->erasesize;
 		add_mtd_device(mtd);
 		return;
 	}

@@ -79,6 +79,17 @@ print_expect(char *buffer, const struct ip_conntrack_expect *expect)
 	return len;
 }
 
+#ifdef CONFIG_IP_NF_CT_ACCT
+static unsigned int
+print_counters(char *buffer, struct ip_conntrack_counter *counter)
+{
+	return sprintf(buffer, "packets=%llu bytes=%llu ",
+			counter->packets, counter->bytes);
+}
+#else
+#define print_counters(x, y)	0
+#endif
+
 static unsigned int
 print_conntrack(char *buffer, struct ip_conntrack *conntrack)
 {
@@ -98,15 +109,22 @@ print_conntrack(char *buffer, struct ip_conntrack *conntrack)
 	len += print_tuple(buffer + len,
 			   &conntrack->tuplehash[IP_CT_DIR_ORIGINAL].tuple,
 			   proto);
+	len += print_counters(buffer + len,
+			      &conntrack->counters[IP_CT_DIR_ORIGINAL]);
 	if (!(test_bit(IPS_SEEN_REPLY_BIT, &conntrack->status)))
 		len += sprintf(buffer + len, "[UNREPLIED] ");
 	len += print_tuple(buffer + len,
 			   &conntrack->tuplehash[IP_CT_DIR_REPLY].tuple,
 			   proto);
+	len += print_counters(buffer + len,
+			      &conntrack->counters[IP_CT_DIR_REPLY]);
 	if (test_bit(IPS_ASSURED_BIT, &conntrack->status))
 		len += sprintf(buffer + len, "[ASSURED] ");
 	len += sprintf(buffer + len, "use=%u ",
 		       atomic_read(&conntrack->ct_general.use));
+#if defined(CONFIG_IP_NF_CONNTRACK_MARK)
+	len += sprintf(buffer + len, "mark=%ld ", conntrack->mark);
+#endif
 	len += sprintf(buffer + len, "\n");
 
 	return len;
@@ -127,14 +145,17 @@ conntrack_iterate(const struct ip_conntrack_tuple_hash *hash,
 	if (DIRECTION(hash))
 		return 0;
 
-	if ((*upto)++ < offset)
+	if (*upto < offset) {
+		(*upto)++;
 		return 0;
+	}
 
 	newlen = print_conntrack(buffer + *len, hash->ctrack);
 	if (*len + newlen > maxlen)
 		return 1;
-	else *len += newlen;
 
+	*len += newlen;
+	(*upto)++;
 	return 0;
 }
 
@@ -161,7 +182,10 @@ list_conntracks(char *buffer, char **start, off_t offset, int length)
 		unsigned int last_len;
 		struct ip_conntrack_expect *expect
 			= (struct ip_conntrack_expect *)e;
-		if (upto++ < offset) continue;
+		if (upto < offset) {
+			upto++;
+			continue;
+		}
 
 		last_len = len;
 		len += print_expect(buffer + len, expect);
@@ -169,6 +193,7 @@ list_conntracks(char *buffer, char **start, off_t offset, int length)
 			len = last_len;
 			goto finished;
 		}
+		upto++;
 	}
 
  finished:
@@ -176,6 +201,125 @@ list_conntracks(char *buffer, char **start, off_t offset, int length)
 
 	/* `start' hack - see fs/proc/generic.c line ~165 */
 	*start = (char *)((unsigned int)upto - offset);
+	return len;
+}
+
+/* Map sparse protocol list to dense stats array for proto's we care about */
+static int proto_map[IPPROTO_MAX];
+
+static int
+list_conntracks_stats(char *buffer, char **start, off_t offset, int length)
+{
+	unsigned int i;
+	unsigned int len = 0;
+	struct list_head *p;
+	struct ip_conntrack_tuple_hash *hash;
+
+	unsigned int ct = 0;         /* number of conntracks found       */
+	unsigned int ctreply = 0;    /* number of reply conntracks found */
+	unsigned int expect = 0;     /* number of expects found          */
+	unsigned int unreplied = 0;  /* count unreplied conntracks       */
+	unsigned int hashmax = 0;    /* max ct per hash bucket found     */
+	unsigned int hashmin = 9999; /* min ct per hash bucket found     */
+	unsigned int hashcnt;        /* count ct in current hash bucket  */
+	unsigned int proto;          /* temp protocol number */
+#define MAXSTATS 32
+	unsigned int hashfreq[MAXSTATS];  /* frequency count of list depth */
+	unsigned int protonum[MAXSTATS];  /* frequency count of protocols  */
+	unsigned int prototime[MAXSTATS]; /* timeout count of protocols  */
+
+	/* proto_map should only be initialized once...
+	 * but then this is all ridiculously inefficent...  */
+	for (i = 0; i < IPPROTO_MAX; i++) {
+        	proto_map[i] = 0;
+	}
+	i = 1;
+	proto_map[IPPROTO_ICMP] = i++;
+	proto_map[IPPROTO_TCP]  = i++;
+	proto_map[IPPROTO_UDP]  = i++;
+	proto_map[IPPROTO_GRE]  = i++;
+	proto_map[IPPROTO_IPV6] = i++;
+	proto_map[IPPROTO_ESP]  = i++;
+	proto_map[IPPROTO_AH]   = i++;
+
+	for (i = 0; i < MAXSTATS; i++) {
+		hashfreq[i] = protonum[i] = prototime[i] = 0;
+	}
+
+	READ_LOCK(&ip_conntrack_lock);
+
+	/*
+	 * count hash-table entries
+	 */
+	for (i = 0; i < ip_conntrack_htable_size; i++) {
+		hashcnt = 0;
+		list_for_each(p, &ip_conntrack_hash[i]) {
+			hashcnt++;
+
+			/* count originals differently */
+			hash = (struct ip_conntrack_tuple_hash *)p;
+			if (DIRECTION(hash)) {
+				ctreply++;
+				continue;
+			}
+			ct++;
+
+			proto = hash->ctrack->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum;
+			proto = (proto < IPPROTO_MAX) ? proto_map[proto] : 0;
+			protonum[proto]++;
+			if (timer_pending(&hash->ctrack->timeout))
+				prototime[proto] += (hash->ctrack->timeout.expires - jiffies)/HZ;
+
+			if (!(test_bit(IPS_SEEN_REPLY_BIT, &hash->ctrack->status)))
+				unreplied++;
+		}
+		if (hashmin > hashcnt) 
+			hashmin = hashcnt;
+		if (hashmax < hashcnt)
+			hashmax = hashcnt;
+		/* all counts above 31 accumulate in bucket 31 */
+		if (hashcnt >= MAXSTATS)
+			hashcnt = MAXSTATS-1;
+		hashfreq[hashcnt]++;
+	}
+
+	/*
+	 * count the expect list
+	 */
+	list_for_each(p, &ip_conntrack_expect_list) {
+		expect++;
+	}
+
+	READ_UNLOCK(&ip_conntrack_lock);
+
+	len = sprintf(buffer, 
+		"ct=%d ctreply=%d expect=%d unreplied=%d\n"
+		"hash min=%d max=%d avg=%d\n"
+		"f0=%d f1=%d f2=%d f3=%d f4=%d f5=%d f6=%d  fmax=%d\n"
+		"count othr=%d icmp=%d tcp=%d udp=%d gre=%d ip6=%d esp=%d ah=%d\n"
+		"avtmo othr=%d icmp=%d tcp=%d udp=%d gre=%d ip6=%d esp=%d ah=%d\n",
+		ct, ctreply, expect, unreplied,
+		hashmin, hashmax, (ct+ctreply)/ip_conntrack_htable_size,
+		hashfreq[0], hashfreq[1], hashfreq[2], hashfreq[3],
+		hashfreq[4], hashfreq[5], hashfreq[6], hashfreq[MAXSTATS-1],
+		protonum[0], protonum[1], protonum[2], protonum[3],
+		protonum[4], protonum[5], protonum[6], protonum[7],
+		protonum[0] ? prototime[0]/protonum[0] : 0,
+		protonum[1] ? prototime[1]/protonum[1] : 0,
+		protonum[2] ? prototime[2]/protonum[2] : 0,
+		protonum[3] ? prototime[3]/protonum[3] : 0,
+		protonum[4] ? prototime[4]/protonum[4] : 0,
+		protonum[5] ? prototime[5]/protonum[5] : 0,
+		protonum[6] ? prototime[6]/protonum[6] : 0,
+		protonum[7] ? prototime[7]/protonum[7] : 0);
+
+	len -= offset;
+	if (len > length)
+		len = length;
+	if (len < 0)
+		len = 0;
+
+	*start = buffer + offset;
 	return len;
 }
 
@@ -259,6 +403,11 @@ extern unsigned long ip_ct_tcp_timeout_close_wait;
 extern unsigned long ip_ct_tcp_timeout_last_ack;
 extern unsigned long ip_ct_tcp_timeout_time_wait;
 extern unsigned long ip_ct_tcp_timeout_close;
+extern unsigned long ip_ct_tcp_timeout_max_retrans;
+extern int ip_ct_tcp_log_invalid;
+extern int ip_ct_tcp_loose;
+extern int ip_ct_tcp_be_liberal;
+extern int ip_ct_tcp_max_retrans;
 
 /* From ip_conntrack_proto_udp.c */
 extern unsigned long ip_ct_udp_timeout;
@@ -315,6 +464,21 @@ static ctl_table ip_ct_sysctl_table[] = {
 	{NET_IPV4_NF_CONNTRACK_GENERIC_TIMEOUT, "ip_conntrack_generic_timeout",
 	 &ip_ct_generic_timeout, sizeof(unsigned int), 0644, NULL,
 	 &proc_dointvec_jiffies},
+	{NET_IPV4_NF_CONNTRACK_TCP_TIMEOUT_MAX_RETRANS, "ip_conntrack_tcp_timeout_max_retrans",
+	 &ip_ct_tcp_timeout_max_retrans, sizeof(unsigned int), 0644, NULL,
+	 &proc_dointvec_jiffies},
+	{NET_IPV4_NF_CONNTRACK_TCP_LOG_INVALID, "ip_conntrack_tcp_log_invalid",
+	 &ip_ct_tcp_log_invalid, sizeof(unsigned int), 0644, NULL,
+	 &proc_dointvec},
+	{NET_IPV4_NF_CONNTRACK_TCP_LOOSE, "ip_conntrack_tcp_loose",
+	 &ip_ct_tcp_loose, sizeof(unsigned int), 0644, NULL,
+	 &proc_dointvec},
+	{NET_IPV4_NF_CONNTRACK_TCP_BE_LIBERAL, "ip_conntrack_tcp_be_liberal",
+	 &ip_ct_tcp_be_liberal, sizeof(unsigned int), 0644, NULL,
+	 &proc_dointvec},
+	{NET_IPV4_NF_CONNTRACK_TCP_MAX_RETRANS, "ip_conntrack_tcp_max_retrans",
+	 &ip_ct_tcp_max_retrans, sizeof(unsigned int), 0644, NULL,
+	 &proc_dointvec},
 	{0}
 };
 
@@ -350,6 +514,10 @@ static int init_or_cleanup(int init)
 		goto cleanup_nothing;
 
 	proc = proc_net_create("ip_conntrack", 0440, list_conntracks);
+	if (!proc) goto cleanup_init;
+	proc->owner = THIS_MODULE;
+
+	proc = proc_net_create("ip_conntrack_stat",0,list_conntracks_stats);
 	if (!proc) goto cleanup_init;
 	proc->owner = THIS_MODULE;
 
@@ -396,6 +564,7 @@ static int init_or_cleanup(int init)
 	nf_unregister_hook(&ip_conntrack_in_ops);
  cleanup_proc:
 	proc_net_remove("ip_conntrack");
+	proc_net_remove("ip_conntrack_stat");
  cleanup_init:
 	ip_conntrack_cleanup();
  cleanup_nothing:
@@ -467,8 +636,8 @@ EXPORT_SYMBOL(ip_conntrack_destroyed);
 EXPORT_SYMBOL(ip_conntrack_get);
 EXPORT_SYMBOL(ip_conntrack_helper_register);
 EXPORT_SYMBOL(ip_conntrack_helper_unregister);
+EXPORT_SYMBOL(ip_ct_refresh_acct);
 EXPORT_SYMBOL(ip_ct_iterate_cleanup);
-EXPORT_SYMBOL(ip_ct_refresh);
 EXPORT_SYMBOL(ip_ct_find_proto);
 EXPORT_SYMBOL(__ip_ct_find_proto);
 EXPORT_SYMBOL(ip_ct_find_helper);

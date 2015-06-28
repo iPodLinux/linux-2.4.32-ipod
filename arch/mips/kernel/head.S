@@ -33,7 +33,8 @@
 		 * Reserved space for exception handlers.
 		 * Necessary for machines which link their kernels at KSEG0.
 		 */
-		.fill	0x400
+		jal	kernel_entry
+		.balign  0x400
 
 		/* The following two symbols are used for kernel profiling. */
 		EXPORT(stext)

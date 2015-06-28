@@ -43,7 +43,7 @@ static struct mtd_partition *parts;
 
 static struct mtd_info *mymtd;
 
-extern int parse_redboot_partitions(struct mtd_info *, struct mtd_partition **);
+extern int parse_redboot_partitions(struct mtd_info *, struct mtd_partition **, unsigned long fis_origin);
 static int epxa_default_partitions(struct mtd_info *master, struct mtd_partition **pparts);
 
 static __u8 epxa_read8(struct map_info *map, unsigned long ofs)
@@ -136,7 +136,7 @@ static int __init epxa_mtd_init(void)
 	}
 
 #ifdef CONFIG_MTD_REDBOOT_PARTS
-	nr_parts = parse_redboot_partitions(mymtd, &parts);
+	nr_parts = parse_redboot_partitions(mymtd, &parts, 0);
 
 	if (nr_parts > 0) {
 		add_mtd_partitions(mymtd, parts, nr_parts);

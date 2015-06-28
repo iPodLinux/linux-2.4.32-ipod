@@ -1,3 +1,5 @@
+/* $USAGI: tcp.h,v 1.13 2003/11/12 05:11:57 yoshfuji Exp $ */
+
 /*
  * INET		An implementation of the TCP/IP protocol suite for the LINUX
  *		operating system.  INET is implemented using the  BSD Socket
@@ -78,6 +80,7 @@ struct tcp_ehash_bucket {
 struct tcp_bind_bucket {
 	unsigned short		port;
 	signed short		fastreuse;
+	uid_t			uid;
 	struct tcp_bind_bucket	*next;
 	struct sock		*owners;
 	struct tcp_bind_bucket	**pprev;
@@ -171,6 +174,9 @@ struct tcp_tw_bucket {
 	__u16			sport;
 	unsigned short		family;
 	unsigned char		reuse,
+#ifdef SO_REUSEPORT
+				reuseport,
+#endif
 				rcv_wscale; /* It is also TW bucket specific */
 	atomic_t		refcnt;
 
@@ -186,6 +192,8 @@ struct tcp_tw_bucket {
 	struct tcp_bind_bucket	*tb;
 	struct tcp_tw_bucket	*next_death;
 	struct tcp_tw_bucket	**pprev_death;
+
+	uid_t			uid;
 
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	struct in6_addr		v6_daddr;

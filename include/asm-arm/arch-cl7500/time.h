@@ -17,7 +17,7 @@ static void timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 
 	{
 		/* Twinkle the lights. */
-		static int count, state = 0xff00;
+		static int count = 1, state = 0xff00;
 		if (count-- == 0) {
 			state ^= 0x100;
 			count = 25;

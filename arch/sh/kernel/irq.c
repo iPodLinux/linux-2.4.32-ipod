@@ -434,8 +434,8 @@ unsigned long probe_irq_on(void)
 	 */
 	val = 0;
 	for (i=0; i<NR_IRQS; i++) {
-		desc = irq_desc + i;
 		unsigned int status;
+		desc = irq_desc + i;
 
 		spin_lock_irq(&desc->lock);
 		status = desc->status;
@@ -547,3 +547,13 @@ void init_irq_proc(void)
 {
 }
 #endif
+
+
+/* This guy is needed for PCMCIA,  we just dummy it */
+unsigned int
+probe_irq_mask(unsigned long bits)
+{
+	printk("%s(0x%x) returning 0\n", __FUNCTION__, bits);
+	return(0);
+}
+

@@ -2,8 +2,6 @@
  * v320usc.h: Register defines for the V320USC family of devices.
  *
  * Copyright (C) 1999,2000 Dan Aizenstros (dan@vcubed.com)
- *
- * $Id: pci-v320usc.h,v 1.1 2003/02/20 04:26:36 gerg Exp $
  */
 
 #ifndef _V320USC_H_

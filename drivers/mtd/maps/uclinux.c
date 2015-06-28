@@ -4,8 +4,6 @@
  *	uclinux.c -- generic memory mapped MTD driver for uclinux
  *
  *	(C) Copyright 2002, Greg Ungerer (gerg@snapgear.com)
- *
- * 	$Id: uclinux.c,v 1.2 2002/08/07 00:43:45 gerg Exp $
  */
 
 /****************************************************************************/
@@ -82,14 +80,6 @@ struct mtd_info *uclinux_ram_mtdinfo;
 
 /****************************************************************************/
 
-struct mtd_partition uclinux_romfs[] = {
-	{ name: "ROMfs", offset: 0 }
-};
-
-#define	NUM_PARTITIONS	(sizeof(uclinux_romfs) / sizeof(uclinux_romfs[0]))
-
-/****************************************************************************/
-
 int uclinux_point(struct mtd_info *mtd, loff_t from, size_t len,
 	size_t *retlen, u_char **mtdbuf)
 {
@@ -97,6 +87,11 @@ int uclinux_point(struct mtd_info *mtd, loff_t from, size_t len,
 	*mtdbuf = (u_char *) (map->map_priv_1 + ((int) from));
 	*retlen = len;
 	return(0);
+}
+
+static void uclinux_unpoint(struct mtd_info *mtd, u_char *addr, loff_t from,
+	size_t len)
+{
 }
 
 /****************************************************************************/
@@ -109,7 +104,7 @@ int __init uclinux_mtd_init(void)
 
 	mapp = &uclinux_ram_map;
 	mapp->map_priv_2 = (unsigned long) &_ebss;
-	mapp->size = PAGE_ALIGN(*((unsigned long *)((&_ebss) + 8)));
+	mapp->size = PAGE_ALIGN(ntohl(*((unsigned long *)((&_ebss) + 8))));
 	mapp->buswidth = 4;
 
 	printk("uclinux[mtd]: RAM probe address=0x%x size=0x%x\n",
@@ -132,14 +127,15 @@ int __init uclinux_mtd_init(void)
 		
 	mtd->module = THIS_MODULE;
 	mtd->point = uclinux_point;
+	mtd->unpoint = uclinux_unpoint;
 	mtd->priv = mapp;
 
 	uclinux_ram_mtdinfo = mtd;
-	add_mtd_partitions(mtd, uclinux_romfs, NUM_PARTITIONS);
+	add_mtd_device(mtd);
 
-	printk("uclinux[mtd]: set %s to be root filesystem\n",
-	     	uclinux_romfs[0].name);
-	ROOT_DEV = MKDEV(MTD_BLOCK_MAJOR, 0);
+	printk("uclinux[mtd]: root filesystem index=%d\n", mtd->index);
+
+	ROOT_DEV = MKDEV(MTD_BLOCK_MAJOR, mtd->index);
 	put_mtd_device(mtd);
 
 	return(0);

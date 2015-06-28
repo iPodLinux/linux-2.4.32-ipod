@@ -704,25 +704,192 @@ static inline u16 NFTL_findwriteunit(struct NFTLrecord *nftl, unsigned block)
 	return 0xffff;
 }
 
+/* Given a Virtual Unit Chain, see if it can be deleted, and if so do it. */
+static void NFTL_trydeletechain(struct NFTLrecord *nftl, unsigned thisVUC)
+{
+	unsigned char BlockUsed[MAX_SECTORS_PER_UNIT];
+	unsigned char BlockFreeFound[MAX_SECTORS_PER_UNIT];
+	unsigned int thisEUN;
+	int block;
+	unsigned int status;
+	int silly;
+	struct nftl_bci bci;
+	size_t retlen;
+
+	memset(BlockUsed, 0, sizeof(BlockUsed));
+	memset(BlockFreeFound, 0, sizeof(BlockFreeFound));
+
+	thisEUN = nftl->EUNtable[thisVUC];
+	if (thisEUN == BLOCK_NIL) {
+		printk(KERN_WARNING "Trying to delete non-existent "
+		       "Virtual Unit Chain %d!\n", thisVUC);
+		return;
+	}
+	
+	/* Scan through the Erase Units to determine whether any data is in
+	   each of the 512-byte blocks within the Chain.
+	*/
+	silly = MAX_LOOPS;
+	while (thisEUN < nftl->nb_blocks) {
+		for (block = 0; block < nftl->EraseSize/512; block++) {
+			if (BlockFreeFound[block])
+				continue;
+
+			if (MTD_READOOB(nftl->mtd,
+					(thisEUN * nftl->EraseSize) + (block * 512),
+					8 , &retlen, (char *)&bci) < 0)
+				status = SECTOR_IGNORE;
+			else
+				status = bci.Status | bci.Status1;
+
+			switch(status) {
+			case SECTOR_FREE:
+				BlockFreeFound[block] = 1;
+				break;
+			case SECTOR_USED:
+				BlockUsed[block] = 1;
+				break;
+			case SECTOR_DELETED:
+				BlockUsed[block] = 0;
+				break;
+			case SECTOR_IGNORE:
+				break;
+			default:
+				printk("Unknown status for block %d in EUN %d: %x\n",
+				       block, thisEUN, status);
+			}
+		}
+
+		if (!silly--) {
+			printk(KERN_WARNING "Infinite loop in Virtual Unit Chain 0x%x\n",
+			       thisVUC);
+			return;
+		}
+		
+		thisEUN = nftl->ReplUnitTable[thisEUN];
+	}
+
+	for (block = 0; block < nftl->EraseSize/512; block++)
+		if (BlockUsed[block])
+			return;
+
+	/* For each block in the chain free it and make it available
+	 * for future use
+	 */
+	DEBUG(MTD_DEBUG_LEVEL1, "Deleting empty VUC %d\n", thisVUC);
+	thisEUN = nftl->EUNtable[thisVUC];
+	while (thisEUN < nftl->nb_blocks) {
+		unsigned int EUNtmp;
+
+		EUNtmp = nftl->ReplUnitTable[thisEUN];
+
+		if (NFTL_formatblock(nftl, thisEUN) < 0) {
+			/* could not erase : mark block as reserved
+			 * FixMe: Update Bad Unit Table on disk
+			 */
+			nftl->ReplUnitTable[thisEUN] = BLOCK_RESERVED;
+		} else {
+			/* correctly erased : mark it as free */
+			nftl->ReplUnitTable[thisEUN] = BLOCK_FREE;
+			nftl->numfreeEUNs++;
+		}
+		thisEUN = EUNtmp;
+	}
+	
+	nftl->EUNtable[thisVUC] = BLOCK_NIL;
+}
+
+static int NFTL_deleteblock(struct NFTLrecord *nftl, unsigned block)
+{
+	u16 lastgoodEUN;
+	u16 thisEUN = nftl->EUNtable[block / (nftl->EraseSize / 512)];
+	unsigned long blockofs = (block * 512) & (nftl->EraseSize - 1);
+	unsigned int status;
+	int silly = MAX_LOOPS;
+	size_t retlen;
+	struct nftl_bci bci;
+
+	lastgoodEUN = BLOCK_NIL;
+
+	if (thisEUN != BLOCK_NIL) {
+		while (thisEUN < nftl->nb_blocks) {
+			if (MTD_READOOB(nftl->mtd, (thisEUN * nftl->EraseSize) + blockofs,
+					8, &retlen, (char *)&bci) < 0)
+				status = SECTOR_IGNORE;
+			else
+				status = bci.Status | bci.Status1;
+
+			switch (status) {
+			case SECTOR_FREE:
+				/* no modification of a sector should follow a free sector */
+				goto the_end;
+			case SECTOR_DELETED:
+				lastgoodEUN = BLOCK_NIL;
+				break;
+			case SECTOR_USED:
+				lastgoodEUN = thisEUN;
+				break;
+			case SECTOR_IGNORE:
+				break;
+			default:
+				printk("Unknown status for block %d in EUN %d: %x\n",
+				       block, thisEUN, status);
+				break;
+			}
+
+			if (!silly--) {
+				printk(KERN_WARNING "Infinite loop in Virtual Unit Chain 0x%x\n",
+				       block / (nftl->EraseSize / 512));
+				return 1;
+			}
+			thisEUN = nftl->ReplUnitTable[thisEUN];
+		}
+	}
+
+ the_end:
+	if (lastgoodEUN != BLOCK_NIL) {
+		loff_t ptr = (lastgoodEUN * nftl->EraseSize) + blockofs;
+		size_t retlen;
+
+		if (MTD_READOOB(nftl->mtd, ptr, 8, &retlen, (char *)&bci) < 0)
+			return -EIO;
+		bci.Status = bci.Status1 = SECTOR_DELETED;
+		if (MTD_WRITEOOB(nftl->mtd, ptr, 8, &retlen, (char *)&bci) < 0)
+			return -EIO;
+		NFTL_trydeletechain(nftl, block / (nftl->EraseSize / 512));
+	}
+	return 0;
+}
+
 static int NFTL_writeblock(struct NFTLrecord *nftl, unsigned block, char *buffer)
 {
 	u16 writeEUN;
 	unsigned long blockofs = (block * 512) & (nftl->EraseSize - 1);
 	size_t retlen;
 	u8 eccbuf[6];
+	char *p, *pend;
 
-	writeEUN = NFTL_findwriteunit(nftl, block);
+	/* Is block all zero? */
+	pend = buffer+512;
+	for (p=buffer; p<pend && !*p; p++);
 
-	if (writeEUN == BLOCK_NIL) {
-		printk(KERN_WARNING
-		       "NFTL_writeblock(): Cannot find block to write to\n");
-		/* If we _still_ haven't got a block to use, we're screwed */
-		return 1;
+	if (p<pend) {
+		writeEUN = NFTL_findwriteunit(nftl, block);
+
+		if (writeEUN == BLOCK_NIL) {
+			printk(KERN_WARNING
+					"NFTL_writeblock(): Cannot find block to write to\n");
+			/* If we _still_ haven't got a block to use, we're screwed */
+			return 1;
+		}
+
+		MTD_WRITEECC(nftl->mtd, (writeEUN * nftl->EraseSize) + blockofs,
+				512, &retlen, (char *)buffer, (char *)eccbuf,
+				NAND_ECC_DISKONCHIP);
+		/* no need to write SECTOR_USED flags since they are written in mtd_writeecc */
 	}
-
-	MTD_WRITEECC(nftl->mtd, (writeEUN * nftl->EraseSize) + blockofs,
-		     512, &retlen, (char *)buffer, (char *)eccbuf, NAND_ECC_DISKONCHIP);
-        /* no need to write SECTOR_USED flags since they are written in mtd_writeecc */
+	else
+		NFTL_deleteblock(nftl, block);
 
 	return 0;
 }
@@ -799,6 +966,22 @@ static int nftl_ioctl(struct inode * inode, struct file * file, unsigned int cmd
 	if (!nftl) return -EINVAL;
 
 	switch (cmd) {
+#if 0
+	case NFTL_IOCTL_DELETE_SECTOR: {
+		unsigned int dev;
+		int res;
+
+		if (arg >= part_table[dev].nr_sects)
+			return -EINVAL;
+		arg += part_table[MINOR(inode->i_rdev)].start_sect;
+		DEBUG(MTD_DEBUG_LEVEL3, "Waiting for mutex\n");
+		down(&nftl->mutex);
+		DEBUG(MTD_DEBUG_LEVEL3, "Got mutex\n");
+		res = NFTL_deleteblock(nftl, arg);
+		up(&nftl->mutex);
+		return res;
+	}
+#endif
 	case HDIO_GETGEO: {
 		struct hd_geometry g;
 

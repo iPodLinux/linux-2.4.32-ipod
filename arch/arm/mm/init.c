@@ -9,7 +9,6 @@
  */
 #include <linux/config.h>
 #include <linux/signal.h>
-#include <linux/sched.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/string.h>
@@ -18,7 +17,6 @@
 #include <linux/mman.h>
 #include <linux/mm.h>
 #include <linux/swap.h>
-#include <linux/swapctl.h>
 #include <linux/smp.h>
 #include <linux/init.h>
 #include <linux/bootmem.h>
@@ -374,6 +372,11 @@ static __init void reserve_node_zero(unsigned int bootmap_pfn, unsigned int boot
 	 */
 	if (machine_is_integrator())
 		reserve_bootmem_node(pgdat, 0, __pa(swapper_pg_dir));
+	if (machine_is_edb9301() || machine_is_edb9312() || machine_is_edb9315() ||
+			machine_is_ipd())
+		reserve_bootmem_node(pgdat, PHYS_OFFSET,
+				(__pa(swapper_pg_dir) - PHYS_OFFSET));
+
 	/*
 	 * These should likewise go elsewhere.  They pre-reserve
 	 * the screen memory region at the start of main system
@@ -382,6 +385,8 @@ static __init void reserve_node_zero(unsigned int bootmap_pfn, unsigned int boot
 	if (machine_is_archimedes() || machine_is_a5k())
 		reserve_bootmem_node(pgdat, 0x02000000, 0x00080000);
 	if (machine_is_edb7211() || machine_is_fortunet())
+		reserve_bootmem_node(pgdat, 0xc0000000, 0x00020000);
+	if (machine_is_edb7312())
 		reserve_bootmem_node(pgdat, 0xc0000000, 0x00020000);
 	if (machine_is_p720t())
 		reserve_bootmem_node(pgdat, PHYS_OFFSET, 0x00014000);
@@ -499,11 +504,13 @@ void __init paging_init(struct meminfo *mi, struct machine_desc *mdesc)
 	/*
 	 * allocate the zero page.  Note that we count on this going ok.
 	 */
+	printk("alloc_bootmem_low\n");
 	zero_page = alloc_bootmem_low_pages(PAGE_SIZE);
 
 	/*
 	 * initialise the page tables.
 	 */
+	printk("memtable_init\n");
 	memtable_init(mi);
 	if (mdesc->map_io)
 		mdesc->map_io();

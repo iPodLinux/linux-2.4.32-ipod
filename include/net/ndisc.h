@@ -1,3 +1,5 @@
+/* $USAGI: ndisc.h,v 1.17 2003/01/24 02:05:23 yoshfuji Exp $ */
+
 #ifndef _NDISC_H
 #define _NDISC_H
 
@@ -20,6 +22,9 @@
 #define ND_OPT_PREFIX_INFO		3
 #define ND_OPT_REDIRECT_HDR		4
 #define ND_OPT_MTU			5
+#define ND_OPT_RTR_ADV_INTERVAL		7	/* Mobile IPv6 */
+#define ND_OPT_HOME_AGENT_INFO		8	/* Mobile IPv6 */
+#define ND_OPT_ROUTE_INFO		9	/* Route Info. */
 
 #define MAX_RTR_SOLICITATION_DELAY	HZ
 
@@ -31,6 +36,7 @@
 
 #ifdef __KERNEL__
 
+#include <linux/config.h>
 #include <linux/skbuff.h>
 #include <linux/netdevice.h>
 #include <linux/icmpv6.h>
@@ -45,10 +51,23 @@ struct nd_msg {
 	__u8		opt[0];
 };
 
+struct rs_msg {
+	struct icmp6hdr	icmph;
+	__u8		opt[0];
+};
+
 struct ra_msg {
-        struct icmp6hdr		icmph;
-	__u32			reachable_time;
-	__u32			retrans_timer;
+        struct icmp6hdr	icmph;
+	__u32		reachable_time;
+	__u32		retrans_timer;
+	__u8		opt[0];
+};
+
+struct rd_msg {
+	struct icmp6hdr icmph;
+	struct in6_addr	rd_target;
+	struct in6_addr	rd_dst;
+	__u8		opt[0];
 };
 
 struct nd_opt_hdr {
@@ -57,16 +76,21 @@ struct nd_opt_hdr {
 } __attribute__((__packed__));
 
 struct ndisc_options {
-	struct nd_opt_hdr *nd_opt_array[7];
+	struct nd_opt_hdr *nd_opt_array[10];	/*max = route info. */
 	struct nd_opt_hdr *nd_opt_piend;
+	struct nd_opt_hdr *nd_opt_riend;
 };
 
 #define nd_opts_src_lladdr	nd_opt_array[ND_OPT_SOURCE_LL_ADDR]
 #define nd_opts_tgt_lladdr	nd_opt_array[ND_OPT_TARGET_LL_ADDR]
 #define nd_opts_pi		nd_opt_array[ND_OPT_PREFIX_INFO]
 #define nd_opts_pi_end		nd_opt_piend
+#define nd_opts_ri		nd_opt_array[ND_OPT_ROUTE_INFO]
+#define nd_opts_ri_end		nd_opt_riend
 #define nd_opts_rh		nd_opt_array[ND_OPT_REDIRECT_HDR]
 #define nd_opts_mtu		nd_opt_array[ND_OPT_MTU]
+#define nd_opts_adv		nd_opt_array[ND_OPT_RTR_ADV_INTERVAL]
+#define nd_opts_hai		nd_opt_array[ND_OPT_HOME_AGENT_INFO]
 
 extern struct nd_opt_hdr *ndisc_next_option(struct nd_opt_hdr *cur, struct nd_opt_hdr *end);
 extern struct ndisc_options *ndisc_parse_options(u8 *opt, int opt_len, struct ndisc_options *ndopts);
@@ -81,7 +105,17 @@ extern void			ndisc_send_ns(struct net_device *dev,
 					      struct neighbour *neigh,
 					      struct in6_addr *solicit,
 					      struct in6_addr *daddr,
-					      struct in6_addr *saddr);
+					      struct in6_addr *saddr,
+					      int dad);
+
+extern void			ndisc_send_na(struct net_device *dev,
+					      struct neighbour *neigh,
+					      struct in6_addr *daddr,
+					      struct in6_addr *solicited_addr,
+					      int router,
+					      int solicited,
+					      int overide,
+					      int inc_opt);
 
 extern void			ndisc_send_rs(struct net_device *dev,
 					      struct in6_addr *saddr,

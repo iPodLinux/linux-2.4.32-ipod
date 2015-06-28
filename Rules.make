@@ -266,14 +266,14 @@ $(active-objs): $(TOPDIR)/include/linux/modversions.h
 
 else
 
-$(TOPDIR)/include/linux/modversions.h:
+$(TOPDIR)/include/linux/modversions.h: $(TOPDIR)/include/linux/modsetver.h
 	@echo "#include <linux/modsetver.h>" > $@
 
 endif # CONFIG_MODVERSIONS
 
 ifneq "$(strip $(export-objs))" ""
 $(export-objs): $(export-objs:.o=.c) $(TOPDIR)/include/linux/modversions.h
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS_nostdinc) -DKBUILD_BASENAME=$(subst $(comma),_,$(subst -,_,$(*F))) $(CFLAGS_$@) -DEXPORT_SYMTAB -c $(@:.o=.c)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS_nostdinc) -DKBUILD_BASENAME=$(subst $(comma),_,$(subst -,_,$(*F))) $(CFLAGS_$@) -DEXPORT_SYMTAB -o $@ -c $(@:.o=.c)
 	@ ( \
 	    echo 'ifeq ($(strip $(subst $(comma),:,$(CFLAGS) $(EXTRA_CFLAGS_nostdinc) $(CFLAGS_$@) -DEXPORT_SYMTAB)),$$(strip $$(subst $$(comma),:,$$(CFLAGS) $$(EXTRA_CFLAGS_nostdinc) $$(CFLAGS_$@) -DEXPORT_SYMTAB)))' ; \
 	    echo 'FILES_FLAGS_UP_TO_DATE += $@' ; \

@@ -9,6 +9,7 @@
 #ifndef _LINUX_WATCHDOG_H
 #define _LINUX_WATCHDOG_H
 
+#include <asm/types.h>
 #include <linux/ioctl.h>
 
 #define	WATCHDOG_IOCTL_BASE	'W'

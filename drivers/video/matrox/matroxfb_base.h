@@ -111,7 +111,7 @@
 #if defined(__alpha__) || defined(__mc68000__)
 #define READx_WORKS
 #define MEMCPYTOIO_WORKS
-#elif defined(__powerpc64__)
+#elif defined(__powerpc64__) || defined(__frv__)
 #define RAW_READx_WORKS
 #define MEMCPYTOIO_WORKS
 #else
@@ -214,14 +214,23 @@ static inline u_int32_t mga_readl(vaddr_t va, unsigned int offs) {
 
 static inline void mga_writeb(vaddr_t va, unsigned int offs, u_int8_t value) {
 	__raw_writeb(value, va.vaddr + offs);
+#ifdef __frv__ /* Evil hack to work around broken non-PCI-compliant host bridge */
+	__raw_writeb(value, 0xe8800000);
+#endif
 }
 
 static inline void mga_writew(vaddr_t va, unsigned int offs, u_int16_t value) {
 	__raw_writew(value, va.vaddr + offs);
+#ifdef __frv__
+	__raw_writew(value, 0xe8800000);
+#endif
 }
 
 static inline void mga_writel(vaddr_t va, unsigned int offs, u_int32_t value) {
 	__raw_writel(value, va.vaddr + offs);
+#ifdef __frv__
+	__raw_writel(value, 0xe8800000);
+#endif
 }
 #else
 static inline unsigned int mga_readb(vaddr_t va, unsigned int offs) {

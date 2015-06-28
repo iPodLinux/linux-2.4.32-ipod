@@ -40,6 +40,59 @@ struct timezone sys_tz;
    serializing all accesses to the global NTP variables now. */
 extern rwlock_t xtime_lock;
 
+static void print_time_change(const char *msg, struct timeval new_tv)
+{
+	long s, j, d, m, y;
+
+	j = new_tv.tv_sec / 86400L + 719469;
+	s = new_tv.tv_sec % 86400L;
+
+	if( s < 0 ) { s += 86400L; j--; }
+
+	y = (4L * j - 1L) / 146097L;
+	j = 4L * j - 1L - 146097L * y;
+	d = j / 4L;
+	j = (4L * d + 3L) / 1461L;
+	d = 4L * d + 3L - 1461L * j;
+	d = (d + 4L) / 4L;
+	m = (5L * d - 3L) / 153L;
+	d = 5L * d - 3 - 153L * m;
+	d = (d + 5L) / 5L;
+	y = 100L * y + j;
+	if (m < 10)
+		m += 2;
+	else
+	{
+		m -= 10;
+		++y;
+	}
+	printk(KERN_NOTICE "Clock: %s time %04d/%02d/%02d - %02d:%02d:%02d\n",
+		msg, (int) y, (int) m + 1, (int) d, (int) (s / 3600 ), (int) (s / 60) % 60, (int) s % 60);
+}
+
+#ifndef ABS
+#define ABS(X) ((X) < 0 ? -(X) : (X))
+#endif
+
+static void check_print_time_change(const struct timeval old_tv, const struct timeval new_tv)
+{
+	static long accumulated_usecs;
+
+	if (ABS(new_tv.tv_sec - old_tv.tv_sec) <= 2) {
+		/* No more than 2 seconds of change */
+		accumulated_usecs += (new_tv.tv_sec - old_tv.tv_sec) * 1000000L + (new_tv.tv_usec - old_tv.tv_usec);
+		if (ABS(accumulated_usecs) < 1000000L) {
+			/* Less than 1 second of accumulated change */
+			return;
+		}
+	}
+
+	accumulated_usecs = 0;
+
+	print_time_change("old", old_tv);
+	print_time_change("new", new_tv);
+}
+
 #if !defined(__alpha__) && !defined(__ia64__)
 
 /*
@@ -74,11 +127,14 @@ asmlinkage long sys_time(int * tloc)
 asmlinkage long sys_stime(int * tptr)
 {
 	int value;
+	struct timeval old_tv, new_tv;
 
 	if (!capable(CAP_SYS_TIME))
 		return -EPERM;
 	if (get_user(value, tptr))
 		return -EFAULT;
+
+	do_gettimeofday(&old_tv);
 	write_lock_irq(&xtime_lock);
 	vxtime_lock();
 	xtime.tv_sec = value;
@@ -89,6 +145,8 @@ asmlinkage long sys_stime(int * tptr)
 	time_maxerror = NTP_PHASE_LIMIT;
 	time_esterror = NTP_PHASE_LIMIT;
 	write_unlock_irq(&xtime_lock);
+	do_gettimeofday(&new_tv);
+	check_print_time_change(old_tv, new_tv);
 	return 0;
 }
 
@@ -175,6 +233,9 @@ asmlinkage long sys_settimeofday(struct timeval *tv, struct timezone *tz)
 {
 	struct timeval	new_tv;
 	struct timezone new_tz;
+	int ret;
+
+	struct timeval	old_tv;
 
 	if (tv) {
 		if (copy_from_user(&new_tv, tv, sizeof(*tv)))
@@ -185,7 +246,15 @@ asmlinkage long sys_settimeofday(struct timeval *tv, struct timezone *tz)
 			return -EFAULT;
 	}
 
-	return do_sys_settimeofday(tv ? &new_tv : NULL, tz ? &new_tz : NULL);
+	if (tv) {
+		do_gettimeofday(&old_tv);
+	}
+	ret = do_sys_settimeofday(tv ? &new_tv : NULL, tz ? &new_tz : NULL);
+	if (tv) {
+		check_print_time_change(old_tv, new_tv);
+	}
+
+	return ret;
 }
 
 long pps_offset;		/* pps time offset (us) */

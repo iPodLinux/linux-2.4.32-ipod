@@ -1,3 +1,5 @@
+/* $USAGI: rtnetlink.h,v 1.13 2003/11/12 05:11:56 yoshfuji Exp $ */
+
 #ifndef __LINUX_RTNETLINK_H
 #define __LINUX_RTNETLINK_H
 
@@ -315,6 +317,7 @@ enum
 	IFA_BROADCAST,
 	IFA_ANYCAST,
 	IFA_CACHEINFO,
+	IFA_HOMEAGENT,
 	__IFA_MAX
 };
 
@@ -323,7 +326,9 @@ enum
 /* ifa_flags */
 
 #define IFA_F_SECONDARY		0x01
+#define IFA_F_TEMPORARY		IFA_F_SECONDARY
 
+#define IFA_F_HOMEADDR		0x10
 #define IFA_F_DEPRECATED	0x20
 #define IFA_F_TENTATIVE		0x40
 #define IFA_F_PERMANENT		0x80

@@ -11,21 +11,18 @@
 #include <linux/config.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
-#include <linux/kernel.h>
-#include <linux/errno.h>
 #include <linux/string.h>
-#include <linux/types.h>
 #include <linux/ptrace.h>
-#include <linux/mman.h>
 #include <linux/mm.h>
 #include <linux/interrupt.h>
-#include <linux/proc_fs.h>
 #include <linux/init.h>
 
 #include <asm/system.h>
-#include <asm/uaccess.h>
 #include <asm/pgtable.h>
-#include <asm/unaligned.h>
+#include <asm/uaccess.h>
+#include <asm/kgdb.h>
+
+#include "fault.h"
 
 #ifdef CONFIG_CPU_26
 #define FAULT_CODE_WRITE	0x02
@@ -34,13 +31,11 @@
 #define READ_FAULT(m)		(!((m) & FAULT_CODE_WRITE))
 #else
 /*
- * On 32-bit processors, we define "mode" to be zero when reading,
- * non-zero when writing.  This now ties up nicely with the polarity
- * of the 26-bit machines, and also means that we avoid the horrible
- * gcc code for "int val = !other_val;".
+ * "code" is actually the FSR register.  Bit 11 set means the
+ * instruction was performing a write.
  */
-#define DO_COW(m)		(m)
-#define READ_FAULT(m)		(!(m))
+#define DO_COW(code)		((code) & (1 << 11))
+#define READ_FAULT(code)	(!DO_COW(code))
 #endif
 
 /*
@@ -54,16 +49,17 @@ void show_pte(struct mm_struct *mm, unsigned long addr)
 	if (!mm)
 		mm = &init_mm;
 
-	printk(KERN_ALERT "mm = %p pgd = %p\n", mm, mm->pgd);
-
 	fs = get_fs();
 	set_fs(get_ds());
+
 	do {
-		pgd_t pg, *pgd = pgd_offset(mm, addr);
+		pgd_t pg, *pgd;
 		pmd_t pm, *pmd;
 		pte_t pt, *pte;
 
-		printk(KERN_ALERT "*pgd = ");
+		printk(KERN_ALERT "pgd = %p\n", mm->pgd);
+		pgd = pgd_offset(mm, addr);
+		printk(KERN_ALERT "[%08lx] *pgd=", addr);
 
 		if (__get_user(pgd_val(pg), (unsigned long *)pgd)) {
 			printk("(faulted)");
@@ -122,7 +118,7 @@ void show_pte(struct mm_struct *mm, unsigned long addr)
  * Oops.  The kernel tried to access some page that wasn't present.
  */
 static void
-__do_kernel_fault(struct mm_struct *mm, unsigned long addr, int error_code,
+__do_kernel_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
 		  struct pt_regs *regs)
 {
 	unsigned long fixup;
@@ -148,7 +144,12 @@ __do_kernel_fault(struct mm_struct *mm, unsigned long addr, int error_code,
 		"paging request", addr);
 
 	show_pte(mm, addr);
-	die("Oops", regs, error_code);
+
+#ifdef	CONFIG_KGDB
+	do_kgdb(regs, SIGKILL);
+#endif
+	die("Oops", regs, fsr);
+
 	do_exit(SIGKILL);
 }
 
@@ -157,20 +158,20 @@ __do_kernel_fault(struct mm_struct *mm, unsigned long addr, int error_code,
  * User mode accesses just cause a SIGSEGV
  */
 static void
-__do_user_fault(struct task_struct *tsk, unsigned long addr, int error_code,
-		int code, struct pt_regs *regs)
+__do_user_fault(struct task_struct *tsk, unsigned long addr,
+		unsigned int fsr, int code, struct pt_regs *regs)
 {
 	struct siginfo si;
 
 #ifdef CONFIG_DEBUG_USER
 	printk(KERN_DEBUG "%s: unhandled page fault at pc=0x%08lx, "
 	       "lr=0x%08lx (bad address=0x%08lx, code %d)\n",
-	       tsk->comm, regs->ARM_pc, regs->ARM_lr, addr, error_code);
+	       tsk->comm, regs->ARM_pc, regs->ARM_lr, addr, fsr);
 	show_regs(regs);
 #endif
 
 	tsk->thread.address = addr;
-	tsk->thread.error_code = error_code;
+	tsk->thread.error_code = fsr;
 	tsk->thread.trap_no = 14;
 	si.si_signo = SIGSEGV;
 	si.si_errno = 0;
@@ -181,24 +182,30 @@ __do_user_fault(struct task_struct *tsk, unsigned long addr, int error_code,
 
 void
 do_bad_area(struct task_struct *tsk, struct mm_struct *mm, unsigned long addr,
-	    int error_code, struct pt_regs *regs)
+	    unsigned int fsr, struct pt_regs *regs)
 {
 	/*
 	 * If we are in kernel mode at this point, we
 	 * have no context to handle this fault with.
 	 */
 	if (user_mode(regs))
-		__do_user_fault(tsk, addr, error_code, SEGV_MAPERR, regs);
+		__do_user_fault(tsk, addr, fsr, SEGV_MAPERR, regs);
 	else
-		__do_kernel_fault(mm, addr, error_code, regs);
+		__do_kernel_fault(mm, addr, fsr, regs);
 }
 
 static int
-__do_page_fault(struct mm_struct *mm, unsigned long addr, int error_code,
+__do_page_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
 		struct task_struct *tsk)
 {
 	struct vm_area_struct *vma;
 	int fault, mask;
+
+#if defined(CONFIG_KGDB)
+	/* REVISIT: This one may not be required? */
+	if (kgdb_fault_expected)
+		kgdb_handle_bus_error();
+#endif
 
 	vma = find_vma(mm, addr);
 	fault = -2; /* bad map area */
@@ -212,7 +219,7 @@ __do_page_fault(struct mm_struct *mm, unsigned long addr, int error_code,
 	 * memory access, so we can handle it.
 	 */
 good_area:
-	if (READ_FAULT(error_code)) /* read? */
+	if (READ_FAULT(fsr)) /* read? */
 		mask = VM_READ|VM_EXEC;
 	else
 		mask = VM_WRITE;
@@ -227,7 +234,7 @@ good_area:
 	 * than endlessly redo the fault.
 	 */
 survive:
-	fault = handle_mm_fault(mm, vma, addr & PAGE_MASK, DO_COW(error_code));
+	fault = handle_mm_fault(mm, vma, addr & PAGE_MASK, DO_COW(fsr));
 
 	/*
 	 * Handle the "normal" cases first - successful and sigbus
@@ -260,11 +267,16 @@ out:
 	return fault;
 }
 
-int do_page_fault(unsigned long addr, int error_code, struct pt_regs *regs)
+int do_page_fault(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 {
 	struct task_struct *tsk;
 	struct mm_struct *mm;
 	int fault;
+
+#if defined(CONFIG_KGDB)
+	if (kgdb_fault_expected)
+		kgdb_handle_bus_error();
+#endif
 
 	tsk = current;
 	mm  = tsk->mm;
@@ -277,7 +289,7 @@ int do_page_fault(unsigned long addr, int error_code, struct pt_regs *regs)
 		goto no_context;
 
 	down_read(&mm->mmap_sem);
-	fault = __do_page_fault(mm, addr, error_code, tsk);
+	fault = __do_page_fault(mm, addr, fsr, tsk);
 	up_read(&mm->mmap_sem);
 
 	/*
@@ -308,7 +320,7 @@ int do_page_fault(unsigned long addr, int error_code, struct pt_regs *regs)
 		printk("VM: killing process %s\n", tsk->comm);
 		do_exit(SIGKILL);
 	} else
-		__do_user_fault(tsk, addr, error_code, fault == -1 ?
+		__do_user_fault(tsk, addr, fsr, fault == -1 ?
 				SEGV_ACCERR : SEGV_MAPERR, regs);
 	return 0;
 
@@ -323,7 +335,7 @@ do_sigbus:
 	 * or user mode.
 	 */
 	tsk->thread.address = addr;
-	tsk->thread.error_code = error_code;
+	tsk->thread.error_code = fsr;
 	tsk->thread.trap_no = 14;
 	force_sig(SIGBUS, tsk);
 #ifdef CONFIG_DEBUG_USER
@@ -336,9 +348,13 @@ do_sigbus:
 		return 0;
 
 no_context:
-	__do_kernel_fault(mm, addr, error_code, regs);
+	__do_kernel_fault(mm, addr, fsr, regs);
 	return 0;
 }
+
+#if __LINUX_ARM_ARCH__ == 3
+unsigned long g_pgd;
+#endif
 
 /*
  * First Level Translation Fault Handler
@@ -357,21 +373,23 @@ no_context:
  * interrupt or a critical region, and should only copy the information
  * from the master page table, nothing more.
  */
-int do_translation_fault(unsigned long addr, int error_code, struct pt_regs *regs)
+int do_translation_fault(unsigned long addr, unsigned int fsr,
+			 struct pt_regs *regs)
 {
 	struct task_struct *tsk;
-	struct mm_struct *mm;
 	int offset;
 	pgd_t *pgd, *pgd_k;
 	pmd_t *pmd, *pmd_k;
 
 	if (addr < TASK_SIZE)
-		return do_page_fault(addr, error_code, regs);
+		return do_page_fault(addr, fsr, regs);
 
 	offset = __pgd_offset(addr);
 
 	/*
 	 * FIXME: CP15 C1 is write only on ARMv3 architectures.
+	 * You really need to read the value in the page table
+	 * register, not a copy.
 	 */
 	pgd = cpu_get_pgd() + offset;
 	pgd_k = init_mm.pgd + offset;
@@ -395,8 +413,7 @@ int do_translation_fault(unsigned long addr, int error_code, struct pt_regs *reg
 
 bad_area:
 	tsk = current;
-	mm  = tsk->active_mm;
 
-	do_bad_area(tsk, mm, addr, error_code, regs);
+	do_bad_area(tsk, tsk->active_mm, addr, fsr, regs);
 	return 0;
 }

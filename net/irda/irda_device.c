@@ -166,6 +166,12 @@ int __init irda_device_init( void)
 #ifdef CONFIG_EP7211_IR
  	ep7211_ir_init();
 #endif
+#ifdef CONFIG_EP93XX_SIR
+	ep93xx_sir_init();
+#endif
+#ifdef CONFIG_EP93XX_IRDA
+	ep93xx_irda_init();
+#endif
 #ifdef CONFIG_MCP2120_DONGLE
 	mcp2120_init();
 #endif

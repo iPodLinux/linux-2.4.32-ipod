@@ -680,6 +680,11 @@ int fastcall do_signal(struct pt_regs *regs, sigset_t *oldset)
 			case SIGQUIT: case SIGILL: case SIGTRAP:
 			case SIGABRT: case SIGFPE: case SIGSEGV:
 			case SIGBUS: case SIGSYS: case SIGXCPU: case SIGXFSZ:
+#if defined (CONFIG_MTD_NETtel)
+				printk("%s is core dumping at 0x%x\n", 
+						current->comm, regs->eip);
+				show_regs(regs);
+#endif
 				if (do_coredump(signr, regs))
 					exit_code |= 0x80;
 				/* FALLTHRU */

@@ -41,6 +41,10 @@
 			  module by all drivers that require it.
   Alan Cox		: Spinlocking work, added 'BUG_83C690'
   Paul Gortmaker	: Separate out Tx timeout code from Tx path.
+ 
+  Greg Ungerer		: added some coldfire addressing code.
+
+  Yoshinori Sato    : added H8/300H support.
 
   Sources:
   The National Semiconductor LAN Databook, and the 3Com 3c503 databook.
@@ -75,6 +79,22 @@ static const char version[] =
 
 #define NS8390_CORE
 #include "8390.h"
+
+#ifdef CONFIG_COLDFIRE
+#ifdef CONFIG_NE2K_PCI
+#include <asm/mcfpci.h>
+#else
+#include <asm/mcfne.h>
+#endif /* CONFIG_NE2K_PCI */
+#endif /* CONFIG_COLDFIRE */
+
+#if defined(CONFIG_CPU_H8300H)
+#include <asm/h8300_ne.h>
+#endif
+
+#ifdef CONFIG_LEDMAN
+#include <linux/ledman.h>
+#endif
 
 #define BUG_83C690
 
@@ -436,6 +456,10 @@ void ei_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 		printk ("net_interrupt(): irq %d for unknown device.\n", irq);
 		return;
 	}
+
+#ifdef CONFIG_M5272
+    ne2000_irqack(irq);
+#endif
     
 	e8390_base = dev->base_addr;
 	ei_local = (struct ei_device *) dev->priv;
@@ -477,6 +501,17 @@ void ei_interrupt(int irq, void *dev_id, struct pt_regs * regs)
 			interrupts = 0;
 			break;
 		}
+#ifdef CONFIG_LEDMAN
+        if (interrupts & (ENISR_TX|ENISR_TX_ERR)) {
+            ledman_cmd(LEDMAN_CMD_SET,
+                    strcmp(dev->name, "eth0") == 0 ? LEDMAN_LAN1_TX :
+							LEDMAN_LAN2_TX);
+        } else {
+            ledman_cmd(LEDMAN_CMD_SET,
+                    strcmp(dev->name, "eth0") == 0 ? LEDMAN_LAN1_RX :
+							LEDMAN_LAN2_RX);
+        }
+#endif
 		if (interrupts & ENISR_OVER) 
 			ei_rx_overrun(dev);
 		else if (interrupts & (ENISR_RX+ENISR_RX_ERR)) 

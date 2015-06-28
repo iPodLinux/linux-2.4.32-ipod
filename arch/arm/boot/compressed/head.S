@@ -1,3 +1,4 @@
+/*#define	DEBUG	1*/
 /*
  *  linux/arch/arm/boot/compressed/head.S
  *
@@ -72,6 +73,25 @@
  *   - SA-1100 Developer's Manual, August 1999
  */
 		str	\rb, [r3, #0x14]	@ UTDR
+		.endm
+#elif defined(CONFIG_ARCH_IXP425)
+		.macro	loadsp, rb
+		mov	\rb, #0xc8000000
+		.endm
+		.macro	writeb, rb
+		str	\rb, [r3, #0]
+		.endm
+#elif defined(CONFIG_ARCH_EP9312)
+		.macro	loadsp, rb
+		mov	\rb, #0x80000000	@ physical base address
+#if defined(CONFIG_MACH_IPD)
+		add	\rb, \rb, #0x008d0000	@ Ser2
+#else
+		add	\rb, \rb, #0x008c0000	@ Ser1
+#endif
+		.endm
+		.macro	writeb, rb
+		strb	\rb, [r3, #0]
 		.endm
 #else
 #error no serial architecture defined
@@ -343,7 +363,11 @@ __setup_mmu:	sub	r3, r4, #16384		@ Page directory size
 		orr	r1, r1, #3 << 10
 		add	r2, r3, #16384
 1:		cmp	r1, r8			@ if virt > start of RAM
+#ifdef CONFIG_XSCALE_CACHE_ERRATA
+		orrhs	r1, r1, #0x08		@ set cacheable, not bufferable
+#else
 		orrhs	r1, r1, #0x0c		@ set cacheable, bufferable
+#endif
 		cmp	r1, r9			@ if virt > end of RAM
 		bichs	r1, r1, #0x0c		@ clear cacheable, bufferable
 		str	r1, [r0], #4		@ 1:1 mapping
@@ -376,7 +400,7 @@ __armv4_cache_on:
 		mov	r0, #-1
 		mcr	p15, 0, r0, c3, c0, 0	@ load domain access register
 		mrc	p15, 0, r0, c1, c0, 0
-		orr	r0, r0, #0x1000		@ I-cache enable
+		orr	r0, r0, #0x5000		@ I-cache enable, RR cache replacement
 #ifndef DEBUG
 		orr	r0, r0, #0x003d		@ Write buffer, mmu
 #endif
@@ -395,6 +419,20 @@ __arm6_cache_on:
 		mov	r0, #0x3d
 		mcr	p15, 0, r0, c1, c0, 0	@ load control register
 		mov	pc, r12
+
+__arm7_cache_on:
+		mov	r12, lr
+		bl	__setup_mmu
+		mov	r0, #0
+		mcr	p15, 0, r0, c7, c0, 0	@ invalidate whole cache v3
+		mcr	p15, 0, r0, c5, c0, 0	@ invalidate whole TLB v3
+		mcr	p15, 0, r3, c2, c0, 0	@ load page table pointer
+		mov	r0, #-1
+		mcr	p15, 0, r0, c3, c0, 0	@ load domain access control
+		mov	r0, #0x7d
+		mcr	p15, 0, r0, c1, c0, 0	@ load control register
+		mov	pc, r12
+
 
 /*
  * All code following this line is relocatable.  It is relocated by
@@ -428,6 +466,11 @@ call_kernel:	bl	cache_clean_flush
 		mov	r0, #0
 		mov	r1, r7			@ restore architecture number
 		mov	pc, r4			@ call kernel
+
+		.type	proc_xscale_type,#object
+proc_xscale_type:
+		.word	0x69050000
+		.size	proc_xscale_type, . - proc_xscale_type
 
 /*
  * Here follow the relocatable cache support functions for the
@@ -480,9 +523,9 @@ proc_types:
 
 		.word	0x41007000		@ ARM7/710
 		.word	0xfff8fe00
+		b	__arm7_cache_on
 		b	__arm7_cache_off
-		b	__arm7_cache_off
-		mov	pc, lr
+		b	__armv3_cache_flush
 
 		.word	0x41807200		@ ARM720T (writethrough)
 		.word	0xffffff00
@@ -490,14 +533,14 @@ proc_types:
 		b	__armv4_cache_off
 		mov	pc, lr
 
-		.word	0x41129200		@ ARM920T
-		.word	0xff00fff0
+		.word	0x41009200		@ ARM920T, ARM922T, ARM926TEJ-S
+		.word	0xff00ff90
 		b	__armv4_cache_on
 		b	__armv4_cache_off
 		b	__armv4_cache_flush
 
-		.word	0x41029220		@ ARM922T
-		.word	0xff00fff0
+		.word	0x4100a200		@ ARM1020T/E, ARM1022E, ARM1026TEJ-S
+		.word	0xff00ff90
 		b	__armv4_cache_on
 		b	__armv4_cache_off
 		b	__armv4_cache_flush

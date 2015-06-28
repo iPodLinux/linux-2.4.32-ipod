@@ -90,11 +90,22 @@ pci_free_consistent(struct pci_dev *hwdev, size_t size, void *vaddr,
 static inline dma_addr_t
 pci_map_single(struct pci_dev *hwdev, void *ptr, size_t size, int direction)
 {
+#ifdef CONFIG_ARCH_IXP425
+	extern dma_addr_t ixp425_map_single(void *, size_t, int);
+	return ixp425_map_single(ptr, size, direction);
+#endif
 	if (dev_is_sa1111(hwdev))
 		return sa1111_map_single(ptr, size, direction);
 
 	consistent_sync(ptr, size, direction);
 	return virt_to_bus(ptr);
+}
+
+static inline dma_addr_t
+pci_map_page(struct pci_dev *hwdev, struct page *page, unsigned long offset, size_t size, int dir)
+{
+	void *vaddr = (void*) page_address(page);
+	return pci_map_single(hwdev, vaddr + offset, size, dir);
 }
 
 /* Unmap a single streaming mode DMA translation.  The dma_addr and size
@@ -107,10 +118,21 @@ pci_map_single(struct pci_dev *hwdev, void *ptr, size_t size, int direction)
 static inline void
 pci_unmap_single(struct pci_dev *hwdev, dma_addr_t dma_addr, size_t size, int direction)
 {
+#ifdef CONFIG_ARCH_IXP425
+	extern void ixp425_unmap_single(dma_addr_t, size_t, int);
+	ixp425_unmap_single(dma_addr, size, direction);
+#endif
 	if (dev_is_sa1111(hwdev))
 		sa1111_unmap_single(dma_addr, size, direction);
 
 	/* nothing to do */
+}
+
+static inline void
+pci_unmap_page(struct pci_dev *hwdev, dma_addr_t dma_addr, 
+			size_t size, int direction)
+{
+	pci_unmap_single(hwdev, dma_addr, size, direction);
 }
 
 /* Whether pci_unmap_{single,page} is a nop depends upon the
@@ -201,6 +223,11 @@ pci_unmap_sg(struct pci_dev *hwdev, struct scatterlist *sg, int nents, int direc
 static inline void
 pci_dma_sync_single(struct pci_dev *hwdev, dma_addr_t dma_handle, size_t size, int direction)
 {
+#ifdef CONFIG_ARCH_IXP425
+	extern void ixp425_sync_single(dma_addr_t, size_t, int);
+	ixp425_sync_single(dma_handle, size, direction);
+	return;
+#endif
 	if (dev_is_sa1111(hwdev)) {
 	  	sa1111_dma_sync_single(dma_handle, size, direction);
 		return;

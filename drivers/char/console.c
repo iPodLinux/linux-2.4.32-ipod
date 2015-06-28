@@ -67,12 +67,18 @@
  * Resurrected character buffers in videoram plus lots of other trickery
  * by Martin Mares <mj@atrey.karlin.mff.cuni.cz>, July 1998
  *
+ * Split out con_write_ctrl_* functions from do_con_write & changed
+ * vc_state to function pointer
+ * by Russell King <rmk@arm.linux.org.uk>, July 1998
+ *
  * Removed old-style timers, introduced console_timer, made timer
  * deletion SMP-safe.  17Jun00, Andrew Morton <andrewm@uow.edu.au>
  *
  * Removed console_lock, enabled interrupts across all console operations
  * 13 March 2001, Andrew Morton
  */
+
+#define CONSOLE_WIP
 
 #include <linux/module.h>
 #include <linux/sched.h>
@@ -853,7 +859,7 @@ unsigned char color_table[] = { 0, 4, 2, 6, 1, 5, 3, 7,
 /* the default colour table, for VGA+ colour systems */
 int default_red[] = {0x00,0xaa,0x00,0xaa,0x00,0xaa,0x00,0xaa,
     0x55,0xff,0x55,0xff,0x55,0xff,0x55,0xff};
-int default_grn[] = {0x00,0x00,0xaa,0x55,0x00,0x00,0xaa,0xaa,
+int default_grn[] = {0x00,0x00,0xaa,0xaa,0x00,0x00,0xaa,0xaa,
     0x55,0x55,0xff,0xff,0x55,0x55,0xff,0xff};
 int default_blu[] = {0x00,0x00,0x00,0x00,0xaa,0xaa,0xaa,0xaa,
     0x55,0x55,0x55,0x55,0xff,0xff,0xff,0xff};
@@ -1399,6 +1405,19 @@ static void restore_cur(int currcons)
 	need_wrap = 0;
 }
 
+static int con_write_ctrl_ESnormal(int, struct tty_struct *, unsigned int);
+static int con_write_ctrl_ESesc(int, struct tty_struct *, unsigned int);
+static int con_write_ctrl_ESnonstd(int, struct tty_struct *, unsigned int);
+static int con_write_ctrl_ESpalette(int, struct tty_struct *, unsigned int);
+static int con_write_ctrl_ESsquare(int, struct tty_struct *, unsigned int);
+static int con_write_ctrl_ESgetpars(int, struct tty_struct *, unsigned int);
+static int con_write_ctrl_ESgotpars(int, struct tty_struct *, unsigned int);
+static int con_write_ctrl_ESpercent(int, struct tty_struct *, unsigned int);
+static int con_write_ctrl_ESfunckey(int, struct tty_struct *, unsigned int);
+static int con_write_ctrl_EShash(int, struct tty_struct *, unsigned int);
+static int con_write_ctrl_ESsetG0(int, struct tty_struct *, unsigned int);
+static int con_write_ctrl_ESsetG1(int, struct tty_struct *, unsigned int);
+
 enum { ESnormal, ESesc, ESsquare, ESgetpars, ESgotpars, ESfunckey,
 	EShash, ESsetG0, ESsetG1, ESpercent, ESignore, ESnonstd,
 	ESpalette };
@@ -1408,7 +1427,7 @@ static void reset_terminal(int currcons, int do_clear)
 {
 	top		= 0;
 	bottom		= video_num_lines;
-	vc_state	= ESnormal;
+	vc_state	= con_write_ctrl_ESnormal;
 	ques		= 0;
 	translate	= set_translate(LAT1_MAP,currcons);
 	G0_charset	= LAT1_MAP;
@@ -1506,87 +1525,146 @@ static void do_con_trol(struct tty_struct *tty, unsigned int currcons, int c)
 		disp_ctrl = 0;
 		return;
 	case 24: case 26:
-		vc_state = ESnormal;
+		vc_state = con_write_ctrl_ESnormal;
 		return;
 	case 27:
-		vc_state = ESesc;
+		vc_state = con_write_ctrl_ESesc;
 		return;
 	case 127:
 		del(currcons);
 		return;
 	case 128+27:
-		vc_state = ESsquare;
+		vc_state = con_write_ctrl_ESsquare;
 		return;
 	}
-	switch(vc_state) {
-	case ESesc:
-		vc_state = ESnormal;
+	vc_state(currcons, tty, c);
+}
+
+static int con_write_utf(int currcons, int c)
+{
+	unsigned int chr;
+
+	/* Combine UTF-8 into Unicode */
+	/* Incomplete characters silently ignored */
+	if (c < 0x80) {
+		utf_count = 0;
+		return c;
+	}
+
+	if (utf_count > 0 && (c & 0xc0) == 0x80) {
+		chr = (utf_char << 6) | (c & 0x3f);
+		utf_count--;
+		if (utf_count == 0)
+			return chr;
+	} else {
+		unsigned int count;
+		if ((c & 0xe0) == 0xc0) {
+			count = 1;
+			chr = (c & 0x1f);
+		} else if ((c & 0xf0) == 0xe0) {
+			count = 2;
+			chr = (c & 0x0f);
+		} else if ((c & 0xf8) == 0xf0) {
+			count = 3;
+			chr = (c & 0x07);
+		} else if ((c & 0xfc) == 0xf8) {
+			count = 4;
+			chr = (c & 0x03);
+		} else if ((c & 0xfe) == 0xfc) {
+			count = 5;
+			chr = (c & 0x01);
+		} else {
+			count = 0;
+			chr = 0;
+		}
+		utf_count = count;
+	}
+
+	utf_char = chr;
+	return -1;
+}
+
+static int con_write_ctrl_ESnormal(int currcons, struct tty_struct *tty, unsigned int c)
+{
+	return 0;
+}
+
+static int con_write_ctrl_ESesc(int currcons, struct tty_struct *tty, unsigned int c)
+{
+	vc_state = con_write_ctrl_ESnormal;
 		switch (c) {
 		case '[':
-			vc_state = ESsquare;
-			return;
+		vc_state = con_write_ctrl_ESsquare;
+		break;
 		case ']':
-			vc_state = ESnonstd;
-			return;
+		vc_state = con_write_ctrl_ESnonstd;
+		break;
 		case '%':
-			vc_state = ESpercent;
-			return;
+		vc_state = con_write_ctrl_ESpercent;
+		break;
 		case 'E':
 			cr(currcons);
 			lf(currcons);
-			return;
+		break;
 		case 'M':
 			ri(currcons);
-			return;
+		break;
 		case 'D':
 			lf(currcons);
-			return;
+		break;
 		case 'H':
 			tab_stop[x >> 5] |= (1 << (x & 31));
-			return;
+		break;
 		case 'Z':
 			respond_ID(tty);
-			return;
+		break;
 		case '7':
 			save_cur(currcons);
-			return;
+		break;
 		case '8':
 			restore_cur(currcons);
-			return;
+		return 1;
 		case '(':
-			vc_state = ESsetG0;
-			return;
+		vc_state = con_write_ctrl_ESsetG0;
+		break;
 		case ')':
-			vc_state = ESsetG1;
-			return;
+		vc_state = con_write_ctrl_ESsetG1;
+		break;
 		case '#':
-			vc_state = EShash;
-			return;
+		vc_state = con_write_ctrl_EShash;
+		break;
 		case 'c':
 			reset_terminal(currcons,1);
-			return;
+		return 1;
 		case '>':  /* Numeric keypad */
 			clr_kbd(kbdapplic);
-			return;
+		break;
 		case '=':  /* Appl. keypad */
 			set_kbd(kbdapplic);
-			return;
+	 	break;
 		}
-		return;
-	case ESnonstd:
-		if (c=='P') {   /* palette escape sequence */
+	return 0;
+}
+
+static int con_write_ctrl_ESnonstd(int currcons, struct tty_struct *tty, unsigned int c)
+{
+	switch (c) {
+	case 'P': /* palette escape sequence */
 			for (npar=0; npar<NPAR; npar++)
 				par[npar] = 0 ;
 			npar = 0 ;
-			vc_state = ESpalette;
-			return;
-		} else if (c=='R') {   /* reset palette */
+		vc_state = con_write_ctrl_ESpalette;
+		break;
+	case 'R': /* reset palette */
 			reset_palette(currcons);
-			vc_state = ESnormal;
-		} else
-			vc_state = ESnormal;
-		return;
-	case ESpalette:
+	default:
+		vc_state = con_write_ctrl_ESnormal;
+	}
+	return 0;
+}
+
+static int con_write_ctrl_ESpalette(int currcons, struct tty_struct *tty, unsigned int c)
+{
 		if ( (c>='0'&&c<='9') || (c>='A'&&c<='F') || (c>='a'&&c<='f') ) {
 			par[npar++] = (c>'9' ? (c&0xDF)-'A'+10 : c-'0') ;
 			if (npar==7) {
@@ -1598,48 +1676,59 @@ static void do_con_trol(struct tty_struct *tty, unsigned int currcons, int c)
 				palette[i] = 16*par[j++];
 				palette[i] += par[j];
 				set_palette(currcons);
-				vc_state = ESnormal;
+			vc_state = con_write_ctrl_ESnormal;
 			}
 		} else
-			vc_state = ESnormal;
-		return;
-	case ESsquare:
+		vc_state = con_write_ctrl_ESnormal;
+	return 0;
+}
+
+static int con_write_ctrl_ESsquare(int currcons, struct tty_struct *tty, unsigned int c)
+{
 		for(npar = 0 ; npar < NPAR ; npar++)
 			par[npar] = 0;
 		npar = 0;
-		vc_state = ESgetpars;
+	vc_state = con_write_ctrl_ESgetpars;
 		if (c == '[') { /* Function key */
-			vc_state=ESfunckey;
-			return;
+		vc_state = con_write_ctrl_ESfunckey;
+		return 0;
 		}
 		ques = (c=='?');
 		if (ques)
-			return;
-	case ESgetpars:
+		return 0;
+	return con_write_ctrl_ESgetpars(currcons, tty, c);
+}
+
+static int con_write_ctrl_ESgetpars(int currcons, struct tty_struct *tty, unsigned int c)
+{
 		if (c==';' && npar<NPAR-1) {
 			npar++;
-			return;
+		return 0;
 		} else if (c>='0' && c<='9') {
 			par[npar] *= 10;
 			par[npar] += c-'0';
-			return;
-		} else vc_state=ESgotpars;
-	case ESgotpars:
-		vc_state = ESnormal;
+		return 0;
+	} else vc_state = con_write_ctrl_ESgotpars;
+	return con_write_ctrl_ESgotpars(currcons, tty, c);
+}
+
+static int con_write_ctrl_ESgotpars(int currcons, struct tty_struct *tty, unsigned int c)
+{
+	vc_state = con_write_ctrl_ESnormal;
 		switch(c) {
 		case 'h':
 			set_mode(currcons,1);
-			return;
+		return 0;
 		case 'l':
 			set_mode(currcons,0);
-			return;
+		return 0;
 		case 'c':
 			if (ques) {
 				if (par[0])
 					cursor_type = par[0] | (par[1]<<8) | (par[2]<<16);
 				else
 					cursor_type = CUR_DEFAULT;
-				return;
+			return 0;
 			}
 			break;
 		case 'm':
@@ -1649,7 +1738,7 @@ static void do_con_trol(struct tty_struct *tty, unsigned int currcons, int c)
 					complement_mask = par[0]<<8 | par[1];
 				else
 					complement_mask = s_complement_mask;
-				return;
+			return 0;
 			}
 			break;
 		case 'n':
@@ -1659,69 +1748,69 @@ static void do_con_trol(struct tty_struct *tty, unsigned int currcons, int c)
 				else if (par[0] == 6)
 					cursor_report(currcons,tty);
 			}
-			return;
+		return 0;
 		}
 		if (ques) {
 			ques = 0;
-			return;
+		return 0;
 		}
 		switch(c) {
 		case 'G': case '`':
 			if (par[0]) par[0]--;
 			gotoxy(currcons,par[0],y);
-			return;
+		break;
 		case 'A':
 			if (!par[0]) par[0]++;
 			gotoxy(currcons,x,y-par[0]);
-			return;
+		break;
 		case 'B': case 'e':
 			if (!par[0]) par[0]++;
 			gotoxy(currcons,x,y+par[0]);
-			return;
+		break;
 		case 'C': case 'a':
 			if (!par[0]) par[0]++;
 			gotoxy(currcons,x+par[0],y);
-			return;
+		break;
 		case 'D':
 			if (!par[0]) par[0]++;
 			gotoxy(currcons,x-par[0],y);
-			return;
+		break;
 		case 'E':
 			if (!par[0]) par[0]++;
 			gotoxy(currcons,0,y+par[0]);
-			return;
+		break;
 		case 'F':
 			if (!par[0]) par[0]++;
 			gotoxy(currcons,0,y-par[0]);
-			return;
+		break;
 		case 'd':
 			if (par[0]) par[0]--;
 			gotoxay(currcons,x,par[0]);
-			return;
+		break;
 		case 'H': case 'f':
 			if (par[0]) par[0]--;
 			if (par[1]) par[1]--;
 			gotoxay(currcons,par[1],par[0]);
-			return;
+		break;
 		case 'J':
 			csi_J(currcons,par[0]);
-			return;
+		break;
 		case 'K':
 			csi_K(currcons,par[0]);
-			return;
+		break;
 		case 'L':
 			csi_L(currcons,par[0]);
-			return;
+		break;
 		case 'M':
 			csi_M(currcons,par[0]);
-			return;
+		break;
 		case 'P':
 			csi_P(currcons,par[0]);
-			return;
+		break;
 		case 'c':
 			if (!par[0])
 				respond_ID(tty);
-			return;
+		break;
 		case 'g':
 			if (!par[0])
 				tab_stop[x >> 5] &= ~(1 << (x & 31));
@@ -1732,16 +1821,16 @@ static void do_con_trol(struct tty_struct *tty, unsigned int currcons, int c)
 					tab_stop[3] =
 					tab_stop[4] = 0;
 			}
-			return;
+		break;
 		case 'm':
 			csi_m(currcons);
-			return;
+		return 1;
 		case 'q': /* DECLL - but only 3 leds */
 			/* map 0,1,2,3 to 0,1,2,4 */
 			if (par[0] < 4)
 				setledstate(kbd_table + currcons,
 					    (par[0] < 3) ? par[0] : 4);
-			return;
+		break;
 		case 'r':
 			if (!par[0])
 				par[0]++;
@@ -1754,41 +1843,50 @@ static void do_con_trol(struct tty_struct *tty, unsigned int currcons, int c)
 				bottom=par[1];
 				gotoxay(currcons,0,0);
 			}
-			return;
+		break;
 		case 's':
 			save_cur(currcons);
-			return;
+		break;
 		case 'u':
 			restore_cur(currcons);
-			return;
+		return 1;
 		case 'X':
 			csi_X(currcons, par[0]);
-			return;
+		break;
 		case '@':
 			csi_at(currcons,par[0]);
-			return;
+		break;
 		case ']': /* setterm functions */
 			setterm_command(currcons);
-			return;
+		break;
 		}
-		return;
-	case ESpercent:
-		vc_state = ESnormal;
+	return 0;
+}
+
+static int con_write_ctrl_ESpercent(int currcons, struct tty_struct *tty, unsigned int c)
+{
+	vc_state = con_write_ctrl_ESnormal;
 		switch (c) {
 		case '@':  /* defined in ISO 2022 */
 			utf = 0;
-			return;
+		break;
 		case 'G':  /* prelim official escape code */
 		case '8':  /* retained for compatibility */
 			utf = 1;
-			return;
+		break;
 		}
-		return;
-	case ESfunckey:
-		vc_state = ESnormal;
-		return;
-	case EShash:
-		vc_state = ESnormal;
+	return 0;
+}
+
+static int con_write_ctrl_ESfunckey(int currcons, struct tty_struct *tty, unsigned int c)
+{
+	vc_state = con_write_ctrl_ESnormal;
+	return 0;
+}
+
+static int con_write_ctrl_EShash(int currcons, struct tty_struct *tty, unsigned int c)
+{
+	vc_state = con_write_ctrl_ESnormal;
 		if (c == '8') {
 			/* DEC screen alignment test. kludge :-) */
 			video_erase_char =
@@ -1798,36 +1896,55 @@ static void do_con_trol(struct tty_struct *tty, unsigned int currcons, int c)
 				(video_erase_char & 0xff00) | ' ';
 			do_update_region(currcons, origin, screenbuf_size/2);
 		}
-		return;
-	case ESsetG0:
-		if (c == '0')
+	return 0;
+}
+
+static int con_write_ctrl_ESsetG0(int currcons, struct tty_struct *tty, unsigned int c)
+{
+	switch (c) {
+	case '0':
 			G0_charset = GRAF_MAP;
-		else if (c == 'B')
+		break;
+	case 'B':
 			G0_charset = LAT1_MAP;
-		else if (c == 'U')
+		break;
+	case 'U':
 			G0_charset = IBMPC_MAP;
-		else if (c == 'K')
+		break;
+	case 'K':
 			G0_charset = USER_MAP;
-		if (charset == 0)
-			translate = set_translate(G0_charset,currcons);
-		vc_state = ESnormal;
-		return;
-	case ESsetG1:
-		if (c == '0')
-			G1_charset = GRAF_MAP;
-		else if (c == 'B')
-			G1_charset = LAT1_MAP;
-		else if (c == 'U')
-			G1_charset = IBMPC_MAP;
-		else if (c == 'K')
-			G1_charset = USER_MAP;
-		if (charset == 1)
-			translate = set_translate(G1_charset,currcons);
-		vc_state = ESnormal;
-		return;
-	default:
-		vc_state = ESnormal;
+		break;
 	}
+	if (charset == 0) {
+			translate = set_translate(G0_charset,currcons);
+		return 1;
+	}
+	vc_state = con_write_ctrl_ESnormal;
+	return 0;
+}
+
+static int con_write_ctrl_ESsetG1(int currcons, struct tty_struct *tty, unsigned int c)
+{
+	switch (c) {
+	case '0':
+			G1_charset = GRAF_MAP;
+		break;
+	case 'B':
+			G1_charset = LAT1_MAP;
+		break;
+	case 'U':
+			G1_charset = IBMPC_MAP;
+		break;
+	case 'K':
+			G1_charset = USER_MAP;
+		break;
+	}
+	if (charset == 1) {
+			translate = set_translate(G1_charset,currcons);
+		return 1;
+	}
+	vc_state = con_write_ctrl_ESnormal;
+	return 0;
 }
 
 /* This is a temporary buffer used to prepare a tty console write
@@ -1861,7 +1978,7 @@ static int do_con_write(struct tty_struct * tty, int from_user,
 	unsigned long draw_from = 0, draw_to = 0;
 	struct vt_struct *vt = (struct vt_struct *)tty->driver_data;
 	u16 himask, charmask;
-	const unsigned char *orig_buf = NULL;
+	const unsigned char *orig_buf;
 	int orig_count;
 
 	if (in_interrupt())
@@ -1919,42 +2036,12 @@ again:
 		count--;
 
 		if (utf) {
-		    /* Combine UTF-8 into Unicode */
-		    /* Incomplete characters silently ignored */
-		    if(c > 0x7f) {
-			if (utf_count > 0 && (c & 0xc0) == 0x80) {
-				utf_char = (utf_char << 6) | (c & 0x3f);
-				utf_count--;
-				if (utf_count == 0)
-				    tc = c = utf_char;
-				else continue;
-			} else {
-				if ((c & 0xe0) == 0xc0) {
-				    utf_count = 1;
-				    utf_char = (c & 0x1f);
-				} else if ((c & 0xf0) == 0xe0) {
-				    utf_count = 2;
-				    utf_char = (c & 0x0f);
-				} else if ((c & 0xf8) == 0xf0) {
-				    utf_count = 3;
-				    utf_char = (c & 0x07);
-				} else if ((c & 0xfc) == 0xf8) {
-				    utf_count = 4;
-				    utf_char = (c & 0x03);
-				} else if ((c & 0xfe) == 0xfc) {
-				    utf_count = 5;
-				    utf_char = (c & 0x01);
-				} else
-				    utf_count = 0;
+			tc = con_write_utf(currcons, c);
+			if (tc < 0)
 				continue;
-			      }
-		    } else {
-		      tc = c;
-		      utf_count = 0;
-		    }
-		} else {	/* no utf */
+			c = tc;
+		} else	/* no utf */
 		  tc = translate[toggle_meta ? (c|0x80) : c];
-		}
 
                 /* If the original code was a control character we
                  * only allow a glyph to be displayed if the code is
@@ -1972,7 +2059,7 @@ again:
                         && (c != 127 || disp_ctrl)
 			&& (c != 128+27);
 
-		if (vc_state == ESnormal && ok) {
+		if (vc_state == con_write_ctrl_ESnormal && ok) {
 			/* Now try to find out how to display it */
 			tc = conv_uni_to_pc(vc_cons[currcons].d, tc);
 			if ( tc == -4 ) {
@@ -2118,7 +2205,7 @@ void vt_console_print(struct console *co, const char * b, unsigned count)
 	if (kmsg_redirect && vc_cons_allocated(kmsg_redirect - 1))
 		currcons = kmsg_redirect - 1;
 
-	/* read `x' only after setting currecons properly (otherwise
+	/* read `x' only after setting currcons properly (otherwise
 	   the `x' macro will read the x of the foreground console). */
 	myx = x;
 

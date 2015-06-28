@@ -8,6 +8,10 @@
 #include <linux/config.h>
 #include <asm/machvec.h>
 
+#ifdef CONFIG_SH_KEYWEST
+#include <asm/keyboard_keywest.h>
+#endif
+
 #ifdef CONFIG_SH_EC3104
 #include <asm/keyboard-ec3104.h>
 #elif defined(CONFIG_SH_HS7729PCI)

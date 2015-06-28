@@ -6,7 +6,13 @@
  *
  * COPYRIGHT(C) 2001 by CYPRESS SEMICONDUCTOR INC.
  *
- * ! This driver have end of live! Please use hcd/sl811.c instand !
+ * ! This driver have end of live! Please use hcd/sl811.c instead !
+ *
+ * 06.05.2005 DZ,LC
+ *  - Support COLDFIRE architecture now.
+ *  - restore previus "Read back SOF counter HIGH" in hc_add_trans(),
+ *    was correct in the previous version (reading it all 8 bit is significant).
+ *    Significantly highly performance result.
  *
  * 05.06.2003 HNE
  * Support x86 architecture now.
@@ -490,9 +496,8 @@ static inline int hc_add_trans (hci_t * hci, int len, void *data, int toggle,
 
 	jj = SL811Read (hci, SL11H_SOFTMRREG);
 
-	/* Read back SOF counter HIGH (bit0-bit5 only) 26.11.2002 (hne) */
-	// kk = (jj & 0xFF) * 64 - ii;
-	kk = (jj & (64-1)) * 64 - ii;
+	/* Read back SOF counter HIGH */
+	kk = (jj & 0xFF) * 64 - ii;
 
 	if (kk < 0) {
 		DBGVERBOSE
@@ -807,6 +812,16 @@ static void hc_interrupt (int irq, void *__hci, struct pt_regs *r)
 	outb (SL11H_INTSTATREG, 0x222);	// Interrupt-Status register, controller2
 	sta2 = (__u8) inb (0x222+1);
 #endif
+
+#if defined(CONFIG_SIGNAL_MCP751)
+	/* Acknowledge interrupt */
+	{
+	volatile unsigned long *icrp;
+	icrp = (volatile unsigned long *) (MCF_MBAR + MCFSIM_ICR4);
+	*icrp = (*icrp & 0x7777777) | 0x08000000; // INT5
+	}
+#endif
+
 
     do {
 	/* Get value from interrupt status register */
@@ -1437,8 +1452,9 @@ static int __init hci_hcd_init (void)
 
 #ifdef __arm__
 	ret = hc_found_hci (irq, base_addr, data_reg_addr);
+#elif CONFIG_COLDFIRE
+	ret = hc_found_hci (irq, base_addr, data_reg_addr);
 #else // __arm__
-
 	// registering "another instance"
 	for (io_offset = 0; io_offset < MAX_CONTROLERS * 2; io_offset += 2) {
 
@@ -1447,7 +1463,7 @@ static int __init hci_hcd_init (void)
 			return (ret);
 
 	} /* endfor */
-#endif // __arm__
+#endif
 
 	return ret;
 }

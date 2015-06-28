@@ -230,7 +230,7 @@ static void init_hwif_data (unsigned int index)
 	ide_init_hwif_ports(&hw, ide_default_io_base(index), 0, &hwif->irq);
 	memcpy(&hwif->hw, &hw, sizeof(hw));
 	memcpy(hwif->io_ports, hw.io_ports, sizeof(hw.io_ports));
-	hwif->noprobe	= !hwif->io_ports[IDE_DATA_OFFSET];
+	hwif->noprobe   = !hwif->io_ports[IDE_DATA_OFFSET];
 #ifdef CONFIG_BLK_DEV_HD
 	if (hwif->io_ports[IDE_DATA_OFFSET] == HD_DATA)
 		hwif->noprobe = 1; /* may be overridden by ide_setup() */
@@ -1102,7 +1102,7 @@ EXPORT_SYMBOL(ide_unregister);
  * may set up the hw structure yourself OR use this routine to
  * do it for you.
  */
-void ide_setup_ports (	hw_regs_t *hw,
+void ide_setup_ports ( hw_regs_t *hw,
 			ide_ioreg_t base, int *offsets,
 			ide_ioreg_t ctrl, ide_ioreg_t intr,
 			ide_ack_intr_t *ack_intr,
@@ -1177,6 +1177,7 @@ found:
 	memcpy(&hwif->hw, hw, sizeof(*hw));
 	memcpy(hwif->io_ports, hwif->hw.io_ports, sizeof(hwif->hw.io_ports));
 	hwif->irq = hw->irq;
+
 	hwif->noprobe = 0;
 	hwif->chipset = hw->chipset;
 
@@ -1203,8 +1204,10 @@ EXPORT_SYMBOL(ide_register_hw);
 int ide_register (int arg1, int arg2, int irq)
 {
 	hw_regs_t hw;
+
 	ide_init_hwif_ports(&hw, (ide_ioreg_t) arg1, (ide_ioreg_t) arg2, NULL);
 	hw.irq = irq;
+
 	return ide_register_hw(&hw, NULL);
 }
 
@@ -2425,7 +2428,7 @@ int __init ide_setup (char *s)
 				hwif->hw.irq = vals[2];
 				ide_init_hwif_ports(&hwif->hw, (ide_ioreg_t) vals[0], (ide_ioreg_t) vals[1], &hwif->irq);
 				memcpy(hwif->io_ports, hwif->hw.io_ports, sizeof(hwif->io_ports));
-				hwif->irq      = vals[2];
+				hwif->irq = vals[2];
 				hwif->noprobe  = 0;
 				hwif->chipset  = ide_generic;
 				goto done;
@@ -2530,6 +2533,12 @@ static void __init probe_for_hwifs (void)
 		rapide_init();
 	}
 #endif /* CONFIG_BLK_DEV_IDE_RAPIDE */
+#ifdef CONFIG_BLK_DEV_IDE_ESS710
+	{
+		extern void ess710ide_init(void);
+		ess710ide_init();
+	}
+#endif /* CONFIG_BLK_DEV_UIDE_ESS710 */
 #ifdef CONFIG_BLK_DEV_GAYLE
 	{
 		extern void gayle_init(void);
@@ -2548,6 +2557,12 @@ static void __init probe_for_hwifs (void)
 		macide_init();
 	}
 #endif /* CONFIG_BLK_DEV_MAC_IDE */
+#ifdef CONFIG_BLK_DEV_UCLINUX_IDE
+	{
+		extern void uclinux_ide_init(void);
+		uclinux_ide_init();
+	}
+#endif /* CONFIG_BLK_DEV_UCLINUX_IDE */
 #ifdef CONFIG_BLK_DEV_CPCI405_IDE
 	{
 		extern void cpci405ide_init(void);
@@ -2566,6 +2581,18 @@ static void __init probe_for_hwifs (void)
 		buddha_init();
 	}
 #endif /* CONFIG_BLK_DEV_BUDDHA */
+#ifdef CONFIG_BLK_DEV_OCIDEC
+	{
+		extern void ocidec_init(void);
+		ocidec_init();
+	}
+#endif /* CONFIG_BLK_DEV_OCIDEC */
+#if defined(__H8300H__) || defined(__H8300S__)
+        {
+		extern void h8300_ide_init(void);
+		h8300_ide_init();
+	}
+#endif
 }
 
 void __init ide_init_builtin_subdrivers (void)

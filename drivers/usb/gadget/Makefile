@@ -9,10 +9,12 @@ O_TARGET	:= built-in.o
 list-multi			:= g_zero.o g_ether.o g_file_storage.o
 
 obj-$(CONFIG_USB_NET2280)	+= net2280.o
+obj-$(CONFIG_USB_PXA2XX)	+= pxa2xx_udc.o
 obj-$(CONFIG_USB_GOKU)		+= goku_udc.o
 
 # only one of these may be statically linked ...
 controller-$(CONFIG_USB_NET2280)	+= net2280.o
+controller-$(CONFIG_USB_PXA2XX)		+= pxa2xx_udc.o
 controller-$(CONFIG_USB_GOKU)		+= goku_udc.o
 
 # ... and only one of these, too; kbuild/kconfig don't help though.

@@ -93,37 +93,15 @@ struct map_info edb7312nor_map = {
 };
 
 #ifdef CONFIG_MTD_PARTITIONS
-
-/*
- * MTD partitioning stuff 
- */
-static struct mtd_partition static_partitions[3] =
-{
-    {
-	name: "ARMboot",
-	  size: 0x40000,
-	  offset: 0
-    },
-    {
-	name: "Kernel",
-	  size: 0x200000,
-	  offset: 0x40000
-    },
-    {
-	name: "RootFS",
-	  size: 0xDC0000,
-	  offset: 0x240000
-    },
-};
-
-#define NB_OF(x) (sizeof (x) / sizeof (x[0]))
-
 #ifdef CONFIG_MTD_CMDLINE_PARTS
 int parse_cmdline_partitions(struct mtd_info *master, 
 			     struct mtd_partition **pparts,
 			     const char *mtd_id);
 #endif
-
+#ifdef CONFIG_MTD_REDBOOT_PARTS
+int parse_redboot_partitions(struct mtd_info *master,
+			     struct mtd_partition **pparts);
+#endif
 #endif
 
 static int                   mtd_parts_nb = 0;
@@ -154,20 +132,22 @@ int __init init_edb7312nor(void)
 		mymtd->module = THIS_MODULE;
 
 #ifdef CONFIG_MTD_PARTITIONS
+#ifdef CONFIG_MTD_REDBOOT_PARTS
+		mtd_parts_nb = parse_redboot_partitions(mymtd, &mtd_parts);
+		if (mtd_parts_nb > 0)
+			part_type = "redboot";
+#endif
 #ifdef CONFIG_MTD_CMDLINE_PARTS
+		if (mtd_parts_nb <= 0)
+		{
 		mtd_parts_nb = parse_cmdline_partitions(mymtd, &mtd_parts, MTDID);
 		if (mtd_parts_nb > 0)
 		  part_type = "command line";
-#endif
-		if (mtd_parts_nb == 0)
-		{
-			mtd_parts = static_partitions;
-			mtd_parts_nb = NB_OF(static_partitions);
-			part_type = "static";
 		}
 #endif
+#endif
 		add_mtd_device(mymtd);
-		if (mtd_parts_nb == 0)
+		if (mtd_parts_nb <= 0)
 		  printk(KERN_NOTICE MSG_PREFIX "no partition info available\n");
 		else
 		{

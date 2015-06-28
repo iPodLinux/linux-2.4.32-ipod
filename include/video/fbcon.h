@@ -296,6 +296,7 @@ static __inline__ void *fb_memclear_small(void *s, size_t count)
          : "=a" (s), "=d" (count)
          : "d" (0), "0" ((char *)s+count), "1" (count)
    );
+#ifndef CONFIG_COLDFIRE
    __asm__ __volatile__(
          "subql  #1,%1 ; jcs 3f\n\t"
 	 "movel %2,%%d4; movel %2,%%d5; movel %2,%%d6\n\t"
@@ -306,7 +307,22 @@ static __inline__ void *fb_memclear_small(void *s, size_t count)
          : "d" (0), "0" (s), "1" (count)
 	 : "d4", "d5", "d6"
   );
-
+#else
+   __asm__ __volatile__(
+         "subql  #1,%1 ; jcs 3f\n\t"
+	 "movel %2,%%d4; movel %2,%%d5; movel %2,%%d6\n\t"
+      "2: movel %2,%0@-\n\t"
+	 "movel %%d4,%0@-\n\t"
+	 "movel %%d5,%0@-\n\t"
+	 "movel %%d6,%0@-\n\t"
+         "subql #1,%1\n\t"
+	 "bra 2b\n\t"
+      "3:"
+         : "=a" (s), "=d" (count)
+         : "d" (0), "0" (s), "1" (count)
+	 : "d4", "d5", "d6"
+  );
+#endif
    return(0);
 }
 
@@ -328,6 +344,7 @@ static __inline__ void *fb_memclear(void *s, size_t count)
      );
    } else {
       long tmp;
+#ifndef CONFIG_COLDFIRE
       __asm__ __volatile__(
             "movel %1,%2\n\t"
             "lsrl   #1,%2 ; jcc 1f ; clrb %0@+ ; subqw #1,%1\n\t"
@@ -347,6 +364,28 @@ static __inline__ void *fb_memclear(void *s, size_t count)
             : "=a" (s), "=d" (count), "=d" (tmp)
             : "0" (s), "1" (count)
      );
+#else
+      __asm__ __volatile__(
+            "movel %1,%2\n\t"
+            "lsrl   #1,%2 ; jcc 1f ; clrb %0@+ ; subql #1,%1\n\t"
+            "lsrl   #1,%2 ; jcs 2f\n\t"  /* %0 increased=>bit 2 switched*/
+            "clrw   %0@+  ; subql  #2,%1 ; jra 2f\n\t"
+         "1: lsrl   #1,%2 ; jcc 2f\n\t"
+            "clrw   %0@+  ; subql  #2,%1\n\t"
+         "2: movew %1,%2; lsrl #2,%1 ; jeq 6f\n\t"
+            "lsrl   #1,%1 ; jcc 3f ; clrl %0@+\n\t"
+         "3: lsrl   #1,%1 ; jcc 4f ; clrl %0@+ ; clrl %0@+\n\t"
+         "4: subql  #1,%1 ; jcs 6f\n\t"
+         "5: clrl %0@+; clrl %0@+ ; clrl %0@+ ; clrl %0@+\n\t"
+	    "subql #1,%1  ; bra 5b\n\t"
+            "clrw %1; subql #1,%1; jcc 5b\n\t"
+         "6: movew %2,%1; btst #1,%1 ; jeq 7f ; clrw %0@+\n\t"
+         "7:            ; btst #0,%1 ; jeq 8f ; clrb %0@+\n\t"
+         "8:"
+            : "=a" (s), "=d" (count), "=d" (tmp)
+            : "0" (s), "1" (count)
+     );
+#endif
    }
 
    return(0);
@@ -367,6 +406,7 @@ static __inline__ void *fb_memset255(void *s, size_t count)
          : "=a" (s), "=d" (count)
          : "d" (-1), "0" ((char *)s+count), "1" (count)
    );
+#ifndef CONFIG_COLDFIRE
    __asm__ __volatile__(
          "subql  #1,%1 ; jcs 3f\n\t"
 	 "movel %2,%%d4; movel %2,%%d5; movel %2,%%d6\n\t"
@@ -377,6 +417,23 @@ static __inline__ void *fb_memset255(void *s, size_t count)
          : "d" (-1), "0" (s), "1" (count)
 	 : "d4", "d5", "d6"
   );
+#else
+   __asm__ __volatile__(
+         "subql  #1,%1 ; jcs 3f\n\t"
+	 "movel %2,%%d4; movel %2,%%d5; movel %2,%%d6\n\t"
+      "2: movel %2,%0@-\n\t"
+	 "movel %%d4, %0@-\n\t"
+	 "movel %%d5,%0@-\n\t"
+	 "movel %%d6,%0@-\n\t"
+	 "subql #1,%1\n\t"
+	 "bra 2b\n\t"
+      "3:"
+         : "=a" (s), "=d" (count)
+         : "d" (-1), "0" (s), "1" (count)
+	 : "d4", "d5", "d6"
+  );
+#endif
+
 
    return(0);
 }
@@ -397,6 +454,7 @@ static __inline__ void *fb_memmove(void *d, const void *s, size_t count)
         );
       } else {
          long tmp;
+#ifndef CONFIG_COLDFIRE
          __asm__ __volatile__(
                "movel  %0,%3\n\t"
                "lsrl   #1,%3 ; jcc 1f ; moveb %1@+,%0@+ ; subqw #1,%2\n\t"
@@ -417,6 +475,29 @@ static __inline__ void *fb_memmove(void *d, const void *s, size_t count)
                : "=a" (d), "=a" (s), "=d" (count), "=d" (tmp)
                : "0" (d), "1" (s), "2" (count)
         );
+#else
+         __asm__ __volatile__(
+               "movel  %0,%3\n\t"
+               "lsrl   #1,%3 ; jcc 1f ; moveb %1@+,%0@+ ; subql #1,%2\n\t"
+               "lsrl   #1,%3 ; jcs 2f\n\t"  /* %0 increased=>bit 2 switched*/
+               "movew  %1@+,%0@+  ; subql  #2,%2 ; jra 2f\n\t"
+            "1: lsrl   #1,%3 ; jcc 2f\n\t"
+               "movew  %1@+,%0@+  ; subql  #2,%2\n\t"
+            "2: movew  %2,%-; lsrl #2,%2 ; jeq 6f\n\t"
+               "lsrl   #1,%2 ; jcc 3f ; movel %1@+,%0@+\n\t"
+            "3: lsrl   #1,%2 ; jcc 4f ; movel %1@+,%0@+ ; movel %1@+,%0@+\n\t"
+            "4: subql  #1,%2 ; jcs 6f\n\t"
+            "5: movel  %1@+,%0@+;movel %1@+,%0@+\n\t"
+               "movel  %1@+,%0@+;movel %1@+,%0@+\n\t"
+               "subql #1,%2 ; clrw %2; subql #1,%2; jcc 5b\n\t"
+               "bra 5b ; clrw %2\n\t"
+            "6: movew  %+,%2; btst #1,%2 ; jeq 7f ; movew %1@+,%0@+\n\t"
+            "7:              ; btst #0,%2 ; jeq 8f ; moveb %1@+,%0@+\n\t"
+            "8:"
+               : "=a" (d), "=a" (s), "=d" (count), "=d" (tmp)
+               : "0" (d), "1" (s), "2" (count)
+        );
+#endif
       }
    } else {
       if (count < 16) {
@@ -431,6 +512,7 @@ static __inline__ void *fb_memmove(void *d, const void *s, size_t count)
         );
       } else {
          long tmp;
+#ifndef CONFIG_COLDFIRE
          __asm__ __volatile__(
                "movel %0,%3\n\t"
                "lsrl   #1,%3 ; jcc 1f ; moveb %1@-,%0@- ; subqw #1,%2\n\t"
@@ -451,6 +533,29 @@ static __inline__ void *fb_memmove(void *d, const void *s, size_t count)
                : "=a" (d), "=a" (s), "=d" (count), "=d" (tmp)
                : "0" ((char *) d + count), "1" ((char *) s + count), "2" (count)
         );
+#else
+         __asm__ __volatile__(
+               "movel %0,%3\n\t"
+               "lsrl   #1,%3 ; jcc 1f ; moveb %1@-,%0@- ; subql #1,%2\n\t"
+               "lsrl   #1,%3 ; jcs 2f\n\t"  /* %0 increased=>bit 2 switched*/
+               "movew  %1@-,%0@-  ; subql  #2,%2 ; jra 2f\n\t"
+            "1: lsrl   #1,%3 ; jcc 2f\n\t"
+               "movew  %1@-,%0@-  ; subql  #2,%2\n\t"
+            "2: movew %2,%-; lsrl #2,%2 ; jeq 6f\n\t"
+               "lsrl   #1,%2 ; jcc 3f ; movel %1@-,%0@-\n\t"
+            "3: lsrl   #1,%2 ; jcc 4f ; movel %1@-,%0@- ; movel %1@-,%0@-\n\t"
+            "4: subql  #1,%2 ; jcs 6f\n\t"
+            "5: movel %1@-,%0@-;movel %1@-,%0@-\n\t"
+               "movel %1@-,%0@-;movel %1@-,%0@-\n\t"
+               "subql #1,%2 ; clrw %2; subql #1,%2; jcc 5b\n\t"
+               "bra 5b\n\t"
+            "6: movew %+,%2; btst #1,%2 ; jeq 7f ; movew %1@-,%0@-\n\t"
+            "7:              ; btst #0,%2 ; jeq 8f ; moveb %1@-,%0@-\n\t"
+            "8:"
+               : "=a" (d), "=a" (s), "=d" (count), "=d" (tmp)
+               : "0" ((char *) d + count), "1" ((char *) s + count), "2" (count)
+        );
+#endif
       }
    }
 
@@ -465,6 +570,7 @@ static __inline__ void fast_memmove(char *dst, const char *src, size_t size)
   if (!size)
     return;
   if (dst < src)
+#ifndef CONFIG_COLDFIRE
     __asm__ __volatile__
       ("1:"
        "  moveml %0@+,%/d0/%/d1/%/a0/%/a1\n"
@@ -476,7 +582,22 @@ static __inline__ void fast_memmove(char *dst, const char *src, size_t size)
        : "=a" (src), "=a" (dst), "=d" (size)
        : "0" (src), "1" (dst), "2" (size / 16 - 1)
        : "d0", "d1", "a0", "a1", "memory");
+#else
+    __asm__ __volatile__
+      ("1:"
+       "  moveml %0@+,%/d0/%/d1/%/a0/%/a1\n"
+       "  moveml %/d0/%/d1/%/a0/%/a1,%1@\n"
+       "  addql #8,%1; addql #8,%1\n"
+       "  subql #1,%2\n"
+       "  bra 1b\n"
+       "  clrw %2; subql #1,%2\n"
+       "  jcc 1b"
+       : "=a" (src), "=a" (dst), "=d" (size)
+       : "0" (src), "1" (dst), "2" (size / 16 - 1)
+       : "d0", "d1", "a0", "a1", "memory");
+#endif
   else
+#ifndef CONFIG_COLDFIRE
     __asm__ __volatile__
       ("1:"
        "  subql #8,%0; subql #8,%0\n"
@@ -488,6 +609,20 @@ static __inline__ void fast_memmove(char *dst, const char *src, size_t size)
        : "=a" (src), "=a" (dst), "=d" (size)
        : "0" (src + size), "1" (dst + size), "2" (size / 16 - 1)
        : "d0", "d1", "a0", "a1", "memory");
+#else
+    __asm__ __volatile__
+      ("1:"
+       "  subql #8,%0; subql #8,%0\n"
+       "  moveml %0@,%/d0/%/d1/%/a0/%/a1\n"
+       "  moveml %/d0/%/d1/%/a0/%/a1,%1@-\n"
+       "  subql #1,%2\n"
+       "  bra 1b\n"
+       "  clrw %2; subql #1,%2\n"
+       "  jcc 1b"
+       : "=a" (src), "=a" (dst), "=d" (size)
+       : "0" (src + size), "1" (dst + size), "2" (size / 16 - 1)
+       : "d0", "d1", "a0", "a1", "memory");
+#endif
 }
 
 #elif defined(CONFIG_SUN4)

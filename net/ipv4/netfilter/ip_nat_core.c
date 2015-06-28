@@ -157,8 +157,8 @@ in_range(const struct ip_conntrack_tuple *tuple,
 				continue;
 		}
 
-		if ((mr->range[i].flags & IP_NAT_RANGE_PROTO_SPECIFIED)
-		    && proto->in_range(&newtuple, IP_NAT_MANIP_SRC,
+		if (!(mr->range[i].flags & IP_NAT_RANGE_PROTO_SPECIFIED)
+		    || proto->in_range(&newtuple, IP_NAT_MANIP_SRC,
 				       &mr->range[i].min, &mr->range[i].max))
 			return 1;
 	}
@@ -424,7 +424,7 @@ get_unique_tuple(struct ip_conntrack_tuple *tuple,
 	*tuple = *orig_tuple;
 	while ((rptr = find_best_ips_proto_fast(tuple, mr, conntrack, hooknum))
 	       != NULL) {
-		DEBUGP("Found best for "); DUMP_TUPLE(tuple);
+		DEBUGP("Found best for "); DUMP_TUPLE_RAW(tuple);
 		/* 3) The per-protocol part of the manip is made to
 		   map into the range to make a unique tuple. */
 
@@ -508,6 +508,7 @@ ip_nat_setup_info(struct ip_conntrack *conntrack,
 	struct ip_conntrack_tuple orig_tp;
 	struct ip_nat_info *info = &conntrack->nat.info;
 	int in_hashes = info->initialized;
+	int  cnt = 0;
 
 	MUST_BE_WRITE_LOCKED(&ip_nat_lock);
 	IP_NF_ASSERT(hooknum == NF_IP_PRE_ROUTING
@@ -552,6 +553,7 @@ ip_nat_setup_info(struct ip_conntrack *conntrack,
 #endif
 
 	do {
+		cnt++;
 		if (!get_unique_tuple(&new_tuple, &orig_tp, mr, conntrack,
 				      hooknum)) {
 			DEBUGP("ip_nat_setup_info: Can't get unique for %p.\n",
@@ -564,9 +566,9 @@ ip_nat_setup_info(struct ip_conntrack *conntrack,
 		       HOOK2MANIP(hooknum)==IP_NAT_MANIP_SRC ? "SRC" : "DST",
 		       conntrack);
 		DEBUGP("Original: ");
-		DUMP_TUPLE(&orig_tp);
+		DUMP_TUPLE_RAW(&orig_tp);
 		DEBUGP("New: ");
-		DUMP_TUPLE(&new_tuple);
+		DUMP_TUPLE_RAW(&new_tuple);
 #endif
 
 		/* We now have two tuples (SRCIP/SRCPT/DSTIP/DSTPT):
@@ -582,7 +584,32 @@ ip_nat_setup_info(struct ip_conntrack *conntrack,
 
 		/* Alter conntrack table so it recognizes replies.
                    If fail this race (reply tuple now used), repeat. */
-	} while (!ip_conntrack_alter_reply(conntrack, &reply));
+	} while (!ip_conntrack_alter_reply(conntrack, &reply) && (cnt < 200));
+
+	if (cnt>=200) {
+		/*
+		 * Print out some useful information.
+		 */
+		printk(KERN_ERR, "Failed getting result for packet\n", conntrack);
+
+		/*
+		 * It appears as though we have a tuple which is marked
+		 * as free but a conntrack entry exists for it!!
+		 */
+#undef DEBUGP
+#define DEBUGP printk
+		printk("Hook %u (%s) %p\n", hooknum,
+		       HOOK2MANIP(hooknum)==IP_NAT_MANIP_SRC ? "SRC" : "DST",
+		       conntrack);
+		printk("Original: ");
+		DUMP_TUPLE(&orig_tp);
+		printk("New: ");
+		DUMP_TUPLE(&new_tuple);
+#undef DEBUGP 
+#define DEBUGP(format, args...)
+
+		return NF_DROP;
+	}
 
 	/* FIXME: We can simply used existing conntrack reply tuple
            here --RR */
@@ -863,18 +890,14 @@ do_bindings(struct ip_conntrack *ct,
 static inline int tuple_src_equal_dst(const struct ip_conntrack_tuple *t1,
                                       const struct ip_conntrack_tuple *t2)
 {
+	struct ip_conntrack_tuple inv;
+
 	if (t1->dst.protonum != t2->dst.protonum || t1->src.ip != t2->dst.ip)
 		return 0;
-	if (t1->dst.protonum != IPPROTO_ICMP)
-		return t1->src.u.all == t2->dst.u.all;
-	else {
-		struct ip_conntrack_tuple inv;
 
-		/* ICMP tuples are asymetric */
-		invert_tuplepr(&inv, t1);
-		return inv.src.u.all == t2->src.u.all &&
-		       inv.dst.u.all == t2->dst.u.all;
-	}
+	invert_tuplepr(&inv, t1);
+	return inv.src.u.all == t2->src.u.all &&
+	       inv.dst.u.all == t2->dst.u.all;
 }
 
 unsigned int

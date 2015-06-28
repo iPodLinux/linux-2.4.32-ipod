@@ -144,6 +144,10 @@ struct us_data {
 
 	/* SCSI interfaces */
 	GUID(guid);				 /* unique dev id	*/
+	/* guid is not accurate/precise enough to match against usb devs
+	 * so use real vendor and product IDs separately */
+	u32 vendor_id;
+	u32 product_id;
 	struct Scsi_Host	*host;		 /* our dummy host data */
 	Scsi_Host_Template	htmplt;		 /* own host template	*/
 	int			host_number;	 /* to find us		*/

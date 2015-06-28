@@ -27,6 +27,21 @@
 extern unsigned long (*gettimeoffset)(void);
 
 /*
+ * The ST_CRTR is updated asynchronously to the master clock.  It is therefore
+ *  necessary to read it twice (with the same value) to ensure accuracy.
+ */ 
+static inline unsigned long read_CRTR(void) {
+	unsigned long x1, x2;
+
+	do {
+		x1 = AT91_SYS->ST_CRTR;
+		x2 = AT91_SYS->ST_CRTR;
+	} while (x1 != x2);
+
+	return x1;
+}
+
+/*
  * Returns number of microseconds since last timer interrupt.  Note that interrupts
  * will have been disabled by do_gettimeofday()
  *  'LATCH' is hwclock ticks (see CLOCK_TICK_RATE in timex.h) per jiffy.
@@ -36,7 +51,7 @@ static unsigned long at91rm9200_gettimeoffset(void)
 {
 	unsigned long elapsed;
 
-	elapsed = (AT91_SYS->ST_CRTR - AT91_SYS->ST_RTAR) & AT91C_ST_ALMV;
+	elapsed = (read_CRTR() - AT91_SYS->ST_RTAR) & AT91C_ST_ALMV;
 
 	return (unsigned long)(elapsed * tick) / LATCH;
 }
@@ -48,11 +63,12 @@ static void at91rm9200_timer_interrupt(int irq, void *dev_id, struct pt_regs *re
 {
 	if (AT91_SYS->ST_SR & AT91C_ST_PITS) {	/* This is a shared interrupt */
 		do {
+			do_leds();
 			do_timer(regs);
 
 			AT91_SYS->ST_RTAR = (AT91_SYS->ST_RTAR + LATCH) & AT91C_ST_ALMV;
 
-		} while (((AT91_SYS->ST_CRTR - AT91_SYS->ST_RTAR) & AT91C_ST_ALMV) >= LATCH);
+		} while (((read_CRTR() - AT91_SYS->ST_RTAR) & AT91C_ST_ALMV) >= LATCH);
 
 		do_profile(regs);
 	}

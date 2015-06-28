@@ -118,6 +118,9 @@ __setup("reboot=", reboot_setup);
 void machine_halt(void)
 {
 	leds_event(led_halted);
+	/* actually halt */
+	while (1)
+		;
 }
 
 void machine_power_off(void)

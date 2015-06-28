@@ -56,5 +56,21 @@ ENTRY(__udelay)
 
 ENTRY(__delay)
 		subs	r0, r0, #1
-		bcs	SYMBOL_NAME(__delay)
+#if 0
+		RETINSTR(movls,pc,lr)
+		subs	r0, r0, #1
+		RETINSTR(movls,pc,lr)
+		subs	r0, r0, #1
+		RETINSTR(movls,pc,lr)
+		subs	r0, r0, #1
+		RETINSTR(movls,pc,lr)
+		subs	r0, r0, #1
+		RETINSTR(movls,pc,lr)
+		subs	r0, r0, #1
+		RETINSTR(movls,pc,lr)
+		subs	r0, r0, #1
+		RETINSTR(movls,pc,lr)
+		subs	r0, r0, #1
+#endif
+		bhi	SYMBOL_NAME(__delay)
 		RETINSTR(mov,pc,lr)

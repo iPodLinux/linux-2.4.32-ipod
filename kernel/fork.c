@@ -75,10 +75,13 @@ void __init fork_init(unsigned long mempages)
 	 * value: the thread structures can take up at most half
 	 * of memory.
 	 */
-	max_threads = mempages / (THREAD_SIZE/PAGE_SIZE) / 8;
+	max_threads = mempages / (8 * THREAD_SIZE / PAGE_SIZE);
 
-	init_task.rlim[RLIMIT_NPROC].rlim_cur = max_threads/2;
-	init_task.rlim[RLIMIT_NPROC].rlim_max = max_threads/2;
+	/*
+	 * we need to allow at least 10 threads to boot a system
+	 */
+	init_task.rlim[RLIMIT_NPROC].rlim_cur = max(10, max_threads/2);
+	init_task.rlim[RLIMIT_NPROC].rlim_max = max(10, max_threads/2);
 }
 
 /* Protects next_safe and last_pid. */
@@ -142,6 +145,8 @@ nomorepids:
 	return 0;
 }
 
+#ifndef CONFIG_UCLINUX
+
 static inline int dup_mmap(struct mm_struct * mm)
 {
 	struct vm_area_struct * mpnt, *tmp, **pprev;
@@ -181,6 +186,7 @@ static inline int dup_mmap(struct mm_struct * mm)
 		tmp->vm_flags &= ~VM_LOCKED;
 		tmp->vm_mm = mm;
 		tmp->vm_next = NULL;
+		tmp->vm_sharing_data = NULL;
 		file = tmp->vm_file;
 		if (file) {
 			struct inode *inode = file->f_dentry->d_inode;
@@ -217,6 +223,10 @@ static inline int dup_mmap(struct mm_struct * mm)
 	}
 	retval = 0;
 	build_mmap_rb(mm);
+
+#ifdef CONFIG_ARM_FASS
+	arch_new_mm(current, mm);
+#endif
 
 fail_nomem:
 	flush_tlb_mm(current->mm);
@@ -377,6 +387,131 @@ free_pt:
 fail_nomem:
 	return retval;
 }
+
+#else /* !CONFIG_UCLINUX */
+
+/*
+ * Allocate and initialize an mm_struct.
+ */
+struct mm_struct * mm_alloc(void)
+{
+	struct mm_struct * mm;
+
+	mm = kmem_cache_alloc(mm_cachep, SLAB_KERNEL);
+	if (mm) {
+		memset(mm, 0, sizeof(*mm));
+		atomic_set(&mm->mm_users, 1);
+		atomic_set(&mm->mm_count, 1);
+		init_rwsem(&mm->mmap_sem);
+		mm->page_table_lock = SPIN_LOCK_UNLOCKED;
+		return mm;
+	}
+	return NULL;
+}
+
+/*
+ * Called when the last reference to the mm
+ * is dropped: either by a lazy thread or by
+ * mmput. Free the mm.
+ */
+void fastcall __mmdrop(struct mm_struct *mm)
+{
+	if (mm == &init_mm) BUG();
+	kmem_cache_free(mm_cachep, mm);
+}
+
+/*
+ * Decrement the use count and release all resources for an mm.
+ */
+void mmput(struct mm_struct *mm)
+{
+	if (atomic_dec_and_test(&mm->mm_users)) {
+		exit_mmap(mm);
+		mmdrop(mm);
+	}
+}
+
+/* Please note the differences between mmput and mm_release.
+ * mmput is called whenever we stop holding onto a mm_struct,
+ * error success whatever.
+ *
+ * mm_release is called after a mm_struct has been removed
+ * from the current process.
+ *
+ * This difference is important for error handling, when we
+ * only half set up a mm_struct for a new process and need to restore
+ * the old one.  Because we mmput the new mm_struct before
+ * restoring the old one. . .
+ * Eric Biederman 10 January 1998
+ */
+void mm_release(void)
+{
+	struct task_struct *tsk = current;
+	struct completion *vfork_done = tsk->vfork_done;
+
+	/* notify parent sleeping on vfork() */
+	if (vfork_done) {
+		tsk->vfork_done = NULL;
+		complete(vfork_done);
+	}
+}
+
+static inline int copy_mm(unsigned long clone_flags, struct task_struct * tsk)
+{
+	struct mm_struct * mm;
+	int retval;
+
+	tsk->min_flt = tsk->maj_flt = 0;
+	tsk->cmin_flt = tsk->cmaj_flt = 0;
+	tsk->nswap = tsk->cnswap = 0;
+
+	tsk->mm = NULL;
+	tsk->active_mm = NULL;
+
+	/*
+	 * Are we cloning a kernel thread?
+	 *
+	 * We need to steal a active VM for that..
+	 */
+	mm = current->mm;
+	if (!mm)
+		return 0;
+
+	if (clone_flags & CLONE_VM) {
+		atomic_inc(&mm->mm_users);
+		goto good_mm;
+	}
+
+	retval = -ENOMEM;
+	mm = mm_alloc();
+	if (!mm)
+		goto fail_nomem;
+
+	tsk->mm = mm;
+	tsk->active_mm = mm;
+
+#if DAVIDM /* is this needed,  I took it out as it didn't appear to be */
+	if (tsk->mm->executable)
+		atomic_inc(&tsk->mm->executable->i_count);
+#endif
+
+	/*
+	 * child gets a private LDT (if there was an LDT in the parent)
+	 */
+	copy_segments(tsk, mm);
+
+good_mm:
+	tsk->mm = mm;
+	tsk->active_mm = mm;
+	return 0;
+
+free_pt:
+	mmput(mm);
+fail_nomem:
+	return retval;
+}
+
+#endif /* !CONFIG_UCLINUX */
 
 static inline struct fs_struct *__copy_fs_struct(struct fs_struct *old)
 {
@@ -671,6 +806,10 @@ int do_fork(unsigned long clone_flags, unsigned long stack_start,
 		goto fork_out;
 
 	*p = *current;
+
+#ifdef CONFIG_SYSCALLTIMER
+	p->curr_syscall = 0;
+#endif
 
 	retval = -EAGAIN;
 	/*

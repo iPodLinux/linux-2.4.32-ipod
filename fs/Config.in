@@ -50,6 +50,22 @@ dep_tristate 'Journalling Flash File System v2 (JFFS2) support' CONFIG_JFFS2_FS 
 if [ "$CONFIG_JFFS2_FS" = "y" -o "$CONFIG_JFFS2_FS" = "m" ] ; then
    int 'JFFS2 debugging verbosity (0 = quiet, 2 = noisy)' CONFIG_JFFS2_FS_DEBUG 0
 fi
+tristate 'Yet Another Flash File System(YAFFS) for NAND flash support' CONFIG_YAFFS_FS
+if [ "$CONFIG_YAFFS_FS" = "y" -o "$CONFIG_YAFFS_FS" = "m" ] ; then
+   dep_bool 'NAND mtd support' CONFIG_YAFFS_MTD_ENABLED $CONFIG_MTD_NAND
+   bool 'yaffsram file system support' CONFIG_YAFFS_RAM_ENABLED
+   if [ "$CONFIG_YAFFS_MTD_ENABLED" = "n" -a "$CONFIG_YAFFS_RAM_ENABLED" = "n" ] ; then
+      comment 'WARNING: mtd and/or yaffsram support should be selected'
+   fi
+   dep_bool 'Old mtd support' CONFIG_YAFFS_USE_OLD_MTD $CONFIG_MTD_NAND
+   dep_bool 'Use ECC functions of the generic MTD-NAND driver' CONFIG_YAFFS_USE_NANDECC $CONFIG_MTD_NAND
+   bool 'Use the same ecc byte order as Steven Hills nand_ecc.c' CONFIG_YAFFS_ECC_WRONG_ORDER
+   bool 'Use Linux file caching layer' CONFIG_YAFFS_USE_GENERIC_RW
+   bool 'Use object header size' CONFIG_YAFFS_USE_HEADER_FILE_SIZE
+   bool 'Turn off debug chunk erase check' CONFIG_YAFFS_DISABLE_CHUNK_ERASED_CHECK
+   bool 'Cache short names in RAM' CONFIG_YAFFS_SHORT_NAMES_IN_RAM
+fi
+
 tristate 'Compressed ROM file system support' CONFIG_CRAMFS
 bool 'Virtual memory file system support (former shm fs)' CONFIG_TMPFS
 define_bool CONFIG_RAMFS y
@@ -170,6 +186,8 @@ if [ "$CONFIG_ZISOFS" = "y" ]; then
 else
    define_tristate CONFIG_ZISOFS_FS n
 fi
+
+bool 'Crazy printk coredump support' CONFIG_COREDUMP_PRINTK
 
 mainmenu_option next_comment
 comment 'Partition Types'

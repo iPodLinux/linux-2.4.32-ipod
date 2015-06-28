@@ -1,3 +1,5 @@
+/* $USAGI: ksyms.c,v 1.33 2003/11/12 05:11:57 yoshfuji Exp $ */
+
 /*
  * Herein lies all the functions/variables that are "exported" for linkage
  * with dynamically loaded kernel modules.
@@ -87,7 +89,9 @@ EXPORT_SYMBOL(try_inc_mod_count);
 /* process memory management */
 EXPORT_SYMBOL(do_mmap_pgoff);
 EXPORT_SYMBOL(do_munmap);
+#ifndef NO_MM
 EXPORT_SYMBOL(do_brk);
+#endif
 EXPORT_SYMBOL(exit_mm);
 EXPORT_SYMBOL(exit_files);
 EXPORT_SYMBOL(exit_fs);
@@ -111,25 +115,36 @@ EXPORT_SYMBOL(kmem_cache_free);
 EXPORT_SYMBOL(kmem_cache_size);
 EXPORT_SYMBOL(kmalloc);
 EXPORT_SYMBOL(kfree);
+#ifdef NO_MM
+EXPORT_SYMBOL(ksize);
+#endif
 EXPORT_SYMBOL(vfree);
 EXPORT_SYMBOL(__vmalloc);
+#ifndef NO_MM
 EXPORT_SYMBOL(vmap);
+#endif
 EXPORT_SYMBOL(vmalloc_to_page);
 EXPORT_SYMBOL(mem_map);
 EXPORT_SYMBOL(remap_page_range);
 EXPORT_SYMBOL(max_mapnr);
 EXPORT_SYMBOL(high_memory);
 EXPORT_SYMBOL(vmtruncate);
+#ifndef NO_MM
 EXPORT_SYMBOL(find_vma);
 EXPORT_SYMBOL(get_unmapped_area);
+#endif
 EXPORT_SYMBOL(init_mm);
 #ifdef CONFIG_HIGHMEM
 EXPORT_SYMBOL(kmap_high);
 EXPORT_SYMBOL(kunmap_high);
 EXPORT_SYMBOL(highmem_start_page);
 EXPORT_SYMBOL(create_bounce);
+#ifndef kmap_prot
 EXPORT_SYMBOL(kmap_prot);
+#endif
+#ifndef kmap_pte
 EXPORT_SYMBOL(kmap_pte);
+#endif
 #endif
 
 /* filesystem internal functions */
@@ -303,11 +318,13 @@ EXPORT_SYMBOL(dcache_dir_ops);
 /* for stackable file systems (lofs, wrapfs, cryptfs, etc.) */
 EXPORT_SYMBOL(default_llseek);
 EXPORT_SYMBOL(dentry_open);
+#ifndef NO_MM
 EXPORT_SYMBOL(filemap_nopage);
 EXPORT_SYMBOL(filemap_sync);
 EXPORT_SYMBOL(filemap_fdatawrite);
 EXPORT_SYMBOL(filemap_fdatasync);
 EXPORT_SYMBOL(filemap_fdatawait);
+#endif
 EXPORT_SYMBOL(lock_page);
 EXPORT_SYMBOL(unlock_page);
 EXPORT_SYMBOL(wakeup_page_waiters);
@@ -365,7 +382,9 @@ EXPORT_SYMBOL(unregister_binfmt);
 EXPORT_SYMBOL(search_binary_handler);
 EXPORT_SYMBOL(prepare_binprm);
 EXPORT_SYMBOL(compute_creds);
+#ifndef NO_MM
 EXPORT_SYMBOL(remove_arg_zero);
+#endif
 EXPORT_SYMBOL(set_binfmt);
 
 /* sysctl table registration */
@@ -439,9 +458,11 @@ EXPORT_SYMBOL(brw_kiovec);
 EXPORT_SYMBOL(kiobuf_wait_for_io);
 
 /* dma handling */
+#ifndef CONFIG_ARM
 EXPORT_SYMBOL(request_dma);
 EXPORT_SYMBOL(free_dma);
 EXPORT_SYMBOL(dma_spin_lock);
+#endif
 #ifdef HAVE_DISABLE_HLT
 EXPORT_SYMBOL(disable_hlt);
 EXPORT_SYMBOL(enable_hlt);
@@ -505,6 +526,10 @@ EXPORT_SYMBOL(simple_strtoul);
 EXPORT_SYMBOL(simple_strtoull);
 EXPORT_SYMBOL(system_utsname);	/* UTS data */
 EXPORT_SYMBOL(uts_sem);		/* UTS semaphore */
+#ifdef CONFIG_IPV6_NODEINFO
+EXPORT_SYMBOL(icmpv6_sethostname_hook);
+EXPORT_SYMBOL(icmpv6_sethostname_hook_sem);
+#endif
 #ifndef __mips__
 EXPORT_SYMBOL(sys_call_table);
 #endif
@@ -530,8 +555,10 @@ EXPORT_SYMBOL(single_release);
 EXPORT_SYMBOL(seq_release_private);
 
 /* Program loader interfaces */
+#ifndef NO_MM
 EXPORT_SYMBOL(setup_arg_pages);
 EXPORT_SYMBOL(copy_strings_kernel);
+#endif
 EXPORT_SYMBOL(do_execve);
 EXPORT_SYMBOL(flush_old_exec);
 EXPORT_SYMBOL(kernel_read);

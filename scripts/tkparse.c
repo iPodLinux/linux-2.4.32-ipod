@@ -71,6 +71,11 @@ static void syntax_error( const char * msg )
     exit( 1 );
 }
 
+static void syntax_warning( const char * msg )
+{
+    fprintf( stderr, "%s: %d: %s\n", current_file, lineno, msg );
+}
+
 
 
 /*
@@ -135,7 +140,7 @@ static const char * get_string( const char * pnt, char ** label )
 static const char * get_qstring( const char * pnt, char ** label )
 {
     char quote_char;
-    char newlabel [2048];
+    char newlabel [16384];
     char * pnt1;
 
     /* advance to the open quote */
@@ -637,7 +642,7 @@ static void tokenize_line( const char * pnt )
 	 * Create a conditional for this object's dependencies.
 	 */
 	{
-	    char fake_if [1024];
+	    char fake_if [8192];
 	    struct dependency * dep;
 	    struct condition ** cond_ptr;
 	    int first = 1;
@@ -746,7 +751,7 @@ static void tokenize_line( const char * pnt )
  */
 static void do_source( const char * filename )
 {
-    char buffer [2048];
+    char buffer [16384];
     FILE * infile;
     const char * old_file;
     int old_lineno;
@@ -768,7 +773,8 @@ static void do_source( const char * filename )
     if ( infile == NULL )
     {
 	sprintf( buffer, "unable to open %s", filename );
-	syntax_error( buffer );
+	syntax_warning( buffer );
+        return;
     }
 
     /* push the new file name and line number */

@@ -322,6 +322,27 @@ error:
 1:	.long	SYMBOL_NAME(do_exception_error)
 
 
+#ifdef CONFIG_SH_DSP
+/*
+ *	Return if this processor has the DSP unit present
+ */
+ENTRY(sh3_dsp)
+	stc	sr, r0			! Get current SR
+	mov	r0, r1			! Keep copy of SR to restore
+	mov.l	1f, r2			! Get DSP bit mask
+	or	r2, r0			! Turn on DSP bit
+	ldc	r0, sr			! Write SR with DSP bit set
+	nop
+	stc	sr, r0			! Get SR again
+	ldc	r1, sr			! Restore SR to original
+	rts
+	 and	r2, r0			! Return if DSP bit still set
+
+1:	.long	0x00001000		! DSP bit set
+
+#endif
+
+
 !
 !
 !
@@ -633,6 +654,7 @@ __blrb_flags:	.long	0x30000000
 1:	.long	0x00008000	! FD
 2:	.long	0xffff7f0f	! ~(IMASK+FD)
 3:	.long	0x00080000	! SZ=0, PR=1
+31:	.long	0x00001000	! DSP bit set
 #if defined(CONFIG_KGDB_NMI)
 4:	.long	SYMBOL_NAME(in_nmi)
 #endif
@@ -792,12 +814,15 @@ skip_save:
 	mov.l	@r9, r9
 	jmp	@r9
 	 nop
+
+
 	.align	2
 1:	.long	SYMBOL_NAME(exception_handling_table)
 3:	.long	0x000000f0	! FD=0, IMASK=15
 4:	.long	0x00001000	! DSP bit set
 5:	.long	0xcfffffff	! RB=0, BL=0
 6:	.long	0x00080000	! SZ=0, PR=1
+7:	.long	0x00001000	! DSP bit set
 
 none:
 	rts
@@ -1339,8 +1364,8 @@ ENTRY(sys_call_table)
 	.long SYMBOL_NAME(sys_rt_sigtimedwait)
 	.long SYMBOL_NAME(sys_rt_sigqueueinfo)
 	.long SYMBOL_NAME(sys_rt_sigsuspend)
-	.long SYMBOL_NAME(sys_pread_wrapper)	/* 180 */
-	.long SYMBOL_NAME(sys_pwrite_wrapper)
+	.long SYMBOL_NAME(sys_pread)		/* 180 */
+	.long SYMBOL_NAME(sys_pwrite)
 	.long SYMBOL_NAME(sys_chown16)
 	.long SYMBOL_NAME(sys_getcwd)
 	.long SYMBOL_NAME(sys_capget)

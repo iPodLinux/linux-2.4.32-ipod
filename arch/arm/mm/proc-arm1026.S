@@ -66,15 +66,17 @@
  *
  * Returns:
  *  r0 = address of abort
- *  r1 != 0 if writing
- *  r3 = FSR
+ *  r1 = FSR, bit 11 set if writing
+ *  r3 = corrupted
  *  r4 = corrupted
  */
 	.align	5
 ENTRY(cpu_arm1026_data_abort)
-	mrc	p15, 0, r3, c5, c0, 0		@ get FSR
-	and	r2, r3, #0b1101			@ Check for translation error
-	sub	r1, r2, #0b0101
+	mrc	p15, 0, r1, c5, c0, 0		@ get FSR
+	bic	r1, r1, #1 << 11 | 1 << 10
+	and	r2, r1, #0b1101			@ Check for translation error
+	teq	r1, r2, #0b1101
+	orrne	r1, r1, #1 << 11		@ set write bit
 
 	and	r3, r3, #255
 	mrc	p15, 0, r0, c6, c0, 0		@ get FAR
@@ -494,7 +496,7 @@ ENTRY(cpu_arm1026_set_pte)
 	bic	r2, r2, #3
 	orr	r2, r2, #HPTE_TYPE_SMALL
 
-	tst	r1, #LPTE_USER | LPTE_EXEC	@ User or Exec?
+	tst	r1, #LPTE_USER			@ User?
 	orrne	r2, r2, #HPTE_AP_READ
 
 	tst	r1, #LPTE_WRITE | LPTE_DIRTY	@ Write and Dirty?

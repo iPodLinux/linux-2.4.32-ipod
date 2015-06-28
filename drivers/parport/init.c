@@ -31,6 +31,7 @@ extern int parport_pc_init(int *io, int *io_hi, int *irq, int *dma);
 extern int parport_sunbpp_init(void);
 extern int parport_amiga_init(void);
 extern int parport_mfc3_init(void);
+extern int parport_hd64465_init(void);
 extern int parport_atari_init(void);
 
 static int parport_setup_ptr __initdata = 0;
@@ -149,6 +150,9 @@ int __init parport_init (void)
 #ifdef CONFIG_PARPORT_PC
 	parport_pc_init(io, io_hi, irq, dma);
 #endif
+#ifdef CONFIG_PARPORT_DRAGONIX
+	parport_dragonix_init();
+#endif
 #ifdef CONFIG_PARPORT_AMIGA
 	parport_amiga_init();
 #endif
@@ -163,6 +167,9 @@ int __init parport_init (void)
 #endif
 #ifdef CONFIG_PARPORT_SUNBPP
 	parport_sunbpp_init();
+#endif
+#ifdef CONFIG_PARPORT_HD64465
+	parport_hd64465_init();
 #endif
 	return 0;
 }

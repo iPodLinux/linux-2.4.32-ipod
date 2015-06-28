@@ -109,6 +109,13 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 	 define_bool CONFIG_BLK_DEV_IDEDMA $CONFIG_BLK_DEV_IDEDMA_ICS
 	 dep_bool '    RapIDE interface support' CONFIG_BLK_DEV_IDE_RAPIDE $CONFIG_ARCH_ACORN
       fi
+      if [ "$CONFIG_ARCH_EP9312" = "y" -o \
+           "$CONFIG_ARCH_EP9315" = "y" ]; then
+         bool '  EP93xx IDE Support' CONFIG_BLK_DEV_IDE_EP93XX
+         define_bool CONFIG_BLK_DEV_IDEDMA $CONFIG_BLK_DEV_IDE_EP93XX
+      else
+         define_bool CONFIG_BLK_DEV_IDE_EP93XX n
+      fi
       if [ "$CONFIG_AMIGA" = "y" ]; then
 	 dep_bool '  Amiga Gayle IDE interface support' CONFIG_BLK_DEV_GAYLE $CONFIG_AMIGA
 	 dep_mbool '    Amiga IDE Doubler support (EXPERIMENTAL)' CONFIG_BLK_DEV_IDEDOUBLER $CONFIG_BLK_DEV_GAYLE $CONFIG_EXPERIMENTAL
@@ -131,6 +138,8 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
       if [ "$CONFIG_8xx" = "y" ]; then
          dep_bool '  MPC8xx IDE support' CONFIG_BLK_DEV_MPC8xx_IDE $CONFIG_8xx
       fi
+      dep_bool '  uClinux IDE interface support' CONFIG_BLK_DEV_UCLINUX_IDE $CONFIG_UCLINUX
+      dep_bool '  IDE interface on the CyberGuard/SnapGear ESS710' CONFIG_BLK_DEV_IDE_ESS710 $CONFIG_MACH_ESS710
 
       if [ "$CONFIG_BLK_DEV_MPC8xx_IDE" = "y" ]; then
          choice 'Type of MPC8xx IDE interface'		\
@@ -147,6 +156,7 @@ if [ "$CONFIG_BLK_DEV_IDE" != "n" ]; then
 	 dep_tristate '    ALI M14xx support' CONFIG_BLK_DEV_ALI14XX $CONFIG_BLK_DEV_IDE
 	 dep_tristate '    DTC-2278 support' CONFIG_BLK_DEV_DTC2278 $CONFIG_BLK_DEV_IDE
 	 dep_tristate '    Holtek HT6560B support' CONFIG_BLK_DEV_HT6560B $CONFIG_BLK_DEV_IDE
+	 dep_bool     '    OCIDEC-3 support' CONFIG_BLK_DEV_OCIDEC $CONFIG_BLK_DEV_IDE $CONFIG_EXCALIBUR
 	 dep_tristate '    PROMISE DC4030 support (EXPERIMENTAL)' CONFIG_BLK_DEV_PDC4030 $CONFIG_BLK_DEV_IDEDISK $CONFIG_EXPERIMENTAL
 	 dep_tristate '    QDI QD65xx support' CONFIG_BLK_DEV_QD65XX $CONFIG_BLK_DEV_IDE
 	 dep_tristate '    UMC-8672 support' CONFIG_BLK_DEV_UMC8672 $CONFIG_BLK_DEV_IDE

@@ -9,9 +9,11 @@ Author: Marcell GAL, 2000, XDSL Ltd, Hungary
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
+#include <asm/uaccess.h>
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
 #include <linux/etherdevice.h>
+#include <net/arp.h>
 #include <linux/rtnetlink.h>
 #include <linux/ip.h>
 #include <asm/uaccess.h>
@@ -414,13 +416,6 @@ static void br2684_push(struct atm_vcc *atmvcc, struct sk_buff *skb)
 
 	if (skb == NULL) {	/* skb==NULL means VCC is being destroyed */
 		br2684_close_vcc(brvcc);
-		if (list_empty(&brdev->brvccs)) {
-			read_lock(&devs_lock);
-			list_del(&brdev->br2684_devs);
-			read_unlock(&devs_lock);
-			unregister_netdev(&brdev->net_dev);
-			kfree(brdev);
-		}
 		return;
 	}
 

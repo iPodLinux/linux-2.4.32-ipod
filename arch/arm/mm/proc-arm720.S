@@ -59,7 +59,6 @@ ENTRY(cpu_arm720_icache_invalidate_page)
 ENTRY(cpu_arm720_dcache_invalidate_range)
 		mov	r0, #0
 		mcr	p15, 0, r0, c7, c7, 0		@ flush cache
-		mov	pc, lr
 
 /*
  * These just expect cache lines to be cleaned.  Since we have a writethrough
@@ -97,7 +96,7 @@ ENTRY(cpu_arm720_tlb_invalidate_range)
 1:		mcr	p15, 0, r0, c8, c7, 1		@ flush TLB (v4)
 		add	r0, r0, #PAGESIZE
 		cmp	r0, r1
-		blt	1b
+		blo	1b
 		mov	pc, lr
 
 /*
@@ -124,8 +123,8 @@ ENTRY(cpu_arm720_tlb_invalidate_page)
  * picture.  Unfortunately, this does happen.  We live with it.
  *
  * Returns : r0 = address of abort
- *	   : r1 != 0 if writing
- *	   : r3 = FSR
+ *	   : r1 = FSR, bit 11 set if writing
+ *	   : r3 = corrupted
  *	   : sp = pointer to registers
  */
 
@@ -150,16 +149,16 @@ Ldata_ldmstm:	tst	r4, #1 << 21			@ check writeback bit
 		addeq	r7, r0, r7, lsl #2		@ Do correction (signed)
 Ldata_saver7:	str	r7, [sp, r5, lsr #14]		@ Put register
 Ldata_simple:	mrc	p15, 0, r0, c6, c0, 0		@ get FAR
-		mrc	p15, 0, r3, c5, c0, 0		@ get FSR
-		and	r3, r3, #255
+		mrc	p15, 0, r1, c5, c0, 0		@ get FSR
+		bic	r1, r1, #1 << 11 | 1 << 10
+		tst	r4, #1 << 20
+		orreq	r1, r1, #1 << 11
 		mov	pc, lr
 
 ENTRY(cpu_arm720_data_abort)
-		tst	r3, #T_BIT
+		tst	r3, #PSR_T_BIT
 		bne	.data_thumb_abort
 		ldr	r4, [r0]			@ read instruction causing problem
-		tst	r4, r4, lsr #21			@ C = bit 20
-		sbc	r1, r1, r1			@ r1 = C - 1
 		and	r2, r4, #15 << 24
 		add	pc, pc, r2, lsr #22		@ Now branch to the relevent processing routine
 		movs	pc, lr
@@ -271,8 +270,8 @@ Ldata_lateldrpostreg:
 
 .data_thumb_abort:
 		ldrh	r4, [r0]			@ read instruction
-		tst	r4, r4, lsr #12			@ C = bit 11
-		sbc	r1, r1, r1			@ r1 = C - 1
+		tst	r4, #1 << 11
+		orrne	r4, r4, #1 << 20
 		and	r2, r4, #15 << 12
 		add	pc, pc, r2, lsr #10		@ lookup in table
 		nop
@@ -418,7 +417,7 @@ ENTRY(cpu_arm720_set_pte)
 		bic	r2, r2, #3
 		orr	r2, r2, #HPTE_TYPE_SMALL
 
-		tst	r1, #LPTE_USER | LPTE_EXEC	@ User or Exec?
+		tst	r1, #LPTE_USER			@ User?
 		orrne	r2, r2, #HPTE_AP_READ
 
 		tst	r1, #LPTE_WRITE | LPTE_DIRTY	@ Write and Dirty?

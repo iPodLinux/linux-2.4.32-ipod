@@ -14,6 +14,7 @@
  *   09-09-1998	PJB	Delete redundant `wp_works_ok'
  *   30-05-1999	PJB	Save sl across context switches
  *   31-07-1999	RMK	Added 'domain' stuff
+ *   09-10-2001 AGW     Renamed thread.domain to thread.dacr to avoid confusion
  */
 #ifndef __ASM_PROC_PROCESSOR_H
 #define __ASM_PROC_PROCESSOR_H
@@ -23,6 +24,9 @@
 #define KERNEL_STACK_SIZE	PAGE_SIZE
 
 struct context_save_struct {
+#ifdef CONFIG_CPU_XSCALE
+	long long acc0;
+#endif
 	unsigned long cpsr;
 	unsigned long r4;
 	unsigned long r5;
@@ -35,15 +39,34 @@ struct context_save_struct {
 	unsigned long pc;
 };
 
+#ifdef CONFIG_CPU_XSCALE
+#define INIT_CSS (struct context_save_struct){ 0, SVC_MODE, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+#else
 #define INIT_CSS (struct context_save_struct){ SVC_MODE, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+#endif
+
+#ifdef CONFIG_ARM_FASS
 
 #define EXTRA_THREAD_STRUCT						\
-	unsigned int	domain;
+	unsigned long	dacr;
+
+#define EXTRA_THREAD_STRUCT_INIT					\
+	dacr:	  domain_val(DOMAIN_USER, DOMAIN_CLIENT) |		\
+		  domain_val(DOMAIN_KERNEL, DOMAIN_MANAGER) |		\
+		  domain_val(DOMAIN_IO, DOMAIN_CLIENT)
+
+#else
+
+#define EXTRA_THREAD_STRUCT						\
+	unsigned long	domain;
 
 #define EXTRA_THREAD_STRUCT_INIT					\
 	domain:	  domain_val(DOMAIN_USER, DOMAIN_CLIENT) |		\
 		  domain_val(DOMAIN_KERNEL, DOMAIN_MANAGER) |		\
 		  domain_val(DOMAIN_IO, DOMAIN_CLIENT)
+
+#endif /* CONFIG_ARM_FASS */
+
 
 #define start_thread(regs,pc,sp)					\
 ({									\

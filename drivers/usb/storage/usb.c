@@ -794,6 +794,8 @@ static void * storage_probe(struct usb_device *dev, unsigned int ifnum,
 		strncpy(ss->vendor, mf, USB_STOR_STRING_LEN);
 		strncpy(ss->product, prod, USB_STOR_STRING_LEN);
 		strncpy(ss->serial, serial, USB_STOR_STRING_LEN);
+		ss->vendor_id = dev->descriptor.idVendor;
+		ss->product_id = dev->descriptor.idProduct;
 		if (strlen(ss->vendor) == 0) {
 			if (unusual_dev->vendorName)
 				strncpy(ss->vendor, unusual_dev->vendorName,

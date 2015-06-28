@@ -28,6 +28,8 @@ obj-$(CONFIG_PARPORT_MFC3)	+= parport_mfc3.o
 obj-$(CONFIG_PARPORT_ATARI)	+= parport_atari.o
 obj-$(CONFIG_PARPORT_SUNBPP)	+= parport_sunbpp.o
 obj-$(CONFIG_PARPORT_GSC)	+= parport_gsc.o
+obj-$(CONFIG_PARPORT_HD64465)	+= parport_hd64465.o
+obj-$(CONFIG_PARPORT_DRAGONIX)	+= parport_dragonix.o
 obj-$(CONFIG_PARPORT_IP22)	+= parport_ip22.o
 
 include $(TOPDIR)/Rules.make

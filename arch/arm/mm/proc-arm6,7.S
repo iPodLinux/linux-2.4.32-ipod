@@ -33,12 +33,12 @@ ENTRY(cpu_arm6_icache_invalidate_range)
 ENTRY(cpu_arm7_icache_invalidate_range)
 ENTRY(cpu_arm6_icache_invalidate_page)
 ENTRY(cpu_arm7_icache_invalidate_page)
-ENTRY(cpu_arm6_dcache_clean_range)
-ENTRY(cpu_arm7_dcache_clean_range)
 ENTRY(cpu_arm6_dcache_invalidate_range)
 ENTRY(cpu_arm7_dcache_invalidate_range)
 		mov	r0, #0
 		mcr	p15, 0, r0, c7, c0, 0		@ flush cache
+ENTRY(cpu_arm6_dcache_clean_range)
+ENTRY(cpu_arm7_dcache_clean_range)
 ENTRY(cpu_arm6_dcache_clean_page)
 ENTRY(cpu_arm7_dcache_clean_page)
 ENTRY(cpu_arm6_dcache_clean_entry)
@@ -72,7 +72,7 @@ ENTRY(cpu_arm6_tlb_invalidate_range)
 1:		mcr	p15, 0, r0, c6, c0, 0		@ purge TLB
 		add	r0, r0, #4096
 		cmp	r0, r1
-		blt	1b
+		blo	1b
 		mov	pc, lr
 
 ENTRY(cpu_arm7_tlb_invalidate_range)
@@ -81,11 +81,11 @@ ENTRY(cpu_arm7_tlb_invalidate_range)
 		mcr	p15, 0, r0, c5, c0, 0		@ flush TLB
 		mov	pc, lr
 #else
-                @ arm 7 tbl purge reg is bits 14 - 31
+                @ arm 7 tbl purge reg is bits 12 - 31
 1:		mcr	p15, 0, r0, c6, c0, 0		@ purge TLB
-		add	r0, r0, #0x4000
+		add	r0, r0, #0x1000
 		cmp	r0, r1
-		blt	1b
+		blo	1b
 		mov	pc, lr
 #endif
 
@@ -110,15 +110,13 @@ ENTRY(cpu_arm7_tlb_invalidate_page)
  * Purpose : obtain information about current aborted instruction
  *
  * Returns : r0 = address of abort
- *	   : r1 != 0 if writing
- *	   : r3 = FSR
+ *	   : r1 = FSR, bit 11 set if writing
+ *	   : r3 = corrupted
  *	   : sp = pointer to registers
  */
 
 ENTRY(cpu_arm6_data_abort)
 		ldr	r4, [r0]			@ read instruction causing problem
-		tst	r4, r4, lsr #21			@ C = bit 20
-		sbc	r1, r1, r1			@ r1 = C - 1
 		and	r2, r4, #14 << 24
 		teq	r2, #8 << 24			@ was it ldm/stm
 		bne	Ldata_simple
@@ -144,14 +142,14 @@ Ldata_ldmstm:	tst	r4, #1 << 21			@ check writeback bit
 		addeq	r7, r0, r7, lsl #2		@ Do correction (signed)
 Ldata_saver7:	str	r7, [sp, r5, lsr #14]		@ Put register
 Ldata_simple:	mrc	p15, 0, r0, c6, c0, 0		@ get FAR
-		mrc	p15, 0, r3, c5, c0, 0		@ get FSR
-		and	r3, r3, #255
+		mrc	p15, 0, r1, c5, c0, 0		@ get FSR
+		bic	r1, r1, #1 << 11 | 1 << 10
+		tst	r4, #1 << 20
+		orreq	r1, r1, #1 << 11
 		mov	pc, lr
 
 ENTRY(cpu_arm7_data_abort)
 		ldr	r4, [r0]			@ read instruction causing problem
-		tst	r4, r4, lsr #21			@ C = bit 20
-		sbc	r1, r1, r1			@ r1 = C - 1
 		and	r2, r4, #15 << 24
 		add	pc, pc, r2, lsr #22		@ Now branch to the relevent processing routine
 		movs	pc, lr
@@ -268,6 +266,7 @@ ENTRY(cpu_arm7_proc_fin)
 		msr	cpsr_c, r0
 		mov	r0, #0x31			@ ....S..DP...M
 		mcr	p15, 0, r0, c1, c0, 0		@ disable caches
+		mcr	p15, 0, r0, c7, c0, 0		@ invalidate cache
 		mov	pc, lr
 
 ENTRY(cpu_arm6_do_idle)
@@ -336,7 +335,7 @@ ENTRY(cpu_arm7_set_pte)
 		bic	r2, r2, #3
 		orr	r2, r2, #HPTE_TYPE_SMALL
 
-		tst	r1, #LPTE_USER | LPTE_EXEC	@ User or Exec?
+		tst	r1, #LPTE_USER			@ User?
 		orrne	r2, r2, #HPTE_AP_READ
 
 		tst	r1, #LPTE_WRITE | LPTE_DIRTY	@ Write and Dirty?

@@ -32,6 +32,7 @@
 #include <linux/jhash.h>
 /* For ERR_PTR().  Yeah, I know... --RR */
 #include <linux/fs.h>
+#include <linux/notifier.h>
 
 /* This rwlock protects the main hash table, protocol/helper/expected
    registrations, conntrack timers*/
@@ -65,6 +66,14 @@ static atomic_t ip_conntrack_count = ATOMIC_INIT(0);
 struct list_head *ip_conntrack_hash;
 static kmem_cache_t *ip_conntrack_cachep;
 static LIST_HEAD(unconfirmed);
+
+#ifdef CONFIG_IP_NF_CONNTRACK_EVENTS
+struct notifier_block *ip_conntrack_chain;
+#endif /* CONFIG_IP_NF_CONNTRACK_EVENTS */
+
+#ifdef CONFIG_IP_NF_CONNTRACK_EVENTS
+struct notifier_block *ip_conntrack_chain;
+#endif /* CONFIG_IP_NF_CONNTRACK_EVENTS */
 
 extern struct ip_conntrack_protocol ip_conntrack_generic_protocol;
 
@@ -143,6 +152,8 @@ ip_ct_get_tuple(const struct iphdr *iph, size_t len,
 	tuple->dst.ip = iph->daddr;
 	tuple->dst.protonum = iph->protocol;
 
+	tuple->src.u.all = tuple->dst.u.all = 0;
+
 	ret = protocol->pkt_to_tuple((u_int32_t *)iph + iph->ihl,
 				     len - 4*iph->ihl,
 				     tuple);
@@ -157,6 +168,8 @@ invert_tuple(struct ip_conntrack_tuple *inverse,
 	inverse->src.ip = orig->dst.ip;
 	inverse->dst.ip = orig->src.ip;
 	inverse->dst.protonum = orig->dst.protonum;
+
+	inverse->src.u.all = inverse->dst.u.all = 0;
 
 	return protocol->invert_tuple(inverse, orig);
 }
@@ -315,6 +328,8 @@ destroy_conntrack(struct nf_conntrack *nfct)
 	IP_NF_ASSERT(atomic_read(&nfct->use) == 0);
 	IP_NF_ASSERT(!timer_pending(&ct->timeout));
 
+	set_bit(IPS_DESTROYED_BIT, &ct->status);
+
 	/* To make sure we don't get any weird locking issues here:
 	 * destroy_conntrack() MUST NOT be called with a write lock
 	 * to ip_conntrack_lock!!! -HW */
@@ -360,6 +375,7 @@ static void death_by_timeout(unsigned long ul_conntrack)
 {
 	struct ip_conntrack *ct = (void *)ul_conntrack;
 
+	ip_conntrack_event(IPCT_DESTROY, ct);
 	WRITE_LOCK(&ip_conntrack_lock);
 	clean_from_lists(ct);
 	WRITE_UNLOCK(&ip_conntrack_lock);
@@ -430,13 +446,13 @@ ip_conntrack_get(struct sk_buff *skb, enum ip_conntrack_info *ctinfo)
 
 /* Confirm a connection given skb->nfct; places it in hash table */
 int
-__ip_conntrack_confirm(struct nf_ct_info *nfct)
+__ip_conntrack_confirm(struct sk_buff *skb)
 {
 	unsigned int hash, repl_hash;
 	struct ip_conntrack *ct;
 	enum ip_conntrack_info ctinfo;
 
-	ct = __ip_conntrack_get(nfct, &ctinfo);
+	ct = ip_conntrack_get(skb, &ctinfo);
 
 	/* ipt_REJECT uses ip_conntrack_attach to attach related
 	   ICMP/TCP RST packets in other direction.  Actual packet
@@ -485,6 +501,9 @@ __ip_conntrack_confirm(struct nf_ct_info *nfct)
 		atomic_inc(&ct->ct_general.use);
 		set_bit(IPS_CONFIRMED_BIT, &ct->status);
 		WRITE_UNLOCK(&ip_conntrack_lock);
+		ip_conntrack_event_cache(master_ct(ct) ?
+					 IPCT_RELATED : IPCT_NEW, skb);
+
 		return NF_ACCEPT;
 	}
 
@@ -730,7 +749,7 @@ init_conntrack(const struct ip_conntrack_tuple *tuple,
 		conntrack->helper = ip_ct_find_helper(&repl_tuple);
 
 	/* If the expectation is dying, then this is a looser. */
-	if (expected
+	if (expected && expected->expectant && expected->expectant->helper
 	    && expected->expectant->helper->timeout
 	    && ! del_timer(&expected->timeout))
 		expected = NULL;
@@ -742,6 +761,9 @@ init_conntrack(const struct ip_conntrack_tuple *tuple,
 		__set_bit(IPS_EXPECTED_BIT, &conntrack->status);
 		conntrack->master = expected;
 		expected->sibling = conntrack;
+#if CONFIG_IP_NF_CONNTRACK_MARK
+		conntrack->mark = expected->expectant->mark;
+#endif
 		LIST_DELETE(&ip_conntrack_expect_list, expected);
 		expected->expectant->expecting--;
 		nf_conntrack_get(&master_ct(conntrack)->infos[0]);
@@ -826,6 +848,8 @@ unsigned int ip_conntrack_in(unsigned int hooknum,
 	/* FIXME: Do this right please. --RR */
 	(*pskb)->nfcache |= NFC_UNKNOWN;
 
+	ip_conntrack_event_cache_init(*pskb);
+
 /* Doesn't cover locally-generated broadcast, so not worth it. */
 #if 0
 	/* Ignore broadcast: no `connection'. */
@@ -874,11 +898,12 @@ unsigned int ip_conntrack_in(unsigned int hooknum,
 	IP_NF_ASSERT((*pskb)->nfct);
 
 	ret = proto->packet(ct, (*pskb)->nh.iph, (*pskb)->len, ctinfo);
-	if (ret == -1) {
-		/* Invalid */
+	if (ret < 0 ) {
+		/* Invalid: inverse of the return code tells
+		 * to the netfilter core what to do. */
 		nf_conntrack_put((*pskb)->nfct);
 		(*pskb)->nfct = NULL;
-		return NF_ACCEPT;
+		return -ret;
 	}
 
 	if (ret != NF_DROP && ct->helper) {
@@ -962,8 +987,8 @@ int ip_conntrack_expect_related(struct ip_conntrack *related_to,
 	 * so there is no need to use the tuple lock too */
 
 	DEBUGP("ip_conntrack_expect_related %p\n", related_to);
-	DEBUGP("tuple: "); DUMP_TUPLE(&expect->tuple);
-	DEBUGP("mask:  "); DUMP_TUPLE(&expect->mask);
+	DEBUGP("tuple: "); DUMP_TUPLE_RAW(&expect->tuple);
+	DEBUGP("mask:  "); DUMP_TUPLE_RAW(&expect->mask);
 
 	old = LIST_FIND(&ip_conntrack_expect_list, resent_expect,
 		        struct ip_conntrack_expect *, &expect->tuple, 
@@ -1081,15 +1106,14 @@ int ip_conntrack_change_expect(struct ip_conntrack_expect *expect,
 
 	MUST_BE_READ_LOCKED(&ip_conntrack_lock);
 	WRITE_LOCK(&ip_conntrack_expect_tuple_lock);
-
 	DEBUGP("change_expect:\n");
-	DEBUGP("exp tuple: "); DUMP_TUPLE(&expect->tuple);
-	DEBUGP("exp mask:  "); DUMP_TUPLE(&expect->mask);
-	DEBUGP("newtuple:  "); DUMP_TUPLE(newtuple);
+	DEBUGP("exp tuple: "); DUMP_TUPLE_RAW(&expect->tuple);
+	DEBUGP("exp mask:  "); DUMP_TUPLE_RAW(&expect->mask);
+	DEBUGP("newtuple:  "); DUMP_TUPLE_RAW(newtuple);
 	if (expect->ct_tuple.dst.protonum == 0) {
 		/* Never seen before */
 		DEBUGP("change expect: never seen before\n");
-		if (!ip_ct_tuple_equal(&expect->tuple, newtuple) 
+		if (!ip_ct_tuple_mask_cmp(&expect->tuple, newtuple, &expect->mask)
 		    && LIST_FIND(&ip_conntrack_expect_list, expect_clash,
 			         struct ip_conntrack_expect *, newtuple, &expect->mask)) {
 			/* Force NAT to find an unused tuple */
@@ -1183,21 +1207,39 @@ void ip_conntrack_helper_unregister(struct ip_conntrack_helper *me)
 	MOD_DEC_USE_COUNT;
 }
 
-/* Refresh conntrack for this many jiffies. */
-void ip_ct_refresh(struct ip_conntrack *ct, unsigned long extra_jiffies)
+static inline void ct_add_counters(struct ip_conntrack *ct,
+				   enum ip_conntrack_info ctinfo,
+				   struct iphdr *iph)
+{
+#ifdef CONFIG_IP_NF_CT_ACCT
+	if (iph) {
+		ct->counters[CTINFO2DIR(ctinfo)].packets++;
+		ct->counters[CTINFO2DIR(ctinfo)].bytes += ntohs(iph->tot_len);
+	}
+#endif
+}
+
+/* Refresh conntrack for this many jiffies and do accounting (if iph != NULL) */
+void ip_ct_refresh_acct(struct ip_conntrack *ct,
+			enum ip_conntrack_info ctinfo,
+			struct iphdr *iph,
+			unsigned long extra_jiffies)
 {
 	IP_NF_ASSERT(ct->timeout.data == (unsigned long)ct);
 
 	WRITE_LOCK(&ip_conntrack_lock);
 	/* If not in hash table, timer will not be active yet */
-	if (!is_confirmed(ct))
+	if (!is_confirmed(ct)) {
 		ct->timeout.expires = extra_jiffies;
+		ct_add_counters(ct, ctinfo, iph);
+	}
 	else {
 		/* Need del_timer for race avoidance (may already be dying). */
 		if (del_timer(&ct->timeout)) {
 			ct->timeout.expires = jiffies + extra_jiffies;
 			add_timer(&ct->timeout);
 		}
+		ct_add_counters(ct, ctinfo, iph);
 	}
 	WRITE_UNLOCK(&ip_conntrack_lock);
 }
@@ -1398,6 +1440,7 @@ void ip_conntrack_cleanup(void)
 	nf_unregister_sockopt(&so_getorigdst);
 }
 
+#define HASHRATIO 8
 static int hashsize = 0;
 MODULE_PARM(hashsize, "i");
 
@@ -1411,6 +1454,14 @@ int __init ip_conntrack_init(void)
  	if (hashsize) {
  		ip_conntrack_htable_size = hashsize;
  	} else {
+#ifdef CONFIG_IP_NF_BIG_CONNTRACK
+		/* Increase hash table size for dedicated routers.
+		 * Allow all of memory to be used;  it's just as bad
+		 * as having a full conntrack table. */
+		ip_conntrack_htable_size 
+			= (((num_physpages << PAGE_SHIFT) / HASHRATIO)
+                	   / sizeof(struct ip_conntrack));
+#else
 		ip_conntrack_htable_size
 			= (((num_physpages << PAGE_SHIFT) / 16384)
 			   / sizeof(struct list_head));
@@ -1418,8 +1469,9 @@ int __init ip_conntrack_init(void)
 			ip_conntrack_htable_size = 8192;
 		if (ip_conntrack_htable_size < 16)
 			ip_conntrack_htable_size = 16;
+#endif
 	}
-	ip_conntrack_max = 8 * ip_conntrack_htable_size;
+	ip_conntrack_max = HASHRATIO * ip_conntrack_htable_size;
 
 	printk("ip_conntrack version %s (%u buckets, %d max)"
 	       " - %Zd bytes per conntrack\n", IP_CONNTRACK_VERSION,

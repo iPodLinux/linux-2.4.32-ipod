@@ -1230,6 +1230,9 @@ int __init pktsched_init(void)
 #ifdef CONFIG_NET_SCH_RED
 	INIT_QDISC(red);
 #endif
+#ifdef CONFIG_NET_SCH_WRR
+	INIT_QDISC(wrr);
+#endif
 #ifdef CONFIG_NET_SCH_GRED
        INIT_QDISC(gred);
 #endif

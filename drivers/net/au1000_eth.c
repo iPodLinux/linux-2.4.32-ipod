@@ -1206,6 +1206,18 @@ au1000_probe(u32 ioaddr, int irq, int port_num)
 	if (ioaddr == iflist[0].base_addr)
 	{
 		/* check env variables first */
+#if CONFIG_MIPS_VEGAS
+		{
+			unsigned long 	*reg;
+		
+			reg = (unsigned long *) 0xbfc40000;
+			if ((*reg == 0xffffffff && (*(reg+1) & 0xffff0000) == 0xffff0000) ||
+					(*reg == 0x0 && (*(reg+1) & 0xffff0000) == 0x0))
+				reg = (unsigned long *) au1000_mac_addr;
+			memcpy(au1000_mac_addr, reg, 
+						sizeof(dev->dev_addr));
+		}
+#else
 		if (!get_ethernet_addr(ethaddr)) { 
 			memcpy(au1000_mac_addr, ethaddr, sizeof(dev->dev_addr));
 		} else {
@@ -1221,6 +1233,8 @@ au1000_probe(u32 ioaddr, int irq, int port_num)
 						sizeof(dev->dev_addr));
 			}
 		}
+#endif
+		if (ioaddr == AU1000_ETH0_BASE)
 			aup->enable = (volatile u32 *) 
 				((unsigned long)iflist[0].macen_addr);
 		memcpy(dev->dev_addr, au1000_mac_addr, sizeof(dev->dev_addr));
@@ -1380,7 +1394,9 @@ static int au1000_init(struct net_device *dev)
 	}
 	au_sync();
 
+#ifdef CLEANUP
 	aup->phy_ops->phy_status(dev, aup->phy_addr, &link, &speed);
+#endif
 	control = MAC_DISABLE_RX_OWN | MAC_RX_ENABLE | MAC_TX_ENABLE;
 #ifndef CONFIG_CPU_LITTLE_ENDIAN
 	control |= MAC_BIG_ENDIAN;
@@ -1410,6 +1426,8 @@ static void au1000_timer(unsigned long data)
 	}
 
 	if_port = dev->if_port;
+
+#ifdef CLEANUP	
 	if (aup->phy_ops->phy_status(dev, aup->phy_addr, &link, &speed) == 0) {
 		if (link) {
 			if (!(dev->flags & IFF_RUNNING)) {
@@ -1427,6 +1445,7 @@ static void au1000_timer(unsigned long data)
 			}
 		}
 	}
+#endif
 
 	if (link && (dev->if_port != if_port) && 
 			(dev->if_port != IF_PORT_UNKNOWN)) {
@@ -1869,6 +1888,7 @@ static int au1000_set_config(struct net_device *dev, struct ifmap *map)
 				dev->name, dev->if_port, map->port);
 	}
 
+#if 0
 	switch(map->port){
 		case IF_PORT_UNKNOWN: /* use auto here */   
 			printk(KERN_INFO "%s: config phy for aneg\n", 
@@ -1950,6 +1970,7 @@ static int au1000_set_config(struct net_device *dev, struct ifmap *map)
 					dev->name);
 			return -EINVAL;
 	}
+#endif	
 	return 0;
 }
 

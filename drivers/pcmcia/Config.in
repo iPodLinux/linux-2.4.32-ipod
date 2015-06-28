@@ -43,6 +43,14 @@ if [ "$CONFIG_PCMCIA" != "n" ]; then
    if [ "$CONFIG_VRC4173" = "y" -o "$CONFIG_VRC4173" = "m" ]; then
       dep_tristate '  NEC VRC4173 CARDU support' CONFIG_PCMCIA_VRC4173 $CONFIG_PCMCIA
    fi
+   if [ "$CONFIG_MACH_IVPN" = "y" ]; then
+      tristate '  Snapgear/IVPN IXP4xx socket services support' CONFIG_PCMCIA_IVPN
+      define_bool CONFIG_VIRTUAL_BUS y
+   fi
+   if [ "$CONFIG_MACH_SE4200" = "y" ]; then
+      tristate '  Cyberguard/SE4200 KS8695 socket services support' CONFIG_PCMCIA_KS
+      define_bool CONFIG_VIRTUAL_BUS y
+   fi
 fi
 
 endmenu

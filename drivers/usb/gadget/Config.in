@@ -16,12 +16,19 @@ if [ "$CONFIG_USB_GADGET" = "y" -o "$CONFIG_USB_GADGET" = "m" ]; then
   # since they control compile options for gadget drivers.
   #
   choice 'USB Peripheral Controller Driver' "\
+	Intel-PXA2xx/IXP4xx		CONFIG_USB_GADGET_PXA2XX \
 	NetChip-2280			CONFIG_USB_GADGET_NET2280 \
 	Toshiba-TC86C001(Goku-S)	CONFIG_USB_GADGET_GOKU \
 	" NetChip-2280
 
   define_tristate CONFIG_USB_GADGET_CONTROLLER n
 
+  if [ "$CONFIG_ARCH_PXA" = "y" -o "$CONFIG_ARCH_IXP425" = "y" ] ; then
+     if [ "$CONFIG_USB_GADGET_PXA2XX" = "y" ] ; then
+       define_tristate CONFIG_USB_PXA2XX $CONFIG_USB_GADGET
+       define_tristate CONFIG_USB_GADGET_CONTROLLER $CONFIG_USB_PXA2XX
+     fi
+  fi
   if [ "$CONFIG_PCI" = "y" -a "$CONFIG_USB_GADGET_NET2280" = "y" ] ; then
     define_tristate CONFIG_USB_NET2280 $CONFIG_USB_GADGET
     define_tristate CONFIG_USB_GADGET_CONTROLLER $CONFIG_USB_NET2280

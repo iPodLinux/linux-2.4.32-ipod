@@ -215,8 +215,10 @@ int br_add_if(struct net_bridge *br, struct net_device *dev)
 	if (dev->br_port != NULL)
 		return -EBUSY;
 
+#if 0
 	if (dev->flags & IFF_LOOPBACK || dev->type != ARPHRD_ETHER)
 		return -EINVAL;
+#endif
 
 	if (dev->hard_start_xmit == br_dev_xmit)
 		return -ELOOP;
@@ -257,14 +259,20 @@ int br_del_if(struct net_bridge *br, struct net_device *dev)
 	return retval;
 }
 
-int br_get_bridge_ifindices(int *indices, int num)
+int br_get_bridge_ifindices(int *indices, int num, int user_buf)
 {
 	struct net_device *dev;
 	int i = 0;
 
 	for (dev = dev_base; i < num && dev != NULL; dev = dev->next) {
 		if (dev->hard_start_xmit == br_dev_xmit)
-			indices[i++] = dev->ifindex;
+			if (user_buf) {
+				if (copy_to_user(indices+i, &dev->ifindex, sizeof(dev->ifindex)))
+					return -EFAULT;
+				i++;
+			} else {
+				indices[i++] = dev->ifindex;
+			}
 	}
 
 	return i;

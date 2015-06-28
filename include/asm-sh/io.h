@@ -125,6 +125,8 @@
 #  include <asm/io_cat68701.h>
 # elif defined(CONFIG_SH_BIGSUR)
 #  include <asm/io_bigsur.h>
+# elif defined(CONFIG_SH_KEYWEST)
+#  include <asm/io_keywest.h>
 # elif defined(CONFIG_SH_HS7729PCI)
 #  include <asm/io_hs7729pci.h>
 # elif defined(CONFIG_SH_7751_SOLUTION_ENGINE)

@@ -14,6 +14,11 @@ if [ "$CONFIG_MTD" = "y" -o "$CONFIG_MTD" = "m" ]; then
    dep_tristate '  MTD partitioning support' CONFIG_MTD_PARTITIONS $CONFIG_MTD
    dep_tristate '  MTD concatenating support' CONFIG_MTD_CONCAT $CONFIG_MTD
    dep_tristate '  RedBoot partition table parsing' CONFIG_MTD_REDBOOT_PARTS $CONFIG_MTD_PARTITIONS
+   if [ "$CONFIG_MTD_REDBOOT_PARTS" = "y" ]; then
+      dep_bool '  Include unallocated flash space' CONFIG_MTD_REDBOOT_PARTS_UNALLOCATED $CONFIG_MTD_REDBOOT_PARTS
+      dep_bool '  Force read-only for RedBoot system images' CONFIG_MTD_REDBOOT_PARTS_READONLY $CONFIG_MTD_REDBOOT_PARTS
+   fi
+   dep_tristate '  uCbootstrap partition table parsing' CONFIG_MTD_UCBOOTSTRAP_PARTS $CONFIG_UCBOOTSTRAP $CONFIG_MTD_PARTITIONS
    dep_tristate '  Command line partition table parsing' CONFIG_MTD_CMDLINE_PARTS $CONFIG_MTD_PARTITIONS
    if [ "$CONFIG_ARM" = "y" ]; then
       dep_tristate '  ARM Firmware Suite partition parsing' CONFIG_MTD_AFS_PARTS $CONFIG_MTD_PARTITIONS
@@ -27,6 +32,7 @@ comment 'User Modules And Translation Layers'
    fi
    dep_tristate '  FTL (Flash Translation Layer) support' CONFIG_FTL $CONFIG_MTD
    dep_tristate '  NFTL (NAND Flash Translation Layer) support' CONFIG_NFTL $CONFIG_MTD
+   dep_tristate '  INFTL (Inverse NAND Flash Translation Layer) support' CONFIG_INFTL $CONFIG_MTD
    if [ "$CONFIG_NFTL" = "y" -o "$CONFIG_NFTL" = "m" ]; then
       bool '    Write support for NFTL (BETA)' CONFIG_NFTL_RW
    fi

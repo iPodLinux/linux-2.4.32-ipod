@@ -88,6 +88,7 @@ ip_nat_fn(unsigned int hooknum,
 	   packet filter it out, or implement conntrack/NAT for that
 	   protocol. 8) --RR */
 	if (!ct) {
+#if 0
 		/* Exception: ICMP redirect to new connection (not in
                    hash table yet).  We must not let this through, in
                    case we're doing NAT to the same network. */
@@ -97,6 +98,7 @@ ip_nat_fn(unsigned int hooknum,
 		if (iph->protocol == IPPROTO_ICMP
 		    && hdr->type == ICMP_REDIRECT)
 			return NF_DROP;
+#endif
 		return NF_ACCEPT;
 	}
 

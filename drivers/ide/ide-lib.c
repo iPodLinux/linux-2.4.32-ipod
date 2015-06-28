@@ -94,47 +94,47 @@ u8 ide_dma_speed(ide_drive_t *drive, u8 mode)
 	switch(mode) {
 		case 0x04:
 			if ((id->dma_ultra & 0x0040) &&
-			    (id->dma_ultra & hwif->ultra_mask))
+			    (id->dma_ultra & hwif->ultra_mask & 0x0040))
 				{ speed = XFER_UDMA_6; break; }
 		case 0x03:
 			if ((id->dma_ultra & 0x0020) &&
-			    (id->dma_ultra & hwif->ultra_mask))
+			    (id->dma_ultra & hwif->ultra_mask & 0x0020))
 				{ speed = XFER_UDMA_5; break; }
 		case 0x02:
 			if ((id->dma_ultra & 0x0010) &&
-			    (id->dma_ultra & hwif->ultra_mask))
+			    (id->dma_ultra & hwif->ultra_mask & 0x0010))
 				{ speed = XFER_UDMA_4; break; }
 			if ((id->dma_ultra & 0x0008) &&
-			    (id->dma_ultra & hwif->ultra_mask))
+			    (id->dma_ultra & hwif->ultra_mask & 0x0008))
 				{ speed = XFER_UDMA_3; break; }
 		case 0x01:
 			if ((id->dma_ultra & 0x0004) &&
-			    (id->dma_ultra & hwif->ultra_mask))
+			    (id->dma_ultra & hwif->ultra_mask & 0x0004))
 				{ speed = XFER_UDMA_2; break; }
 			if ((id->dma_ultra & 0x0002) &&
-			    (id->dma_ultra & hwif->ultra_mask))
+			    (id->dma_ultra & hwif->ultra_mask & 0x0002))
 				{ speed = XFER_UDMA_1; break; }
 			if ((id->dma_ultra & 0x0001) &&
-			    (id->dma_ultra & hwif->ultra_mask))
+			    (id->dma_ultra & hwif->ultra_mask & 0x0001))
 				{ speed = XFER_UDMA_0; break; }
 		case 0x00:
 			if ((id->dma_mword & 0x0004) &&
-			    (id->dma_mword & hwif->mwdma_mask))
+			    (id->dma_mword & hwif->mwdma_mask & 0x0004))
 				{ speed = XFER_MW_DMA_2; break; }
 			if ((id->dma_mword & 0x0002) &&
-			    (id->dma_mword & hwif->mwdma_mask))
+			    (id->dma_mword & hwif->mwdma_mask & 0x0002))
 				{ speed = XFER_MW_DMA_1; break; }
 			if ((id->dma_mword & 0x0001) &&
-			    (id->dma_mword & hwif->mwdma_mask))
+			    (id->dma_mword & hwif->mwdma_mask & 0x0001))
 				{ speed = XFER_MW_DMA_0; break; }
 			if ((id->dma_1word & 0x0004) &&
-			    (id->dma_1word & hwif->swdma_mask))
+			    (id->dma_1word & hwif->swdma_mask & 0x0004))
 				{ speed = XFER_SW_DMA_2; break; }
 			if ((id->dma_1word & 0x0002) &&
-			    (id->dma_1word & hwif->swdma_mask))
+			    (id->dma_1word & hwif->swdma_mask & 0x0002))
 				{ speed = XFER_SW_DMA_1; break; }
 			if ((id->dma_1word & 0x0001) &&
-			    (id->dma_1word & hwif->swdma_mask))
+			    (id->dma_1word & hwif->swdma_mask & 0x0001))
 				{ speed = XFER_SW_DMA_0; break; }
 	}
 

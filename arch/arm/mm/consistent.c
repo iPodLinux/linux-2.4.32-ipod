@@ -103,8 +103,11 @@ void *pci_alloc_consistent(struct pci_dev *hwdev, size_t size, dma_addr_t *handl
 #if defined(CONFIG_PCI) || defined(CONFIG_SA1111)
 	if ((hwdev) == NULL || dev_is_sa1111(hwdev) ||
 	    (hwdev)->dma_mask != 0xffffffff)
-#endif
 		gfp |= GFP_DMA;
+#endif
+#ifdef CONFIG_ARCH_IXP425
+	gfp |= GFP_DMA;
+#endif
 
 	return consistent_alloc(gfp, size, handle);
 }

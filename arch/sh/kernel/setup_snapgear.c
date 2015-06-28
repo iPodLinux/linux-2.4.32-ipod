@@ -17,6 +17,7 @@
 #include <linux/init.h>
 #include <linux/irq.h>
 #include <linux/timer.h>
+#include <linux/ledman.h>
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/sched.h>
@@ -34,7 +35,8 @@ eraseconfig_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 {
 #if defined(CONFIG_SH_SECUREEDGE5410)
 {
-	volatile char dummy = * (volatile char *) 0xb8000000;
+	volatile char dummy;
+	dummy = * (volatile char *) 0xb8000000;
 }
 #endif
 #ifdef CONFIG_LEDMAN
@@ -87,100 +89,25 @@ init_snapgear_IRQ(void)
 
 /****************************************************************************/
 /*
- *	Fast poll interrupt simulator.
- */
-
-#define FAST_POLL	1000
-//#define FAST_POLL_INTR
-
-#define FASTTIMER_IRQ   17
-#define FASTTIMER_IPR_ADDR  INTC_IPRA
-#define FASTTIMER_IPR_POS    2
-#define FASTTIMER_PRIORITY   3
-
-#ifdef FAST_POLL_INTR
-#define TMU1_TCR_INIT	0x0020
-#else
-#define TMU1_TCR_INIT	0
-#endif
-#define TMU_TSTR_INIT	1
-#define TMU1_TCR_CALIB	0x0000
-#define TMU_TOCR	0xffd80000	/* Byte access */
-#define TMU_TSTR	0xffd80004	/* Byte access */
-#define TMU1_TCOR	0xffd80014	/* Long access */
-#define TMU1_TCNT	0xffd80018	/* Long access */
-#define TMU1_TCR	0xffd8001c	/* Word access */
-
-
-#ifdef FAST_POLL_INTR
-static void fast_timer_irq(int irq, void *dev_instance, struct pt_regs *regs)
-{
-	unsigned long timer_status;
-    timer_status = ctrl_inw(TMU1_TCR);
-	timer_status &= ~0x100;
-	ctrl_outw(timer_status, TMU1_TCR);
-}
-#endif
-
-/*
- * return the current ticks on the fast timer
- */
-
-unsigned long
-fast_timer_count(void)
-{
-	return(ctrl_inl(TMU1_TCNT));
-}
-
-/*
- * setup a fast timer for profiling etc etc
- */
-
-static void
-setup_fast_timer()
-{
-	unsigned long interval;
-
-#ifdef FAST_POLL_INTR
-	interval = (current_cpu_data.module_clock/4 + FAST_POLL/2) / FAST_POLL;
-
-	make_ipr_irq(FASTTIMER_IRQ, FASTTIMER_IPR_ADDR, FASTTIMER_IPR_POS,
-			FASTTIMER_PRIORITY);
-
-	printk("SnapGear: %dHz fast timer on IRQ %d\n",FAST_POLL,FASTTIMER_IRQ);
-
-	if (request_irq(FASTTIMER_IRQ, fast_timer_irq, 0, "SnapGear fast timer",
-			NULL) != 0)
-		printk("%s(%d): request_irq() failed?\n", __FILE__, __LINE__);
-#else
-	printk("SnapGear: fast timer running\n",FAST_POLL,FASTTIMER_IRQ);
-	interval = 0xffffffff;
-#endif
-
-	ctrl_outb(ctrl_inb(TMU_TSTR) & ~0x2, TMU_TSTR); /* disable timer 1 */
-	ctrl_outw(TMU1_TCR_INIT, TMU1_TCR);
-	ctrl_outl(interval, TMU1_TCOR);
-	ctrl_outl(interval, TMU1_TCNT);
-	ctrl_outb(ctrl_inb(TMU_TSTR) | 0x2, TMU_TSTR); /* enable timer 1 */
-
-	printk("Timer count 1 = 0x%x\n", fast_timer_count());
-	udelay(1000);
-	printk("Timer count 2 = 0x%x\n", fast_timer_count());
-}
-
-/****************************************************************************/
-/*
  * Initialize the board
  */
 
 void __init
 setup_snapgear(void)
 {
+	extern void secureedge5410_rtc_init(void);
+
+#if defined(CONFIG_SH_SECUREEDGE5410)
+{
+	volatile char dummy;
+	dummy = * (volatile char *) 0xb8000000;
+}
+#endif
+
 	/* XXX: RTC setting comes here */
 #ifdef CONFIG_RTC
 	secureedge5410_rtc_init();
 #endif
- 	// setup_fast_timer();
 }
 
 /****************************************************************************/

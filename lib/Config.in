@@ -13,6 +13,7 @@ if [ "$CONFIG_CRAMFS" = "y" -o \
      "$CONFIG_PPP_DEFLATE" = "y" -o \
      "$CONFIG_CRYPTO_DEFLATE" = "y" -o \
      "$CONFIG_JFFS2_FS" = "y" -o \
+     "$CONFIG_BINFMT_ZFLAT" = "y" -o \
      "$CONFIG_ZISOFS_FS" = "y" ]; then
    define_tristate CONFIG_ZLIB_INFLATE y
 else

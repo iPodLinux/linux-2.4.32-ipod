@@ -439,7 +439,11 @@ static int rh_init_int_timer(struct urb * urb);
 
 /*-------------------------------------------------------------------------*/
 
+#if defined(CONFIG_ARCH_EP93XX)
+#define ALLOC_FLAGS (in_interrupt () ? GFP_ATOMIC : GFP_NOIO)
+#else
 #define ALLOC_FLAGS (in_interrupt () || current->state != TASK_RUNNING ? GFP_ATOMIC : GFP_NOIO)
+#endif
 
 #ifdef DEBUG
 #	define OHCI_MEM_FLAGS	SLAB_POISON
@@ -448,8 +452,10 @@ static int rh_init_int_timer(struct urb * urb);
 #endif
  
 #ifndef CONFIG_PCI
-#	error "usb-ohci currently requires PCI-based controllers"
+#ifndef CONFIG_ARCH_EP9312
+//XXX  #	error "usb-ohci currently requires PCI-based controllers"
 	/* to support non-PCI OHCIs, you need custom bus/mem/... glue */
+#endif
 #endif
 
 
@@ -641,4 +647,10 @@ dev_free (struct ohci *hc, struct ohci_device *dev)
 {
 	pci_pool_free (hc->dev_cache, dev, dev->dma);
 }
+
+#ifdef CONFIG_ARCH_EP9312
+/* For initializing controller (mask in an HCFS mode too) */
+#define	OHCI_CONTROL_INIT \
+			(OHCI_CTRL_CBSR & 0x3) | OHCI_CTRL_IE | OHCI_CTRL_PLE
+#endif
 

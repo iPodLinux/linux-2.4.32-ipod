@@ -9,6 +9,7 @@
 #include <net/udp.h>
 #include <net/tcp.h>
 #include <net/ipv6.h>
+#include <linux/netfilter_logging.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
 
 MODULE_AUTHOR("Jan Rekorajski <baggins@pld.org.pl>");
@@ -355,22 +356,21 @@ static void dump_packet(const struct ip6t_log_info *info,
 	}
 }
 
-static unsigned int
-ip6t_log_target(struct sk_buff **pskb,
+static void
+ip6t_log_packet(struct sk_buff **pskb,
 		unsigned int hooknum,
 		const struct net_device *in,
 		const struct net_device *out,
-		const void *targinfo,
-		void *userinfo)
+		const struct ip6t_log_info *loginfo,
+		const char *level_string,
+		const char *prefix)
 {
-	const struct ip6t_log_info *loginfo = targinfo;
 	char level_string[4] = "< >";
 
-	level_string[1] = '0' + (loginfo->level % 8);
 	spin_lock_bh(&log_lock);
 	printk(level_string);
 	printk("%sIN=%s OUT=%s ",
-		loginfo->prefix,
+		prefix == NULL ? loginfo->prefix : prefix,
 		in ? in->name : "",
 		out ? out->name : "");
 	if (in && !out) {
@@ -409,8 +409,39 @@ ip6t_log_target(struct sk_buff **pskb,
 		    1);
 	printk("\n");
 	spin_unlock_bh(&log_lock);
+}
+
+static unsigned int
+ip6t_log_target(struct sk_buff **pskb,
+		unsigned int hooknum,
+		const struct net_device *in,
+		const struct net_device *out,
+		const void *targinfo,
+		void *userinfo)
+{
+	const struct ip6t_log_info *loginfo = targinfo;
+	char level_string[4] = "< >";
+
+	level_string[1] = '0' + (loginfo->level % 8);
+	ip6t_log_packet(pskb, hooknum, in, out, loginfo, level_string, NULL);
 
 	return IP6T_CONTINUE;
+}
+
+static void
+ip6_log_packet_fn(struct sk_buff **pskb,
+	          unsigned int hooknum,
+	          const struct net_device *in,
+	          const struct net_device *out,
+	          const char *prefix)
+{
+	struct ip6t_log_info loginfo = { 
+		.level = 0,
+		.logflags = IP6T_LOG_MASK,
+		.prefix = ""
+	};
+
+	ip6t_log_packet(pskb, hooknum, in, out, &loginfo, KERN_WARNING, prefix);
 }
 
 static int ip6t_log_checkentry(const char *tablename,
@@ -444,17 +475,21 @@ static int ip6t_log_checkentry(const char *tablename,
 static struct ip6t_target ip6t_log_reg
 = { { NULL, NULL }, "LOG", ip6t_log_target, ip6t_log_checkentry, NULL, 
     THIS_MODULE };
+static struct nf_logging_t ip6_logging_fn
+= { ip6_log_packet_fn };
 
 static int __init init(void)
 {
 	if (ip6t_register_target(&ip6t_log_reg))
 		return -EINVAL;
+	nf_log_register(PF_INET6, &ip6_logging_fn);
 
 	return 0;
 }
 
 static void __exit fini(void)
 {
+	nf_log_unregister(PF_INET6, &ip6_logging_fn);
 	ip6t_unregister_target(&ip6t_log_reg);
 }
 

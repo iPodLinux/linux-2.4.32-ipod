@@ -157,7 +157,7 @@
 #else
 # if defined(CONFIG_HD64461)
 #  define OFFCHIP_NR_IRQS 16
-# elif defined (CONFIG_SH_BIGSUR) /* must be before CONFIG_HD64465 */
+# elif defined (CONFIG_SH_BIGSUR) || defined(CONFIG_SH_KEYWEST) /* must be before CONFIG_HD64465 */
 #  define OFFCHIP_NR_IRQS 48
 # elif defined(CONFIG_HD64465)
 #  define OFFCHIP_NR_IRQS 16
@@ -326,6 +326,11 @@ static __inline__ int irq_demux(int irq)
 
 extern int bigsur_irq_demux(int irq);
 #define irq_demux(irq) bigsur_irq_demux(irq)
+
+#elif defined(CONFIG_SH_KEYWEST)
+
+extern int keywest_irq_demux(int irq);
+#define irq_demux(irq) keywest_irq_demux(irq)
 
 #elif defined(CONFIG_HD64461)
 

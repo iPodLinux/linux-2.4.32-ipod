@@ -128,6 +128,7 @@ extern unsigned long snapgear_isa_port2addr(unsigned long offset);
  * D10        -                      RTC SCLK
  * D11        RTC DATA               RTC DATA
  * D12        -                      RTS RESET
+ * D13        -                      DMZ
  */
 
  #define SECUREEDGE_IOPORT_ADDR ((volatile short *) 0xb0000000)

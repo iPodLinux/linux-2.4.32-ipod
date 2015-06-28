@@ -318,7 +318,7 @@ static int __init clps_setup_flash(void)
 	return nr;
 }
 
-extern int parse_redboot_partitions(struct mtd_info *master, struct mtd_partition **pparts);
+extern int parse_redboot_partitions(struct mtd_info *master, struct mtd_partition **pparts, unsigned long fis_origin);
 extern int parse_cmdline_partitions(struct mtd_info *master, struct mtd_partition **pparts, char *);
 
 static struct mtd_partition *parsed_parts;
@@ -339,7 +339,7 @@ static void __init clps_locate_partitions(struct mtd_info *mtd)
 		}
 #endif
 #ifdef CONFIG_MTD_REDBOOT_PARTS
-		nr_parts = parse_redboot_partitions(mtd, &parsed_parts);
+		nr_parts = parse_redboot_partitions(mtd, &parsed_parts, 0);
 		if (nr_parts > 0) {
 			part_type = "RedBoot";
 			break;

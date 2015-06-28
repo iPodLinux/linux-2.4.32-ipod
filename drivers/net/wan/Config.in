@@ -90,6 +90,7 @@ fi
          fi
 	 dep_tristate '    FarSync T-Series support' CONFIG_FARSYNC $CONFIG_HDLC
       fi
+      dep_tristate '    6WIND Chinook support' CONFIG_CHINOOK $CONFIG_HDLC
       if [ "$CONFIG_ISA" != "n" ]; then
 	 dep_tristate '    SDL RISCom/N2 support' CONFIG_N2 $CONFIG_HDLC
 	 dep_tristate '    Moxa C101 support' CONFIG_C101 $CONFIG_HDLC

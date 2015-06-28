@@ -85,7 +85,7 @@ SECTIONS
   .bss : {
 	*(.bss)
 	}
-  . = ALIGN(4);
+  . = ALIGN(4096);
   _end = . ;
 
   /* When something in the kernel is NOT compiled as a module, the

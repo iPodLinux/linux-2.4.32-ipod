@@ -23,12 +23,26 @@ struct fp_hard_struct {
 	unsigned int save[FP_SIZE];		/* as yet undefined */
 };
 
+#ifdef CONFIG_EP93XX_CRUNCH
+struct fp_crunch_struct {
+	long long regs[16];
+	int acc0[3];
+	int acc1[3];
+	int acc2[3];
+	int acc3[3];
+	unsigned long dspsc;
+};
+#endif
+
 struct fp_soft_struct {
 	unsigned int save[FP_SIZE];		/* undefined information */
 };
 
 union fp_state {
 	struct fp_hard_struct	hard;
+#ifdef CONFIG_EP93XX_CRUNCH
+	struct fp_crunch_struct	crunch;
+#endif
 	struct fp_soft_struct	soft;
 };
 

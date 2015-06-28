@@ -1,8 +1,9 @@
-/* $Id: cache-sh4.c,v 1.1.1.1.2.8 2003/07/09 09:59:30 trent Exp $
+/* $Id: cache-sh4.c,v 1.22 2003/07/15 18:40:12 lethal Exp $
  *
  *  linux/arch/sh/mm/cache-sh4.c
  *
  * Copyright (C) 1999, 2000, 2002  Niibe Yutaka
+ * Copyright (C) 2001, 2002, 2003  Paul Mundt
  */
 
 #include <linux/config.h>
@@ -19,131 +20,112 @@
 #include <asm/uaccess.h>
 #include <asm/pgalloc.h>
 #include <asm/mmu_context.h>
+#include <asm/cacheflush.h>
 
-#define CCR		 0xff00001c	/* Address of Cache Control Register */
+extern void __flush_cache_4096_all(unsigned long start);
+static void __flush_cache_4096_all_ex(unsigned long start);
+extern void __flush_dcache_all(void);
+static void __flush_dcache_all_ex(void);
 
-#define CCR_CACHE_OCE	0x0001	/* Operand Cache Enable */
-#define CCR_CACHE_WT	0x0002	/* Write-Through (for P0,U0,P3) (else writeback)*/
-#define CCR_CACHE_CB	0x0004	/* Copy-Back (for P1) (else writethrough) */
-#define CCR_CACHE_OCI	0x0008	/* OC Invalidate */
-#define CCR_CACHE_ORA	0x0020	/* OC RAM Mode */
-#define CCR_CACHE_OIX	0x0080	/* OC Index Enable */
-#define CCR_CACHE_ICE	0x0100	/* Instruction Cache Enable */
-#define CCR_CACHE_ICI	0x0800	/* IC Invalidate */
-#define CCR_CACHE_IIX	0x8000	/* IC Index Enable */
-
-
-
-#if defined(CONFIG_SH_CACHE_ASSOC)
-#define CCR_CACHE_EMODE 0x80000000
-/* CCR setup for associative mode: 16k+32k 2-way, P1 copy-back, enable */
-#define CCR_CACHE_VAL	(CCR_CACHE_EMODE|CCR_CACHE_ENABLE|CCR_CACHE_CB)
-#else
-/* Default CCR setup: 8k+16k-byte cache, P1-copy-back, enable */
-#define CCR_CACHE_VAL	(CCR_CACHE_ENABLE|CCR_CACHE_CB)
-#endif
-
-#define CCR_CACHE_INIT	(CCR_CACHE_VAL|CCR_CACHE_OCI|CCR_CACHE_ICI)
-#define CCR_CACHE_ENABLE (CCR_CACHE_OCE|CCR_CACHE_ICE)
-
-#define CACHE_IC_ADDRESS_ARRAY 0xf0000000
-#define CACHE_OC_ADDRESS_ARRAY 0xf4000000
-#define CACHE_VALID	  1
-#define CACHE_UPDATED	  2
-#define CACHE_ASSOC	  8
-
-#define CACHE_OC_WAY_SHIFT       14
-#define CACHE_IC_WAY_SHIFT       13
-#define CACHE_OC_ENTRY_SHIFT      5
-#define CACHE_IC_ENTRY_SHIFT      5
-#define CACHE_OC_ENTRY_MASK		0x3fe0
-#define CACHE_OC_ENTRY_PHYS_MASK	0x0fe0
-#define CACHE_IC_ENTRY_MASK		0x1fe0
-#define CACHE_IC_NUM_ENTRIES	256
-#define CACHE_OC_NUM_ENTRIES	512
-
-#define CACHE_NUM_WAYS 2
-
-static void __init
-detect_cpu_and_cache_system(void)
+int __init detect_cpu_and_cache_system(void)
 {
-#ifdef CONFIG_CPU_SUBTYPE_ST40
-	cpu_data->type = CPU_ST40;
-#elif defined(CONFIG_CPU_SUBTYPE_SH7750) || defined(CONFIG_CPU_SUBTYPE_SH7751)
-	cpu_data->type = CPU_SH7750;
-#elif defined(CONFIG_CPU_SUBTYPE_SH4_202)
-	cpu_data->type = CPU_SH4202;
-#else
-#error Unknown SH4 CPU type
-#endif
-}
+	unsigned long pvr, prr, ccr;
 
-void __init cache_init(void)
-{
-	unsigned long ccr;
+	pvr = (ctrl_inl(CCN_PVR) >> 8) & 0xffff;
+	prr = (ctrl_inl(CCN_PRR) >> 4) & 0xff;
 
-	detect_cpu_and_cache_system();
+	/*
+	 * Setup some sane SH-4 defaults for the icache
+	 */
+	cpu_data->icache.way_shift	= 13;
+	cpu_data->icache.entry_shift	= 5;
+	cpu_data->icache.entry_mask	= 0x1fe0;
+	cpu_data->icache.sets		= 256;
+	cpu_data->icache.ways		= 1;
+	cpu_data->icache.linesz		= L1_CACHE_BYTES;
 
-	jump_to_P2();
-	ccr = ctrl_inl(CCR);
-	if (ccr & CCR_CACHE_ENABLE) {
-		/*
-		 * XXX: Should check RA here. 
-		 * If RA was 1, we only need to flush the half of the caches.
+	/*
+	 * And again for the dcache ..
+	 */
+	cpu_data->dcache.way_shift	= 14;
+	cpu_data->dcache.entry_shift	= 5;
+	cpu_data->dcache.entry_mask	= 0x3fe0;
+	cpu_data->dcache.sets		= 512;
+	cpu_data->dcache.ways		= 1;
+	cpu_data->dcache.linesz		= L1_CACHE_BYTES;
+
+	/*
+	 * Probe the underlying processor version/revision and
+	 * adjust cpu_data setup accordingly.
+	 */
+	switch (pvr) {
+	case 0x205:
+		cpu_data->type = CPU_SH7750;
+		set_bit(CPU_HAS_P2_FLUSH_BUG, &(cpu_data->flags));
+		break;
+	case 0x206:
+		cpu_data->type = CPU_SH7750S;
+
+		/* 
+		 * FIXME: This is needed for 7750, but do we need it for the
+		 * 7750S and 7750R too? For now, assume we do.. -- PFM
 		 */
-		unsigned long addr, data;
-
-#if defined(CONFIG_SH_CACHE_ASSOC)
-                unsigned long way;
-
-                for (way = 0; way <= CACHE_NUM_WAYS; ++way) {
-                        unsigned long waybit = way << CACHE_OC_WAY_SHIFT;
-
-		        for (addr = CACHE_OC_ADDRESS_ARRAY + waybit;
-		             addr < (CACHE_OC_ADDRESS_ARRAY + waybit +
-			             (CACHE_OC_NUM_ENTRIES << 
-                                      CACHE_OC_ENTRY_SHIFT));
-		             addr += (1 << CACHE_OC_ENTRY_SHIFT)) {
-
-			        data = ctrl_inl(addr);
-
-			        if ((data & (CACHE_UPDATED|CACHE_VALID))
-			            == (CACHE_UPDATED|CACHE_VALID))
-				        ctrl_outl(data & ~CACHE_UPDATED, addr);
-		        }
-                }
-#else
-		for (addr = CACHE_OC_ADDRESS_ARRAY;
-		     addr < (CACHE_OC_ADDRESS_ARRAY+
-			     (CACHE_OC_NUM_ENTRIES << CACHE_OC_ENTRY_SHIFT));
-		     addr += (1 << CACHE_OC_ENTRY_SHIFT)) {
-			data = ctrl_inl(addr);
-			if ((data & (CACHE_UPDATED|CACHE_VALID))
-			    == (CACHE_UPDATED|CACHE_VALID))
-				ctrl_outl(data & ~CACHE_UPDATED, addr);
+		set_bit(CPU_HAS_P2_FLUSH_BUG, &(cpu_data->flags));
+		break;
+	case 0x1100:
+		cpu_data->type = CPU_SH7751;
+		break;
+	case 0x8000:
+		cpu_data->type = CPU_ST40RA;
+		break;
+	case 0x8100:
+		cpu_data->type = CPU_ST40GX1;
+		break;
+	case 0x500:
+		if (prr == 0x10) {
+			cpu_data->type = CPU_SH7750R;
+			set_bit(CPU_HAS_P2_FLUSH_BUG, &(cpu_data->flags));
+		} else {
+			cpu_data->type = CPU_SH7751R;
 		}
-#endif
+
+		jump_to_P2();
+		ccr = ctrl_inl(CCR);
+		if (cpu_data->type == CPU_SH7751R) {
+			ccr |= CCR_CACHE_EMODE;
+			ctrl_outl(ccr, CCR);
+		}
+		back_to_P1();
+
+		if (ccr & CCR_CACHE_EMODE) {
+			cpu_data->icache.ways = 2;
+			cpu_data->dcache.ways = 2;
+		}
+		break;
+	default:
+		cpu_data->type = CPU_SH_NONE;
+		break;
 	}
 
-	ctrl_outl(CCR_CACHE_INIT, CCR);
-	back_to_P1();
+	/*
+	 * For now, all SH-4's have an FPU ..
+	 */
+	cpu_data->flags |= CPU_HAS_FPU;
+
+	return 0;
 }
 
 /*
  * SH-4 has virtually indexed and physically tagged cache.
  */
 
-static struct semaphore p3map_sem[4];
+struct semaphore p3map_sem[4];
 
 void __init p3_cache_init(void)
 {
-	/* In ioremap.c */
-	extern int remap_area_pages(unsigned long address,
-				    unsigned long phys_addr,
-				    unsigned long size, unsigned long flags);
-
 	if (remap_area_pages(P3SEG, 0, PAGE_SIZE*4, _PAGE_CACHABLE))
 		panic("%s failed.", __FUNCTION__);
+
 	sema_init (&p3map_sem[0], 1);
 	sema_init (&p3map_sem[1], 1);
 	sema_init (&p3map_sem[2], 1);
@@ -211,15 +193,38 @@ void __flush_invalidate_region(void *start, int size)
 	}
 }
 
-void __flush_icache_all(void)
+static void __flush_dcache_all_ex(void)
 {
-	unsigned long flags;
+	unsigned long addr, end_addr, entry_offset;
 
-	save_and_cli(flags);
-	jump_to_P2();
-	ctrl_outl(CCR_CACHE_VAL|CCR_CACHE_ICI, CCR);
-	back_to_P1();
-	restore_flags(flags);
+	end_addr = CACHE_OC_ADDRESS_ARRAY + (cpu_data->dcache.sets << cpu_data->dcache.entry_shift) * cpu_data->dcache.ways;
+	entry_offset = 1 << cpu_data->dcache.entry_shift;
+	for (addr = CACHE_OC_ADDRESS_ARRAY; addr < end_addr; addr += entry_offset) {
+		ctrl_outl(0, addr);
+	}
+}
+
+static void __flush_cache_4096_all_ex(unsigned long start)
+{
+	unsigned long addr, entry_offset;
+	int i;
+
+	entry_offset = 1 << cpu_data->dcache.entry_shift;
+	for (i = 0; i < cpu_data->dcache.ways; i++, start += (1 << cpu_data->dcache.way_shift)) {
+		for (addr = CACHE_OC_ADDRESS_ARRAY + start;
+		     addr < CACHE_OC_ADDRESS_ARRAY + 4096 + start;
+		     addr += entry_offset) {
+			ctrl_outl(0, addr);
+		}
+	}
+}
+
+void flush_cache_4096_all(unsigned long start)
+{
+	if (cpu_data->dcache.ways == 1)
+		__flush_cache_4096_all(start);
+	else
+		__flush_cache_4096_all_ex(start);
 }
 
 /*
@@ -234,29 +239,28 @@ void flush_icache_range(unsigned long start, unsigned long end)
 
 /*
  * Write back the D-cache and purge the I-cache for signal trampoline. 
+ * .. which happens to be the same behavior as flush_icache_range().
+ * So, we simply flush out a line.
  */
 void flush_cache_sigtramp(unsigned long addr)
 {
 	unsigned long v, index;
 	unsigned long flags; 
+	int i;
 
 	v = addr & ~(L1_CACHE_BYTES-1);
 	asm volatile("ocbwb	%0"
 		     : /* no output */
 		     : "m" (__m(v)));
 
-	index = CACHE_IC_ADDRESS_ARRAY| (v&CACHE_IC_ENTRY_MASK);
-	save_and_cli(flags);
+	index = CACHE_IC_ADDRESS_ARRAY | (v & cpu_data->icache.entry_mask);
+
+	local_irq_save(flags);
 	jump_to_P2();
-	ctrl_outl(0, index);	/* Clear out Valid-bit */
-
-#if defined(CONFIG_SH_CACHE_ASSOC)
-	/* Must invalidate both ways for associative cache */
-	ctrl_outl(0, index | (1 << CACHE_IC_WAY_SHIFT));
-#endif
-
+	for(i = 0; i < cpu_data->icache.ways; i++, index += (1 << cpu_data->icache.way_shift))
+		ctrl_outl(0, index);	/* Clear out Valid-bit */
 	back_to_P1();
-	restore_flags(flags);
+	local_irq_restore(flags);
 }
 
 static inline void flush_cache_4096(unsigned long start,
@@ -265,19 +269,16 @@ static inline void flush_cache_4096(unsigned long start,
 	unsigned long flags; 
 	extern void __flush_cache_4096(unsigned long addr, unsigned long phys, unsigned long exec_offset);
 
-#if defined(CONFIG_CPU_SUBTYPE_SH7751) || defined(CONFIG_CPU_SUBTYPE_ST40) || defined(CONFIG_CPU_SUBTYPE_SH4_202)
-	if (start >= CACHE_OC_ADDRESS_ARRAY) {
-		/*
-		 * SH7751 and ST40 have no restriction to handle cache.
-		 * (While SH7750 must do that at P2 area.)
-		 */
-		__flush_cache_4096(start | CACHE_ASSOC, phys | 0x80000000, 0);
-	} else
-#endif
-	{
-		save_and_cli(flags);
-		__flush_cache_4096(start | CACHE_ASSOC, phys | 0x80000000, 0x20000000);
-		restore_flags(flags);
+	/*
+	 * SH7751, SH7751R, and ST40 have no restriction to handle cache.
+	 * (While SH7750 must do that at P2 area.)
+	 */
+	if (test_bit(CPU_HAS_P2_FLUSH_BUG, &(cpu_data->flags))) {
+		local_irq_save(flags);
+		__flush_cache_4096(start | SH_CACHE_ASSOC, phys | 0x80000000, 0x20000000);
+		local_irq_restore(flags);
+	} else if (start >= CACHE_OC_ADDRESS_ARRAY) {
+		__flush_cache_4096(start | SH_CACHE_ASSOC, phys | 0x80000000, 0);
 	}
 }
 
@@ -298,23 +299,28 @@ void flush_dcache_page(struct page *page)
 	}
 }
 
-static inline void flush_icache_all(void)
+void flush_icache_all(void)
 {
-	unsigned long flags;
+	unsigned long flags, ccr;
 
-	save_and_cli(flags);
+	local_irq_save(flags);
 	jump_to_P2();
+
 	/* Flush I-cache */
-	ctrl_outl(CCR_CACHE_VAL|CCR_CACHE_ICI, CCR);
+	ccr = ctrl_inl(CCR);
+	ccr |= CCR_CACHE_ICI;
+	ctrl_outl(ccr, CCR);
+
 	back_to_P1();
-	restore_flags(flags);
+	local_irq_restore(flags);
 }
 
 void flush_cache_all(void)
 {
-	extern void __flush_dcache_all(void);
-
-	__flush_dcache_all();
+	if (cpu_data->dcache.ways == 1)
+		__flush_dcache_all();
+	else
+		__flush_dcache_all_ex();
 	flush_icache_all();
 }
 
@@ -370,8 +376,6 @@ static void __flush_cache_page(struct vm_area_struct *vma,
 void flush_cache_range(struct mm_struct *mm, unsigned long start,
 		       unsigned long end)
 {
-	extern void flush_cache_4096_all(unsigned long start);
-
 	unsigned long p = start & PAGE_MASK;
 	pgd_t *dir;
 	pmd_t *pmd;
@@ -416,7 +420,8 @@ void flush_cache_range(struct mm_struct *mm, unsigned long start,
 		flush_cache_4096_all(0x2000);
 	if (d & 8)
 		flush_cache_4096_all(0x3000);
-	flush_icache_all();
+	if (1 /* vma->vm_flags & VM_EXEC DAVIDM FIX ME */)
+		flush_icache_all();
 }
 
 /*
@@ -444,6 +449,20 @@ void flush_cache_page(struct vm_area_struct *vma, unsigned long address)
 	phys = pte_val(entry)&PTE_PHYS_MASK;
 	__flush_cache_page(vma, address, phys);
 }
+
+/*
+ * flush_icache_user_range
+ * @vma: VMA of the process
+ * @page: page
+ * @addr: U0 address
+ * @len: length of the range (< page size)
+ */
+void flush_icache_user_range(struct vm_area_struct *vma,
+			     struct page *page, unsigned long addr, int len)
+{
+	__flush_cache_page(vma, addr, PHYSADDR(page_address(page)));
+}
+
 
 /*
  * clear_user_page
@@ -523,8 +542,6 @@ void copy_user_page(void *to, void *from, unsigned long address)
 }
 
 
-/****************************************************************************/
-
 #if defined(CONFIG_SH_CACHE_ASSOC)
 /*
  * It is no possible to use the approach implement in clear_page.S when we 
@@ -574,65 +591,4 @@ void flush_cache_4096_all(unsigned long start)
   flush_cache_4096(CACHE_OC_ADDRESS_ARRAY,          phys);
 }
 #endif
-
-
-
-
-
-
-/****************************************************************************/
-
-#if defined(CONFIG_SH_CACHE_ASSOC)
-/*
- * It is no possible to use the approach implement in clear_page.S when we 
- * are in 2-way set associative mode as it would only clear half the cache, in 
- * general. For the moment we simply implement it as a iteration through the 
- * cache flushing both ways, this in itself is not optimial as the delay latency 
- * for interupts is probably longer than necessary!
- *
- * benedict.gaster.superh.com
- */
-void __flush_dcache_all(void)
-{
-	unsigned long flags;
-	unsigned long addr;
-        unsigned long way;
-
-	save_and_cli(flags);
-#if !defined(CONFIG_CPU_SUBTYPE_SH7751) || defined(CONFIG_CPU_SUBTYPE_SH4_202)
-	jump_to_P2();
-#endif
-        /* Clear the U and V bits for each line and each way. On SH-4, this
-         * causes write-back if both U and V are set before the address write.
-         */
-	for (way = 0; way <= 1; ++way) {
-	        unsigned long waybit = way << CACHE_OC_WAY_SHIFT;
-
-	        /* Loop all the D-cache */
-                for (addr = CACHE_OC_ADDRESS_ARRAY + waybit;
-	             addr < (CACHE_OC_ADDRESS_ARRAY + waybit
-		             + (CACHE_OC_NUM_ENTRIES << CACHE_OC_ENTRY_SHIFT));
-	             addr += (1 << CACHE_OC_ENTRY_SHIFT)) {
-			ctrl_outl(0, addr);
-                }
-	}
-
-#if !defined(CONFIG_CPU_SUBTYPE_SH7751) || defined(CONFIG_CPU_SUBTYPE_SH4_202)
-	back_to_P1();
-#endif 
-	restore_flags(flags);
-}
-
-void flush_cache_4096_all(unsigned long start)
-{
-  unsigned long phys = PHYSADDR(start);
-
-  /* Loop all the D-cache */
-  flush_cache_4096(CACHE_OC_ADDRESS_ARRAY,          phys);
-}
-#endif
-
-
-
-
 

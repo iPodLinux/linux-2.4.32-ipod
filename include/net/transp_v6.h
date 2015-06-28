@@ -1,3 +1,5 @@
+/* $USAGI: transp_v6.h,v 1.4 2003/06/25 06:34:37 yoshfuji Exp $ */
+
 #ifndef _TRANSP_V6_H
 #define _TRANSP_V6_H
 
@@ -32,7 +34,7 @@ extern int			datagram_recv_ctl(struct sock *sk,
 extern int			datagram_send_ctl(struct msghdr *msg,
 						  struct flowi *fl,
 						  struct ipv6_txoptions *opt,
-						  int *hlimit);
+						  int *hlimit, int *tclass);
 
 #define		LOOPBACK4_IPV6		__constant_htonl(0x7f000006)
 

@@ -65,18 +65,21 @@
  *
  * Returns:
  *  r0 = address of abort
- *  r1 != 0 if writing
- *  r3 = FSR
+ *  r1 = FSR
+ *  r3 = corrupted
  *  r4 = corrupted
  */
 	.align	5
 ENTRY(cpu_arm1020_data_abort)
-	mrc	p15, 0, r3, c5, c0, 0		@ get FSR
+	mrc	p15, 0, r1, c5, c0, 0		@ get FSR
 	mrc	p15, 0, r0, c6, c0, 0		@ get FAR
-	ldr	r1, [r2]			@ read aborted instruction
-	and	r3, r3, #255
-	tst	r1, r1, lsr #21 		@ C = bit 20
-	sbc	r1, r1, r1			@ r1 = C - 1
+	tst	r3, #PSR_T_BIT
+	ldrneh	r3, [r2]			@ read aborted thumb instruction
+	ldreq	r3, [r2]			@ read aborted ARM instruction
+	bic	r1, r1, #1 << 11 | 1 << 10	@ clear bits 11 and 10 of FSR
+	movne	r3, r3, lsl #(21 - 12)		@ move thumb bit 11 to ARM bit 20
+	tst	r3, #1 << 20			@ check write
+	orreq	r1, r1, #1 << 11
 	mov	pc, lr
 
 /*
@@ -170,10 +173,10 @@ cpu_arm1020_cache_clean_invalidate_all_r2:
 #endif
 	subs	r3, r3, #1
 	cmp	r3, #0
-	bge	2b				@ entries 3F to 0
+	bhs	2b				@ entries 3F to 0
 	subs	r1, r1, #1
 	cmp	r1, #0
-	bge	1b				@ segments 7 to 0
+	bhs	1b				@ segments 7 to 0
 #endif
         
 #ifndef CONFIG_CPU_ICACHE_DISABLE
@@ -201,7 +204,7 @@ ENTRY(cpu_arm1020_cache_clean_invalidate_range)
 	bic	r0, r0, #DCACHELINESIZE - 1
 	sub	r3, r1, r0
 	cmp	r3, #MAX_AREA_SIZE
-	bgt	cpu_arm1020_cache_clean_invalidate_all_r2
+	bhi	cpu_arm1020_cache_clean_invalidate_all_r2
 	mcr	p15, 0, r3, c7, c10, 4
 #ifndef CONFIG_CPU_DCACHE_DISABLE
 1:	mcr	p15, 0, r0, c7, c14, 1		@ clean and invalidate D entry
@@ -214,7 +217,7 @@ ENTRY(cpu_arm1020_cache_clean_invalidate_range)
 #endif
 	add	r0, r0, #DCACHELINESIZE
 	cmp	r0, r1
-	blt	1b
+	blo	1b
 #endif
 
 #ifndef CONFIG_CPU_ICACHE_DISABLE
@@ -302,7 +305,7 @@ ENTRY(cpu_arm1020_dcache_invalidate_range)
 #endif
 	add	r0, r0, #DCACHELINESIZE
 	cmp	r0, r1
-	blt	1b
+	blo	1b
 #else
 	/* D cache off, but still drain the write buffer */
 	mcr	p15, 0, r0, c7, c10, 4		@ Drain write buffer
@@ -328,7 +331,7 @@ ENTRY(cpu_arm1020_dcache_clean_range)
 	bic	r0, r0, #DCACHELINESIZE - 1
 	sub	r3, r1, r0
 	cmp	r3, #MAX_AREA_SIZE
-	bgt	cpu_arm1020_cache_clean_invalidate_all_r2
+	bhi	cpu_arm1020_cache_clean_invalidate_all_r2
 	mcr	p15, 0, r3, c7, c10, 4
 #ifndef CONFIG_CPU_DCACHE_DISABLE
 1:	mcr	p15, 0, r0, c7, c14, 1		@ clean and invalidate D entry
@@ -341,7 +344,7 @@ ENTRY(cpu_arm1020_dcache_clean_range)
 #endif
 	add	r0, r0, #DCACHELINESIZE
 	cmp	r0, r1
-	blt	1b
+	blo	1b
 #endif
 
 #ifndef CONFIG_CPU_BPREDICT_DISABLE
@@ -488,7 +491,7 @@ ENTRY(cpu_arm1020_tlb_invalidate_range)
 	mov	r0, r0
 #endif
 	cmp	r0, r1
-	blt	1b
+	blo	1b
 	mov	pc, lr
 
 /*
@@ -541,10 +544,10 @@ ENTRY(cpu_arm1020_set_pgd)
 #endif
 	subs	r3, r3, #1
 	cmp	r3, #0
-	bge	2b				@ entries 3F to 0
+	bhs	2b				@ entries 3F to 0
 	subs	r1, r1, #1
 	cmp	r1, #0
-	bge	1b				@ segments 15 to 0
+	bhs	1b				@ segments 15 to 0
 
 #endif
 	mov	r1, #0
@@ -603,7 +606,7 @@ ENTRY(cpu_arm1020_set_pte)
 	bic	r2, r2, #3
 	orr	r2, r2, #HPTE_TYPE_SMALL
 
-	tst	r1, #LPTE_USER | LPTE_EXEC	@ User or Exec?
+	tst	r1, #LPTE_USER			@ User?
 	orrne	r2, r2, #HPTE_AP_READ
 
 	tst	r1, #LPTE_WRITE | LPTE_DIRTY	@ Write and Dirty?

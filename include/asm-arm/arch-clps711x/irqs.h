@@ -51,3 +51,4 @@
 
 #define NR_IRQS                         30
 
+#define	FIQ_START			64

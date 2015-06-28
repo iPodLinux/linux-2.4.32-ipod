@@ -1,20 +1,22 @@
 /******************************************************************************
  *
  * Name:	skvpd.h
- * Project:	GEnesis, PCI Gigabit Ethernet Adapter
+ * Project:	Gigabit Ethernet Adapters, VPD-Module
+ * Version:	$Revision: 2.5 $
+ * Date:	$Date: 2004/08/11 14:36:16 $
  * Purpose:	Defines and Macros for VPD handling
  *
  ******************************************************************************/
 
 /******************************************************************************
  *
- *	(C)Copyright 1998-2003 SysKonnect GmbH.
+ *	(C)Copyright 1998-2002 SysKonnect.
+ *	(C)Copyright 2002-2004 Marvell.
  *
  *	This program is free software; you can redistribute it and/or modify
  *	it under the terms of the GNU General Public License as published by
  *	the Free Software Foundation; either version 2 of the License, or
  *	(at your option) any later version.
- *
  *	The information in this file is provided "AS IS" without warranty.
  *
  ******************************************************************************/
@@ -46,6 +48,8 @@
 #define	VPD_YA		"YA"	/* Asset Tag Identifier */
 #define VPD_VL		"VL"	/* First Error Log Message (SK specific) */
 #define VPD_VF		"VF"	/* Second Error Log Message (SK specific) */
+#define VPD_VB		"VB"	/* Boot Agent ROM Configuration (SK specific) */
+#define VPD_VE		"VE"	/* EFI UNDI Configuration (SK specific) */
 #define VPD_RW		"RW"	/* Remaining Read / Write Area */
 
 /* 'type' values for vpd_setup_para() */
@@ -133,49 +137,49 @@ typedef	struct s_vpd_key {
 #define VPD_IN16(pAC,IoC,Addr,pVal)	(void)SkPciReadCfgWord(pAC,Addr,pVal)
 #define VPD_IN32(pAC,IoC,Addr,pVal)	(void)SkPciReadCfgDWord(pAC,Addr,pVal)
 #else	/* VPD_DO_IO */
-#define VPD_OUT8(pAC,IoC,Addr,Val)	SK_OUT8(IoC,PCI_C(Addr),Val)
-#define VPD_OUT16(pAC,IoC,Addr,Val)	SK_OUT16(IoC,PCI_C(Addr),Val)
-#define VPD_OUT32(pAC,IoC,Addr,Val)	SK_OUT32(IoC,PCI_C(Addr),Val)
-#define VPD_IN8(pAC,IoC,Addr,pVal)	SK_IN8(IoC,PCI_C(Addr),pVal)
-#define VPD_IN16(pAC,IoC,Addr,pVal)	SK_IN16(IoC,PCI_C(Addr),pVal)
-#define VPD_IN32(pAC,IoC,Addr,pVal)	SK_IN32(IoC,PCI_C(Addr),pVal)
+#define VPD_OUT8(pAC,IoC,Addr,Val)	SK_OUT8(IoC,PCI_C(pAC,Addr),Val)
+#define VPD_OUT16(pAC,IoC,Addr,Val)	SK_OUT16(IoC,PCI_C(pAC,Addr),Val)
+#define VPD_OUT32(pAC,IoC,Addr,Val)	SK_OUT32(IoC,PCI_C(pAC,Addr),Val)
+#define VPD_IN8(pAC,IoC,Addr,pVal)	SK_IN8(IoC,PCI_C(pAC,Addr),pVal)
+#define VPD_IN16(pAC,IoC,Addr,pVal)	SK_IN16(IoC,PCI_C(pAC,Addr),pVal)
+#define VPD_IN32(pAC,IoC,Addr,pVal)	SK_IN32(IoC,PCI_C(pAC,Addr),pVal)
 #endif	/* VPD_DO_IO */
 #else	/* SKDIAG */
 #define VPD_OUT8(pAC,Ioc,Addr,Val) {			\
 		if ((pAC)->DgT.DgUseCfgCycle)			\
 			SkPciWriteCfgByte(pAC,Addr,Val);	\
 		else									\
-			SK_OUT8(pAC,PCI_C(Addr),Val);		\
+			SK_OUT8(pAC,PCI_C(pAC,Addr),Val);	\
 		}
 #define VPD_OUT16(pAC,Ioc,Addr,Val) {			\
 		if ((pAC)->DgT.DgUseCfgCycle)			\
 			SkPciWriteCfgWord(pAC,Addr,Val);	\
 		else						\
-			SK_OUT16(pAC,PCI_C(Addr),Val);		\
+			SK_OUT16(pAC,PCI_C(pAC,Addr),Val);	\
 		}
 #define VPD_OUT32(pAC,Ioc,Addr,Val) {			\
 		if ((pAC)->DgT.DgUseCfgCycle)			\
 			SkPciWriteCfgDWord(pAC,Addr,Val);	\
 		else						\
-			SK_OUT32(pAC,PCI_C(Addr),Val); 		\
+			SK_OUT32(pAC,PCI_C(pAC,Addr),Val);	\
 		}
 #define VPD_IN8(pAC,Ioc,Addr,pVal) {			\
 		if ((pAC)->DgT.DgUseCfgCycle) 			\
 			SkPciReadCfgByte(pAC,Addr,pVal);	\
 		else						\
-			SK_IN8(pAC,PCI_C(Addr),pVal); 		\
+			SK_IN8(pAC,PCI_C(pAC,Addr),pVal);	\
 		}
 #define VPD_IN16(pAC,Ioc,Addr,pVal) {			\
 		if ((pAC)->DgT.DgUseCfgCycle) 			\
 			SkPciReadCfgWord(pAC,Addr,pVal);	\
 		else						\
-			SK_IN16(pAC,PCI_C(Addr),pVal); 		\
+			SK_IN16(pAC,PCI_C(pAC,Addr),pVal);	\
 		}
 #define VPD_IN32(pAC,Ioc,Addr,pVal) {			\
 		if ((pAC)->DgT.DgUseCfgCycle)			\
 			SkPciReadCfgDWord(pAC,Addr,pVal);	\
 		else						\
-			SK_IN32(pAC,PCI_C(Addr),pVal);		\
+			SK_IN32(pAC,PCI_C(pAC,Addr),pVal);	\
 		}
 #endif	/* nSKDIAG */
 
@@ -238,7 +242,12 @@ extern void	VpdErrLog(
 	SK_IOC		IoC,
 	char		*msg);
 
-#ifdef	SKDIAG
+int VpdInit(
+	SK_AC		*pAC,
+	SK_IOC		IoC);
+
+#if defined(SKDIAG) || defined(SK_ASF)
+
 extern int	VpdReadBlock(
 	SK_AC		*pAC,
 	SK_IOC		IoC,
@@ -252,7 +261,9 @@ extern int	VpdWriteBlock(
 	char		*buf,
 	int			addr,
 	int			len);
-#endif	/* SKDIAG */
+
+#endif	/* SKDIAG || SK_ASF */
+
 #else	/* SK_KR_PROTO */
 extern SK_U32	VpdReadDWord();
 extern int	VpdSetupPara();

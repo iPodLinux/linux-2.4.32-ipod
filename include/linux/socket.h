@@ -1,3 +1,5 @@
+/* $USAGI: socket.h,v 1.8 2003/11/12 05:11:56 yoshfuji Exp $ */
+
 #ifndef _LINUX_SOCKET_H
 #define _LINUX_SOCKET_H
 

@@ -481,6 +481,16 @@ if [ "$CONFIG_DEBUG_KERNEL" != "n" ]; then
    bool '  Compile the kernel with frame pointers' CONFIG_FRAME_POINTER
 fi
 
+bool 'Timepeg instrumentation' CONFIG_TIMEPEG
+if [ "$CONFIG_TIMEPEG" != "n" ]; then
+   bool '  Interrupt latency instrumentation' CONFIG_INTLAT
+   bool '  System call timing' CONFIG_SYSCALLTIMER
+fi
+bool 'Specify Command Line' CONFIG_COMMAND_LINE
+if [ "$CONFIG_COMMAND_LINE" != "n" ]; then
+  string 'Command Line' CONFIG_COMMAND_LINE_VALUE ""
+fi
+
 int 'Kernel messages buffer length shift (0 = default)' CONFIG_LOG_BUF_SHIFT 0
 
 endmenu

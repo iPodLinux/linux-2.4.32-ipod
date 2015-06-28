@@ -24,6 +24,40 @@
  */
 #ifdef __KERNEL__
 
+#ifdef	CONFIG_ARCH_EDB7312
+
+#include <asm/arch/irqs.h>
+
+#undef	mdelay
+#define	mdelay(x)	udelay(2000)
+
+#define kbd_read_input() __raw_readb(EDB7312_VIRT_8042 + 0)
+#define kbd_read_status() __raw_readb(EDB7312_VIRT_8042 + 1)
+#define kbd_write_output(val) __raw_writeb(val, EDB7312_VIRT_8042 + 0)
+#define kbd_write_command(val) __raw_writeb(val, EDB7312_VIRT_8042 + 1)
+
+#define	kbd_request_region()
+#define	kbd_request_irq(handler) request_irq(IRQ_EINT1, handler, SA_SHIRQ, \
+                                             "keyboard", "kbd"); \
+				 edb7312_enable_eint1()
+#define	kbd_disable_irq()
+#define	kbd_enable_irq()
+#define	aux_request_irq(a, b)	0000
+#define	aux_free_irq(a)
+
+extern unsigned char pckbd_sysrq_xlate[];
+
+#define kbd_setkeycode          pckbd_setkeycode
+#define kbd_getkeycode          pckbd_getkeycode
+#define kbd_translate           pckbd_translate
+#define kbd_unexpected_up       pckbd_unexpected_up
+#define kbd_leds                pckbd_leds
+#define kbd_init_hw             pckbd_init_hw
+#define SYSRQ_KEY		0x63
+#define kbd_sysrq_xlate         pckbd_sysrq_xlate
+
+#else
+
 extern int  (*k_setkeycode)(unsigned int, unsigned int);
 extern int  (*k_getkeycode)(unsigned int);
 extern int  (*k_translate)(unsigned char, unsigned char *, char);
@@ -66,6 +100,8 @@ extern unsigned char *k_sysrq_xlate;
 #define kbd_unexpected_up	k_unexpected_up
 
 #include <asm/arch/keyboard.h>
+
+#endif	/* CONFIG_ARCH_EDB7312 */
 
 #endif /* __KERNEL__ */
 

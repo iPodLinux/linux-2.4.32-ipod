@@ -451,6 +451,8 @@ ip_nat_seq_adjust(struct sk_buff *skb,
 	tcph->ack_seq = newack;
 
 	ip_nat_sack_adjust(skb, ct, ctinfo);
+	
+	ip_conntrack_tcp_update(skb, ct, dir);
 
 	return 0;
 }

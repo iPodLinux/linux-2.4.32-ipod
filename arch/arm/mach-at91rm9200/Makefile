@@ -18,4 +18,8 @@ obj-			:=
 
 export-objs		:=
 
+# LEDs support
+leds-$(CONFIG_ARCH_AT91RM9200DK) += dk-leds.o
+obj-$(CONFIG_LEDS) += $(leds-y)
+
 include $(TOPDIR)/Rules.make

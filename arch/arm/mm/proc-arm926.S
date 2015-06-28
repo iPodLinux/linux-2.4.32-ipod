@@ -66,28 +66,24 @@
  *
  * Returns:
  *  r0 = address of abort
- *  r1 != 0 if writing
- *  r3 = FSR
+ *  r1 = FSR, bit 11 set if writing
+ *  r3 = corrupted
  *  r4 = corrupted
  */
 	.align	5
 ENTRY(cpu_arm926_data_abort)
+	mrc	p15, 0, r1, c5, c0, 0		@ get FSR
 	mrc	p15, 0, r0, c6, c0, 0		@ get FAR
-	mrc	p15, 0, r4, c5, c0, 0		@ get FSR
-
-	tst	r3, #1<<24			@ Check for Jbit (NE -> found)
-	movne	r3, #-1 			@ Mark as writing
-	bne	2f
-
-	tst	r3, #1<<5			@ Check for Thumb-bit (NE -> found)
-	ldrneh	r1, [r2]			@ Read aborted Thumb instruction        
-	ldreq	r1, [r2]			@ Read aborted ARM instruction
-	movne	r1, r1, lsl #(20-12)		@ shift thumb bit 10 to ARM bit 20
-	tsteq	r1, r1, lsr #21 		@ C = bit 20
-
-	sbc	r1, r1, r1			@ r1 = C - 1
-2:
-	and	r3, r4, #255
+	bic	r1, r1, #1 << 11 | 1 << 10	@ clear bits 11 and 10 of FSR
+	tst	r3, #PSR_J_BIT			@ Java?
+	orrne	r1, r1, #1 << 11		@ always assume write
+	movne	pc, lr
+	tst	r3, #PSR_T_BIT			@ Thumb?
+	ldrneh	r3, [r2]			@ read aborted thumb instruction
+	ldreq	r3, [r2]			@ read aborted ARM instruction
+	movne	r3, r3, lsl #(21 - 12)		@ move thumb bit 11 to ARM bit 20
+	tst	r3, #1 << 20			@ L = 0 -> write
+	orreq	r1, r1, #1 << 11		@ yes.
 	mov	pc, lr
 
 /*
@@ -503,7 +499,7 @@ ENTRY(cpu_arm926_set_pte)
 	bic	r2, r2, #3
 	orr	r2, r2, #HPTE_TYPE_SMALL
 
-	tst	r1, #LPTE_USER | LPTE_EXEC	@ User or Exec?
+	tst	r1, #LPTE_USER			@ User?
 	orrne	r2, r2, #HPTE_AP_READ
 
 	tst	r1, #LPTE_WRITE | LPTE_DIRTY	@ Write and Dirty?

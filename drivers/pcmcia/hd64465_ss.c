@@ -262,6 +262,14 @@ static void hs_map_irq(hs_socket_t *sp, unsigned int irq)
 	/* insert ourselves as the irq controller */
 	hs_mapped_irq[irq].old_handler = irq_desc[irq].handler;
 	irq_desc[irq].handler = &hd64465_ss_irq_type;
+	/*
+	 * some drivers may not ever mess with there interrupts, so
+	 * we must make sure the interrupt for the slot is in the right state
+	 */
+	if (irq_desc[irq].status & IRQ_DISABLED)
+		hs_socket_disable_ireq(hs_mapped_irq[irq].sock);
+	else if ((irq_desc[irq].status & IRQ_INPROGRESS) == 0)
+		hs_socket_enable_ireq(hs_mapped_irq[irq].sock);
 }
 
 
@@ -660,6 +668,7 @@ static int hs_set_io_map(unsigned int sock, struct pccard_io_map *io)
 	    unsigned long pstart, psize, paddrbase, vaddrbase;
 	    
 	    paddrbase = virt_to_phys((void*)(sp->mem_base + 2 * HD64465_PCC_WINDOW));
+#ifndef CONFIG_SH_KEYWEST
 	    vaddrbase = (unsigned long)sp->io_vma->addr;
 	    pstart = io->start & PAGE_MASK;
 	    psize = ((io->stop + PAGE_SIZE) & PAGE_MASK) - pstart;
@@ -674,18 +683,17 @@ static int hs_set_io_map(unsigned int sock, struct pccard_io_map *io)
 	    DPRINTK("remap_page_range(vaddr=0x%08lx, paddr=0x%08lx, size=0x%08lxx)\n",
 	    	vaddrbase + pstart, paddrbase + pstart, psize);
 	    remap_page_range(vaddrbase + pstart, paddrbase + pstart, psize, prot);
+#else
+	    vaddrbase = paddrbase | 0xa0000000;
+#endif
 	    
 	    /*
 	     * Change the mapping used by inb() outb() etc
 	     */
-	    hd64465_port_map(
-	    	io->start,
-		io->stop - io->start + 1,
-	    	vaddrbase + io->start,0);
+	    mach_port_map(io->start, io->stop - io->start + 1,
+				vaddrbase + io->start, 0);
 	} else {
-	    hd64465_port_unmap(
-	    	sio->start,
-		sio->stop - sio->start + 1);
+	    mach_port_unmap(sio->start, sio->stop - sio->start + 1);
 	    /* TODO: remap_page_range() to mark pages not present ? */
 	}
 	

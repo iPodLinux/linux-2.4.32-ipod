@@ -8,6 +8,8 @@
 #include <linux/highmem.h>	/* several arch define VMALLOC_END via PKMAP_BASE */
 #include <asm/pgtable.h>
 
+#ifndef NO_MM
+
 /* bits in vm_struct->flags */
 #define VM_IOREMAP	0x00000001	/* ioremap() and friends */
 #define VM_ALLOC	0x00000002	/* vmalloc() */
@@ -64,5 +66,23 @@ static inline void * vmalloc_32(unsigned long size)
 extern rwlock_t vmlist_lock;
 
 extern struct vm_struct * vmlist;
+
+#else /* NO_MM */
+
+/*
+ * vmlist_lock is a read-write spinlock that protects vmlist
+ * Used in mm/vmalloc.c (get_vm_area() and vfree()) and fs/proc/kcore.c.
+ */
+extern rwlock_t vmlist_lock;
+
+extern void vfree(void * addr);
+extern void *__vmalloc(unsigned long size, int gfp_mask, pgprot_t prot);
+extern long vread(char *buf, char *addr, unsigned long count);
+#define vmalloc(s)		__vmalloc(s, GFP_KERNEL | __GFP_HIGHMEM, PAGE_KERNEL)
+#define vmalloc_dma(s)	__vmalloc(s, GFP_KERNEL|GFP_DMA, PAGE_KERNEL)
+#define vmalloc_32(s)	__vmalloc(s, GFP_KERNEL, PAGE_KERNEL)
+
+#endif /* NO_MM */
+
 #endif
 

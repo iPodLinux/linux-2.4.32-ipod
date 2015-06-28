@@ -48,6 +48,8 @@ extern int hd64465_io_debug;
 extern void hd64465_port_map(unsigned short baseport, unsigned int nports,
 			     unsigned long addr, unsigned char shift);
 extern void hd64465_port_unmap(unsigned short baseport, unsigned int nports);
+#define mach_port_map hd64465_port_map
+#define mach_port_unmap hd64465_port_unmap
 
 
 #ifdef __WANT_IO_DEF

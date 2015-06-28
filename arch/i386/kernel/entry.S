@@ -207,8 +207,16 @@ ENTRY(system_call)
 	jne tracesys
 	cmpl $(NR_syscalls),%eax
 	jae badsys
+#ifdef CONFIG_SYSCALLTIMER
+	pushl %eax
+	call SYMBOL_NAME(timepeg_syscall_start)
+	popl %eax
+#endif
 	call *SYMBOL_NAME(sys_call_table)(,%eax,4)
 	movl %eax,EAX(%esp)		# save the return value
+#ifdef CONFIG_SYSCALLTIMER
+	call SYMBOL_NAME(timepeg_syscall_stop)
+#endif
 ENTRY(ret_from_sys_call)
 	cli				# need_resched and signals atomic test
 	cmpl $0,need_resched(%ebx)

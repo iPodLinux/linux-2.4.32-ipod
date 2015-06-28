@@ -66,7 +66,13 @@
 #define AM29LV160DT	0x22C4
 #define AM29LV160DB	0x2249
 #define AM29BDS323D     0x22D1
+#define AM29DL322GB     0x2256
+#define AM29DL322GT     0x2255
+#define AM29DL323GB     0x2250
+#define AM29DL323GT     0x2253
 #define AM29BDS643D	0x227E
+#define AM29LV004T	0x00B5
+#define AM29LV004B	0x00B6
 
 /* Atmel */
 #define AT49xV16x	0x00C0
@@ -430,6 +436,30 @@ static struct mtd_info *amd_flash_probe(struct map_info *map)
 	const struct amd_flash_info table[] = {
 	{
 		mfr_id: MANUFACTURER_AMD,
+                dev_id: AM29LV004T,
+                name: "AMD AM29LV004T",
+                size: 0x00080000,
+                numeraseregions: 4,
+                regions: {
+                        { offset: 0x000000, erasesize: 0x10000, numblocks:  7 },
+                        { offset: 0x070000, erasesize: 0x08000, numblocks:  1 },
+                        { offset: 0x078000, erasesize: 0x02000, numblocks:  2 },
+                        { offset: 0x07C000, erasesize: 0x04000, numblocks:  1 }
+                }
+        }, {
+                mfr_id: MANUFACTURER_AMD,
+                dev_id: AM29LV004B,
+                name: "AMD AM29LV004B",
+                size: 0x00080000,
+                numeraseregions: 4,
+                regions: {
+                        { offset: 0x000000, erasesize: 0x04000, numblocks:  1 },
+                        { offset: 0x004000, erasesize: 0x02000, numblocks:  2 },
+                        { offset: 0x008000, erasesize: 0x08000, numblocks:  1 },
+                        { offset: 0x010000, erasesize: 0x10000, numblocks:  7 }
+                }
+        }, {
+		mfr_id: MANUFACTURER_AMD,
 		dev_id: AM29LV160DT,
 		name: "AMD AM29LV160DT",
 		size: 0x00200000,
@@ -608,6 +638,46 @@ static struct mtd_info *amd_flash_probe(struct map_info *map)
 			{ offset: 0x008000, erasesize: 0x08000, numblocks:  1 },
 			{ offset: 0x010000, erasesize: 0x10000, numblocks: 31 }
 		}
+	}, {
+		mfr_id: MANUFACTURER_AMD,
+ 		dev_id: AM29DL322GB,
+ 		name: "AMD AM29DL322GB",
+ 		size: 0x00400000,
+ 		numeraseregions: 2,
+ 		regions: {
+ 			{ offset: 0x000000, erasesize: 0x02000, numblocks: 8 },
+ 			{ offset: 0x010000, erasesize: 0x10000, numblocks: 63 },
+ 		}
+ 	}, {
+ 		mfr_id: MANUFACTURER_AMD,
+ 		dev_id: AM29DL322GT,
+ 		name: "AMD AM29DL322GT",
+ 		size: 0x00400000,
+ 		numeraseregions: 2,
+ 		regions: {
+ 			{ offset: 0x000000, erasesize: 0x10000, numblocks: 63 },
+ 			{ offset: 0x3f0000, erasesize: 0x02000, numblocks: 8 },
+ 		}
+ 	}, {
+ 		mfr_id: MANUFACTURER_AMD,
+ 		dev_id: AM29DL323GB,
+ 		name: "AMD AM29DL323GB",
+ 		size: 0x00400000,
+ 		numeraseregions: 2,
+ 		regions: {
+ 			{ offset: 0x000000, erasesize: 0x02000, numblocks: 8 },
+ 			{ offset: 0x010000, erasesize: 0x10000, numblocks: 63 },
+ 		}
+ 	}, {
+ 		mfr_id: MANUFACTURER_AMD,
+ 		dev_id: AM29DL323GT,
+ 		name: "AMD AM29DL323GT",
+ 		size: 0x00400000,
+ 		numeraseregions: 2,
+ 		regions: {
+ 			{ offset: 0x000000, erasesize: 0x10000, numblocks: 63 },
+ 			{ offset: 0x3f0000, erasesize: 0x02000, numblocks: 8 },
+ 		}
 	}, {
 		mfr_id: MANUFACTURER_AMD,
 		dev_id: AM29BDS323D,

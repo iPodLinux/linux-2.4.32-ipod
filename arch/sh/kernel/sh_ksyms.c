@@ -81,8 +81,8 @@ EXPORT_SYMBOL(get_vm_area);
 /* semaphore exports */
 EXPORT_SYMBOL(__up);
 EXPORT_SYMBOL(__down);
-EXPORT_SYMBOL(__down_interruptible);
 EXPORT_SYMBOL(__down_trylock);
+EXPORT_SYMBOL(__down_interruptible);
 
 /* Delay loops */
 EXPORT_SYMBOL(__ndelay);
@@ -99,8 +99,15 @@ DECLARE_EXPORT(__ashldi3);
 DECLARE_EXPORT(__lshrdi3);
 DECLARE_EXPORT(__movstr);
 
+#if defined(__sh3__) || defined(__SH4__)
+EXPORT_SYMBOL(__flush_purge_region);
+EXPORT_SYMBOL(__flush_wback_region);
+EXPORT_SYMBOL(__flush_invalidate_region);
+#endif
+
 #ifdef __SH4__
  
+DECLARE_EXPORT(__sdivsi3_i4);
 DECLARE_EXPORT(__movstr_i4_even);
 DECLARE_EXPORT(__movstr_i4_odd);
 

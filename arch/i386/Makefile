@@ -110,6 +110,14 @@ SUBDIRS += arch/i386/math-emu
 DRIVERS += arch/i386/math-emu/math.o
 endif
 
+#
+# If you want the kernel build to build modules outside of the tree
+# then define this and pass it to the main linux makefile
+#
+ifdef EXTRA_MODULE_DIRS
+SUBDIRS += $(EXTRA_MODULE_DIRS)
+endif
+
 arch/i386/kernel: dummy
 	$(MAKE) linuxsubdirs SUBDIRS=arch/i386/kernel
 

@@ -6,6 +6,7 @@
  *  Copyright (C) 1999, 2000  Niibe Yutaka
  *  Copyright (C) 2000  Sugioka Toshinobu
  *  Modified to support multiple serial ports. Stuart Menefy (May 2000).
+ *  Modified to support H8/300H. Yoshinori Sato (2002/09/11) 
  *  Modified to support SecureEdge. David McCullough (2002) 
  *  Modified to support SH7300 SCIF. Takashi Kusuda (Jun 2003).
  *
@@ -38,6 +39,10 @@
 #include <linux/console.h>
 #endif
 
+#ifdef CONFIG_LEDMAN
+#include <linux/ledman.h>
+#endif
+
 #include <asm/system.h>
 #include <asm/io.h>
 #include <asm/irq.h>
@@ -48,6 +53,14 @@
 
 #ifdef CONFIG_SH_STANDARD_BIOS
 #include <asm/sh_bios.h>
+#endif
+
+#if defined(__H8300H__)
+#include <asm/regs306x.h>
+#endif
+
+#if defined(__H8300S__)
+#include <asm/regs267x.h>
 #endif
 
 #include "sh-sci.h"
@@ -87,6 +100,12 @@ static void sci_init_pins_scif(struct sci_port* port, unsigned int cflag);
 #if defined(__sh3__) && !defined(CONFIG_CPU_SUBTYPE_SH7300)
 static void sci_init_pins_irda(struct sci_port* port, unsigned int cflag);
 #endif
+#endif
+#if defined(__H8300H__)
+static void sci_init_pins_h8300h(struct sci_port* port, unsigned int cflag);
+#endif
+#if defined(__H8300S__)
+static void sci_init_pins_h8s(struct sci_port* port, unsigned int cflag);
 #endif
 static void sci_disable_tx_interrupts(void *ptr);
 static void sci_enable_tx_interrupts(void *ptr);
@@ -446,13 +465,78 @@ static void sci_init_pins_scif(struct sci_port* port, unsigned int cflag)
 	if (cflag & CRTSCTS) {
 		fcr_val |= SCFCR_MCE;
 	} else {
-		sci_out(port, SCSPTR, 0x0080); /* Set RTS = 1 */
+		sci_out(port, SCSPTR, 0x0080); /* Set RTS is coutput CTS is input */
 	}
 	sci_out(port, SCFCR, fcr_val);
 }
 
 #endif
 #endif /* SCIF_ONLY || SCI_AND_SCIF */
+
+#if defined(__H8300H__)
+static void sci_init_pins_h8300h(struct sci_port* port, unsigned int cflag)
+{
+	int ch = ((port->base & 0xff) - 0xb0) >> 3;
+	switch (ch) {
+	case 0:
+		H8300_GPIO_RESERVE(H8300_GPIO_P9,H8300_GPIO_B2|H8300_GPIO_B0);
+		H8300_GPIO_DDR(H8300_GPIO_P9,H8300_GPIO_B2,H8300_GPIO_INPUT);
+		H8300_GPIO_DDR(H8300_GPIO_P9,H8300_GPIO_B0,H8300_GPIO_OUTPUT);
+		*(volatile char *)P9DR |= 0x01;
+		break;
+	case 1:
+		H8300_GPIO_RESERVE(H8300_GPIO_P9,H8300_GPIO_B3|H8300_GPIO_B1);
+		H8300_GPIO_DDR(H8300_GPIO_P9,H8300_GPIO_B3,H8300_GPIO_INPUT);
+		H8300_GPIO_DDR(H8300_GPIO_P9,H8300_GPIO_B1,H8300_GPIO_OUTPUT);
+		*(volatile char *)P9DR |= 0x02;
+		break;
+	case 2:
+		H8300_GPIO_RESERVE(H8300_GPIO_PB,H8300_GPIO_B7|H8300_GPIO_B6);
+		H8300_GPIO_DDR(H8300_GPIO_PB,H8300_GPIO_B7,H8300_GPIO_INPUT);
+		H8300_GPIO_DDR(H8300_GPIO_PB,H8300_GPIO_B6,H8300_GPIO_OUTPUT);
+		*(volatile char *)PBDR |= 0x40;
+		break;
+	}
+}
+#endif
+
+#if defined(__H8300S__)
+static void sci_init_pins_h8s(struct sci_port* port, unsigned int cflag)
+{
+	int ch = ((port->base & 0xff) - 0x78) >> 3;
+	switch (ch) {
+	case 0:
+		H8300_GPIO_RESERVE(H8300_GPIO_P3,H8300_GPIO_B2|H8300_GPIO_B0);
+		H8300_GPIO_DDR(H8300_GPIO_P3,H8300_GPIO_B2,H8300_GPIO_INPUT);
+		H8300_GPIO_DDR(H8300_GPIO_P3,H8300_GPIO_B0,H8300_GPIO_OUTPUT);
+		*(volatile char *)P3DR |= 0x01;
+		break;
+	case 1:
+		H8300_GPIO_RESERVE(H8300_GPIO_P3,H8300_GPIO_B3|H8300_GPIO_B1);
+		H8300_GPIO_DDR(H8300_GPIO_P3,H8300_GPIO_B3,H8300_GPIO_INPUT);
+		H8300_GPIO_DDR(H8300_GPIO_P3,H8300_GPIO_B1,H8300_GPIO_OUTPUT);
+		*(volatile char *)P3DR |= 0x02;
+		break;
+	case 2:
+		H8300_GPIO_RESERVE(H8300_GPIO_P5,H8300_GPIO_B1|H8300_GPIO_B0);
+		H8300_GPIO_DDR(H8300_GPIO_P5,H8300_GPIO_B1,H8300_GPIO_INPUT);
+		H8300_GPIO_DDR(H8300_GPIO_P5,H8300_GPIO_B0,H8300_GPIO_OUTPUT);
+		*(volatile char *)P5DR |= 0x01;
+		break;
+	}
+}
+
+static void sci_enable(struct sci_port* port, unsigned int pwr)
+{
+	volatile unsigned char *mstpcrl=(volatile unsigned char *)MSTPCRL;
+	int ch = ((port->base & 0xff) - 0x78) >> 3;
+	unsigned char mask = 1 << (ch+1);
+	if (pwr)
+		*mstpcrl &= ~mask;
+	else
+		*mstpcrl |= mask;
+}
+#endif
 
 static void sci_setsignals(struct sci_port *port, int dtr, int rts)
 {
@@ -469,6 +553,12 @@ static void sci_setsignals(struct sci_port *port, int dtr, int rts)
 			SECUREEDGE_WRITE_IOPORT(0x0080, 0x0080);
 		else if (dtr == 1)
 			SECUREEDGE_WRITE_IOPORT(0x0000, 0x0080);
+		if ((sci_in(port, SCFCR) & SCFCR_MCE) == 0) {
+			if (rts)
+				sci_out(port, SCSPTR, sci_in(port, SCSPTR) & ~0x40);
+			else
+				sci_out(port, SCSPTR, sci_in(port, SCSPTR) | 0x40);
+		}
 	}
 	if (port == &sci_ports[0]) { /* port 0 only */
 		if (dtr == 0)
@@ -493,6 +583,13 @@ static int sci_getsignals(struct sci_port *port)
 	if (port == &sci_ports[1]) { /* port 1 only */
 		unsigned short s = SECUREEDGE_READ_IOPORT();
 		int rc = TIOCM_RTS|TIOCM_DSR|TIOCM_CTS;
+
+		if ((sci_in(port, SCFCR) & SCFCR_MCE) == 0) {
+			if (sci_in(port, SCSPTR) & 0x0040)
+				rc &= ~TIOCM_RTS;
+			if (sci_in(port, SCSPTR) & 0x0010)
+				rc &= ~TIOCM_CTS;
+		}
 
 		if ((s & 0x0001) == 0)
 			rc |= TIOCM_CAR;
@@ -583,6 +680,7 @@ static void sci_set_termios_cflag(struct sci_port *port, int cflag, int baud)
 
 	sci_out(port, SCSCR, 0x00);	/* TE=0, RE=0, CKE1=0 */
 
+#if !defined(SCI_ONLY)
 	if (port->type == PORT_SCIF) {
 #if defined(CONFIG_CPU_SUBTYPE_SH7300)
 		sci_out(port, SCFCR, SCFCR_RFRST | SCFCR_TFRST | SCFCR_TCRST);
@@ -590,6 +688,7 @@ static void sci_set_termios_cflag(struct sci_port *port, int cflag, int baud)
 		sci_out(port, SCFCR, SCFCR_RFRST | SCFCR_TFRST);
 #endif
 	}
+#endif
 
 	smr_val = sci_in(port, SCSMR) & 3;
 	if ((cflag & CSIZE) == CS7)
@@ -649,6 +748,11 @@ static void sci_transmit_chars(struct sci_port *port)
 	unsigned short ctrl;
 	unsigned char c;
 
+#ifdef CONFIG_LEDMAN
+	ledman_cmd(LEDMAN_CMD_SET, port == &sci_ports[0] ?
+			LEDMAN_COM1_TX : LEDMAN_COM2_TX);
+#endif
+
 	status = sci_in(port, SCxSR);
 	if (!(status & SCxSR_TDxE(port))) {
 		save_and_cli(flags);
@@ -665,6 +769,7 @@ static void sci_transmit_chars(struct sci_port *port)
 
 	while (1) {
 		count = port->gs.xmit_cnt;
+#if !defined(SCI_ONLY)
 		if (port->type == PORT_SCIF) {
 #if defined(CONFIG_CPU_SUBTYPE_SH7300)
 			txroom = 64 - (sci_in(port, SCFDR)>>8);
@@ -674,6 +779,9 @@ static void sci_transmit_chars(struct sci_port *port)
 		} else {
 			txroom = (sci_in(port, SCxSR) & SCI_TDRE)?1:0;
 		}
+#else
+		txroom = (sci_in(port, SCxSR) & SCI_TDRE)?1:0;
+#endif
 		if (count > txroom)
 			count = txroom;
 
@@ -710,10 +818,12 @@ static void sci_transmit_chars(struct sci_port *port)
 		ctrl &= ~SCI_CTRL_FLAGS_TIE;
 		port->gs.flags &= ~GS_TX_INTEN;
 	} else {
+#if !defined(SCI_ONLY)
 		if (port->type == PORT_SCIF) {
 			sci_in(port, SCxSR); /* Dummy read */
 			sci_out(port, SCxSR, SCxSR_TDxE_CLEAR(port));
 		}
+#endif
 		ctrl |= SCI_CTRL_FLAGS_TIE;
 	}
 	sci_out(port, SCSCR, ctrl);
@@ -737,7 +847,13 @@ static inline void sci_receive_chars(struct sci_port *port,
 
 	tty = port->gs.tty;
 
+#ifdef CONFIG_LEDMAN
+	ledman_cmd(LEDMAN_CMD_SET,
+		port == &sci_ports[0] ? LEDMAN_COM1_RX :LEDMAN_COM2_RX);
+#endif
+
 	while (1) {
+#if !defined(SCI_ONLY)
 		if (port->type == PORT_SCIF) {
 #if defined(CONFIG_CPU_SUBTYPE_SH7300)
 			count = sci_in(port, SCFDR)&0x007f;
@@ -747,6 +863,9 @@ static inline void sci_receive_chars(struct sci_port *port,
 		} else {
 			count = (sci_in(port, SCxSR)&SCxSR_RDxF(port))?1:0;
 		}
+#else
+		count = (sci_in(port, SCxSR)&SCxSR_RDxF(port))?1:0;
+#endif		
 
 		/* we must clear RDF or we get stuck in the interrupt for ever */
 		sci_in(port, SCxSR); /* dummy read */
@@ -825,7 +944,8 @@ static inline void sci_receive_chars(struct sci_port *port,
 		/* drop any remaining chars,  we are full */
 		if (count > 0) {
 			/* force an overrun error on last received char */
-			tty->flip.flag_buf_ptr[TTY_FLIPBUF_SIZE - 1] = TTY_OVERRUN;
+			if (tty->flip.count)
+				*(tty->flip.flag_buf_ptr - 1) = TTY_OVERRUN;
 			while (count-- > 0)
 				(void) sci_in(port, SCxRDR);
 		}
@@ -980,6 +1100,7 @@ static void sci_er_interrupt(int irq, void *ptr, struct pt_regs *regs)
 	sci_tx_interrupt(irq, ptr, regs);
 }
 
+#if !defined(SCI_ONLY)
 static void sci_br_interrupt(int irq, void *ptr, struct pt_regs *regs)
 {
 	struct sci_port *port = ptr;
@@ -988,6 +1109,7 @@ static void sci_br_interrupt(int irq, void *ptr, struct pt_regs *regs)
 	sci_handle_breaks(port);
 	sci_out(port, SCxSR, SCxSR_BREAK_CLEAR(port));
 }
+#endif
 
 static void sci_mpxed_interrupt(int irq, void *ptr, struct pt_regs *regs)
 {
@@ -1006,9 +1128,11 @@ static void sci_mpxed_interrupt(int irq, void *ptr, struct pt_regs *regs)
         if((ssr_status&0x0080) && (scr_status&0x0400)){ /* Error Interrupt */
                 sci_er_interrupt(irq, ptr, regs);
         }
+#if !defined(SCI_ONLY)
         if((ssr_status&0x0010) && (scr_status&0x0200)){ /* Break Interrupt */
                 sci_br_interrupt(irq, ptr, regs);
         }
+#endif
 }
 
 static void do_softint(void *private_)
@@ -1050,7 +1174,9 @@ static void sci_enable_tx_interrupts(void *ptr)
 
 	disable_irq(port->irqs[SCIx_TXI_IRQ]);
 	sci_transmit_chars(port);
+#if !defined(__H8300H__) && !defined(__H8300S__)
 	enable_irq(port->irqs[SCIx_TXI_IRQ]);
+#endif
 }
 
 static void sci_disable_rx_interrupts(void * ptr)
@@ -1100,11 +1226,15 @@ static int sci_chars_in_buffer(void * ptr)
 {
 	struct sci_port *port = ptr;
 
+#if !defined(SCI_ONLY)
 	if (port->type == PORT_SCIF) {
 		return (sci_in(port, SCFDR) >> 8) + ((sci_in(port, SCxSR) & SCxSR_TEND(port))? 0: 1);
 	} else {
 		return (sci_in(port, SCxSR) & SCxSR_TEND(port))? 0: 1;
 	}
+#else
+	return (sci_in(port, SCxSR) & SCxSR_TEND(port))? 0: 1;
+#endif
 }
 
 static void sci_shutdown_port(void * ptr)
@@ -1115,6 +1245,9 @@ static void sci_shutdown_port(void * ptr)
 	if (port->gs.tty && port->gs.tty->termios->c_cflag & HUPCL)
 		sci_setsignals(port, 0, 0);
 	sci_free_irq(port);
+#if defined(__H8300S__)
+	sci_enable(port,0);
+#endif
 }
 
 /* ********************************************************************** *
@@ -1154,6 +1287,9 @@ static int sci_open(struct tty_struct * tty, struct file * filp)
 	if (port->gs.count == 1) {
 		MOD_INC_USE_COUNT;
 
+#if defined(__H8300S__)
+		sci_enable(port,1);
+#endif
 		retval = sci_request_irq(port);
 		if (retval) {
 			goto failed_1;
@@ -1223,6 +1359,10 @@ failed_2:
 failed_1:
 	MOD_DEC_USE_COUNT;
 	port->gs.count--;
+#if defined(__H8300S__)
+	if (port->gs.count == 0)
+		sci_enable(port,0);
+#endif
 	return retval;
 }
 
@@ -1445,10 +1585,18 @@ static int sci_init_drivers(void)
 static int sci_request_irq(struct sci_port *port)
 {
 	int i;
-	void (*handlers[4])(int irq, void *ptr, struct pt_regs *regs) = {
+#if !defined(SCI_ONLY)
+#define IRQs 4
+	void (*handlers[IRQs])(int irq, void *ptr, struct pt_regs *regs) = {
 		sci_er_interrupt, sci_rx_interrupt, sci_tx_interrupt,
 		sci_br_interrupt,
 	};
+#else
+#define IRQs 3
+	void (*handlers[IRQs])(int irq, void *ptr, struct pt_regs *regs) = {
+		sci_er_interrupt, sci_rx_interrupt, sci_tx_interrupt
+	};
+#endif
 
 	if(port->irqs[0] == port->irqs[1]){
 		if (!port->irqs[0]){
@@ -1648,6 +1796,9 @@ static int __init serial_console_setup(struct console *co, char *options)
 		co->cflag = cflag;
 		sercons_baud = baud;
 
+#if defined(__H8300S__)
+		sci_enable(sercons_port,1);
+#endif
 		sci_set_termios_cflag(sercons_port, cflag, baud);
 		sercons_port->old_cflag = cflag;
 	}

@@ -1,3 +1,5 @@
+/* $USAGI: if_inet6.h,v 1.27 2003/11/12 05:11:56 yoshfuji Exp $ */
+
 /*
  *	inet6 interface/address list definitions
  *	Linux INET6 implementation 
@@ -15,12 +17,14 @@
 #ifndef _NET_IF_INET6_H
 #define _NET_IF_INET6_H
 
+#include <net/snmp.h>
+#include <linux/ipv6_route.h>
 #include <linux/ipv6.h>
 
 #define IF_RA_OTHERCONF	0x80
 #define IF_RA_MANAGED	0x40
-#define IF_RA_RCVD	0x20
-#define IF_RS_SENT	0x10
+#define IF_RA_RCVD	0x20	/* for inet6_dev.if_flags */
+#define IF_RS_SENT	0x10	/* for inet6_dev.if_flags */
 
 #ifdef __KERNEL__
 
@@ -46,6 +50,13 @@ struct inet6_ifaddr
 
 	struct inet6_ifaddr	*lst_next;      /* next addr in addr_lst */
 	struct inet6_ifaddr	*if_next;       /* next addr in inet6_dev */
+
+#ifdef CONFIG_IPV6_PRIVACY
+	struct inet6_ifaddr	*tmp_next;	/* next addr in tempaddr_lst */
+	struct inet6_ifaddr	*ifpub;
+
+	int			regen_count;
+#endif
 
 	int			dead;
 };
@@ -128,6 +139,26 @@ struct ifacaddr6
 #define	IFA_SITE	IPV6_ADDR_SITELOCAL
 #define	IFA_GLOBAL	0x0000U
 
+/* XXX: put this into include/linux/in6.h (or so) as in6_prefix{} ? */
+struct ipv6_prefix {
+	struct in6_addr		ip6p_prefix;	/* prefix */
+	__u32			ip6p_len;	/* prefix length */
+};
+
+struct inet6_prefix {
+	struct 	list_head	list;		/* list of prefixes */
+	struct in6_addr		prefix;		/* prefix */
+	__u32			prefix_len;	/* prefix length */
+	__u32			lifetime;	/* lifetime for prefix */
+	unsigned long		timestamp;	/* last jiffies updated */
+};
+
+struct ipv6_devstat{
+	struct proc_dir_entry *	proc_dir_entry;
+	struct ipv6_mib		ipv6[NR_CPUS*2];	/* RFC 2465 */
+	struct icmpv6_mib	icmpv6[NR_CPUS*2];	/* RFC 2466 */
+};
+
 struct inet6_dev 
 {
 	struct net_device		*dev;
@@ -146,16 +177,32 @@ struct inet6_dev
 	struct timer_list	mc_ifc_timer;	/* interface change timer */
 
 	struct ifacaddr6	*ac_list;
+	struct list_head	prefix_list;
+	rwlock_t		prefix_lock;
+	int			prefix_count;
 	rwlock_t		lock;
 	atomic_t		refcnt;
 	__u32			if_flags;
 	int			dead;
 
+#ifdef CONFIG_IPV6_ZONE
+	struct ip6_zoneid	zone;
+#endif
+	
+#ifdef CONFIG_IPV6_PRIVACY
+	u8			rndid[8];
+	u8			entropy[8];
+	struct timer_list	regen_timer;
+	struct inet6_ifaddr	*tempaddr_list;
+#endif
+
 	struct neigh_parms	*nd_parms;
 	struct inet6_dev	*next;
 	struct ipv6_devconf	cnf;
+	struct ipv6_devstat	stats;
 };
 
+#define IM_IPV6_DEVCONF	"ipv6_devconf"
 extern struct ipv6_devconf ipv6_devconf;
 
 static inline void ipv6_eth_mc_map(struct in6_addr *addr, char *buf)

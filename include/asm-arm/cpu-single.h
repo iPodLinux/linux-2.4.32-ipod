@@ -45,7 +45,11 @@
 #define cpu_tlb_invalidate_range	cpu_fn(CPU_NAME,_tlb_invalidate_range)
 #define cpu_tlb_invalidate_page		cpu_fn(CPU_NAME,_tlb_invalidate_page)
 
+#if __LINUX_ARM_ARCH__ == 3
+#define cpu_set_pgd(x)			{ g_pgd = x; cpu_fn(CPU_NAME,_set_pgd)(x); }
+#else
 #define cpu_set_pgd			cpu_fn(CPU_NAME,_set_pgd)
+#endif
 #define cpu_set_pmd			cpu_fn(CPU_NAME,_set_pmd)
 #define cpu_set_pte			cpu_fn(CPU_NAME,_set_pte)
 
@@ -80,13 +84,24 @@ extern void cpu_tlb_invalidate_all(void);
 extern void cpu_tlb_invalidate_range(unsigned long address, unsigned long end);
 extern void cpu_tlb_invalidate_page(unsigned long address, int flags);
 
+#if __LINUX_ARM_ARCH__ == 3
+extern unsigned long g_pgd;
+extern void cpu_fn(CPU_NAME,_set_pgd)(unsigned long pgd_phys);
+#else
 extern void cpu_set_pgd(unsigned long pgd_phys);
+#endif
 extern void cpu_set_pmd(pmd_t *pmdp, pmd_t pmd);
 extern void cpu_set_pte(pte_t *ptep, pte_t pte);
 extern volatile void cpu_reset(unsigned long addr);
 
 #define cpu_switch_mm(pgd,tsk) cpu_set_pgd(__virt_to_phys((unsigned long)(pgd)))
 
+#if __LINUX_ARM_ARCH__ == 3
+#define cpu_get_pgd()	\
+	({						\
+		(pgd_t *)phys_to_virt(g_pgd);		\
+	})
+#else
 #define cpu_get_pgd()	\
 	({						\
 		unsigned long pg;			\
@@ -95,5 +110,6 @@ extern volatile void cpu_reset(unsigned long addr);
 		pg &= ~0x3fff;				\
 		(pgd_t *)phys_to_virt(pg);		\
 	})
+#endif
 
 #endif

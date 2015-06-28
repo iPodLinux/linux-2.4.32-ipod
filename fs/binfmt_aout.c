@@ -313,6 +313,11 @@ static int load_aout_binary(struct linux_binprm * bprm, struct pt_regs * regs)
 
 	current->mm->rss = 0;
 	current->mm->mmap = NULL;
+
+#ifdef CONFIG_ARM_FASS
+	arch_new_mm(current, current->mm);
+#endif
+
 	compute_creds(bprm);
  	current->flags &= ~PF_FORKNOEXEC;
 #ifdef __sparc__
@@ -426,7 +431,7 @@ beyond_if:
 		return retval;
 	}
 
-	retval = setup_arg_pages(bprm); 
+	retval = setup_arg_pages(bprm, STACK_TOP); 
 	if (retval < 0) { 
 		/* Someone check-me: is this error path enough? */ 
 		send_sig(SIGKILL, current, 0); 
@@ -441,7 +446,11 @@ beyond_if:
 	start_thread(regs, ex.a_entry, current->mm->start_stack);
 	if (current->ptrace & PT_PTRACED)
 		send_sig(SIGTRAP, current, 0);
+#ifndef __arm__
 	return 0;
+#else
+	return regs->ARM_r0;
+#endif
 }
 
 static int load_aout_library(struct file *file)
@@ -471,8 +480,11 @@ static int load_aout_library(struct file *file)
 
 	/* For  QMAGIC, the starting address is 0x20 into the page.  We mask
 	   this off to get the starting address for the page */
-
+#ifndef __arm__
 	start_addr =  ex.a_entry & 0xfffff000;
+#else
+	start_addr = ex.a_entry & 0xffff8000;
+#endif
 
 	if ((N_TXTOFF(ex) & ~PAGE_MASK) != 0) {
 		static unsigned long error_time;

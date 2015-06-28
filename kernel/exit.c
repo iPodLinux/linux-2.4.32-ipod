@@ -427,7 +427,7 @@ NORET_TYPE void do_exit(long code)
 	struct task_struct *tsk = current;
 
 	if (in_interrupt())
-		panic("Aiee, killing interrupt handler!");
+		panic("Aiee, killing interrupt handler\n");
 	if (!tsk->pid)
 		panic("Attempted to kill the idle task!");
 	if (tsk->pid == 1)
@@ -458,6 +458,9 @@ fake_volatile:
 
 	tsk->exit_code = code;
 	exit_notify();
+#ifdef CONFIG_SYSCALLTIMER
+ 	current->curr_syscall = 0;
+#endif
 	schedule();
 	BUG();
 /*
@@ -587,7 +590,7 @@ end_wait4:
 	return retval;
 }
 
-#if !defined(__alpha__) && !defined(__ia64__)
+#if !defined(__alpha__) && !defined(__ia64__) && !defined(__arm__)
 
 /*
  * sys_waitpid() remains for compatibility. waitpid() should be

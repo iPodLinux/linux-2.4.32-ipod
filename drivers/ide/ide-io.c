@@ -879,8 +879,8 @@ static ide_startstop_t ide_dma_timeout_retry(ide_drive_t *drive, int error)
 		ret = DRIVER(drive)->error(drive, "dma timeout retry",
 				hwif->INB(IDE_STATUS_REG));
 	} else {
-		printk(KERN_ERR "%s: timeout waiting for DMA\n", drive->name);
-		(void) hwif->ide_dma_timeout(drive);
+	printk(KERN_ERR "%s: timeout waiting for DMA\n", drive->name);
+	(void) hwif->ide_dma_timeout(drive);
 	}
 
 	/*
@@ -899,11 +899,13 @@ static ide_startstop_t ide_dma_timeout_retry(ide_drive_t *drive, int error)
 	rq = HWGROUP(drive)->rq;
 	HWGROUP(drive)->rq = NULL;
 
-	rq->errors = 0;
-	rq->sector = rq->bh->b_rsector;
-	rq->current_nr_sectors = rq->bh->b_size >> 9;
-	rq->hard_cur_sectors = rq->current_nr_sectors;
-	rq->buffer = rq->bh->b_data;
+	if (rq) {
+		rq->errors = 0;
+		rq->sector = rq->bh->b_rsector;
+		rq->current_nr_sectors = rq->bh->b_size >> 9;
+		rq->hard_cur_sectors = rq->current_nr_sectors;
+		rq->buffer = rq->bh->b_data;
+	}
 
 	return ret;
 }

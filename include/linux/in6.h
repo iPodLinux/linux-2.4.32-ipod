@@ -1,3 +1,5 @@
+/* $USAGI: in6.h,v 1.20 2003/08/10 04:41:32 yoshfuji Exp $ */
+
 /*
  *	Types and definitions for AF_INET6 
  *	Linux INET6 implementation 
@@ -21,6 +23,8 @@
 #ifndef _LINUX_IN6_H
 #define _LINUX_IN6_H
 
+#define __USAGI__
+
 #include <linux/types.h>
 
 /*
@@ -40,7 +44,7 @@ struct in6_addr
 #define s6_addr32		in6_u.u6_addr32
 };
 
-/* IPv6 Wildcard Address (::) and Loopback Address (::1) defined in RFC2553
+/* IPv6 Wildcard Address (::) and Loopback Address (::1) defined in RFC3493
  * NOTE: Be aware the IN6ADDR_* constants and in6addr_* externals are defined
  * in network byte order, not in host byte order as are the IPv4 equivalents
  */
@@ -54,7 +58,7 @@ struct sockaddr_in6 {
 	__u16			sin6_port;      /* Transport layer port # */
 	__u32			sin6_flowinfo;  /* IPv6 flow information */
 	struct in6_addr		sin6_addr;      /* IPv6 address */
-	__u32			sin6_scope_id;  /* scope id (new in RFC2553) */
+	__u32			sin6_scope_id;  /* scope id */
 };
 
 struct ipv6_mreq {
@@ -96,32 +100,15 @@ struct in6_flowlabel_req
 
 /*
  *	Bitmask constant declarations to help applications select out the 
- *	flow label and priority fields.
+ *	flow label and traffic class fields.
  *
  *	Note that this are in host byte order while the flowinfo field of
  *	sockaddr_in6 is in network byte order.
  */
 
 #define IPV6_FLOWINFO_FLOWLABEL		0x000fffff
-#define IPV6_FLOWINFO_PRIORITY		0x0ff00000
+#define IPV6_FLOWINFO_TCLASS		0x0ff00000
 
-/* These defintions are obsolete */
-#define IPV6_PRIORITY_UNCHARACTERIZED	0x0000
-#define IPV6_PRIORITY_FILLER		0x0100
-#define IPV6_PRIORITY_UNATTENDED	0x0200
-#define IPV6_PRIORITY_RESERVED1		0x0300
-#define IPV6_PRIORITY_BULK		0x0400
-#define IPV6_PRIORITY_RESERVED2		0x0500
-#define IPV6_PRIORITY_INTERACTIVE	0x0600
-#define IPV6_PRIORITY_CONTROL		0x0700
-#define IPV6_PRIORITY_8			0x0800
-#define IPV6_PRIORITY_9			0x0900
-#define IPV6_PRIORITY_10		0x0a00
-#define IPV6_PRIORITY_11		0x0b00
-#define IPV6_PRIORITY_12		0x0c00
-#define IPV6_PRIORITY_13		0x0d00
-#define IPV6_PRIORITY_14		0x0e00
-#define IPV6_PRIORITY_15		0x0f00
 
 /*
  *	IPV6 extension headers
@@ -142,7 +129,18 @@ struct in6_flowlabel_req
 #define IPV6_TLV_JUMBO		194
 
 /*
+ *	Mobile IPv6 TLV options.
+ */
+#define MIPV6_TLV_HOMEADDR	201
+
+/*
  *	IPV6 socket options
+ */
+
+/*
+ *	NOTE: 	26, 48-63 are reserved by USAGI Project.
+ *		For further information, see <http://www.linux-ipv6.org>
+ *
  */
 
 #define IPV6_ADDRFORM		1
@@ -161,8 +159,10 @@ struct in6_flowlabel_req
 #define IPV6_MULTICAST_IF	17
 #define IPV6_MULTICAST_HOPS	18
 #define IPV6_MULTICAST_LOOP	19
-#define IPV6_ADD_MEMBERSHIP	20
-#define IPV6_DROP_MEMBERSHIP	21
+#define IPV6_JOIN_GROUP		20
+#define IPV6_ADD_MEMBERSHIP	IPV6_JOIN_GROUP
+#define IPV6_LEAVE_GROUP	21
+#define IPV6_DROP_MEMBERSHIP	IPV6_LEAVE_GROUP
 #define IPV6_ROUTER_ALERT	22
 #define IPV6_MTU_DISCOVER	23
 #define IPV6_MTU		24
@@ -180,5 +180,77 @@ struct in6_flowlabel_req
 #define IPV6_FLOWLABEL_MGR	32
 #define IPV6_FLOWINFO_SEND	33
 
+/* draft-itojun-ipv6-tclass-api-01.txt */
+#define IPV6_RECVTCLASS		66
+#define IPV6_TCLASS		67
 
+/* usagi extension */
+#define IPV6_PRIVACY		68
+
+/*
+ * IPv6 address testing macros (RFC3493; some from KAME)
+ * (to avoid alignment issue, don't use __u64)
+ */
+#ifdef __KERNEL__
+#ifndef IPV6_ADDR_SCOPE_NODELOCAL
+#define IPV6_ADDR_SCOPE_NODELOCAL	0x01
+#define IPV6_ADDR_SCOPE_LINKLOCAL	0x02
+#define IPV6_ADDR_SCOPE_SITELOCAL	0x05
+#define IPV6_ADDR_SCOPE_ORGLOCAL	0x08
+#define IPV6_ADDR_SCOPE_GLOBAL		0x0e
+#endif
+
+#define	IN6_IS_ADDR_UNSPECIFIED(a)			\
+	((((a)->s6_addr32[0]) == 0) &&			\
+	 (((a)->s6_addr32[1]) == 0) &&			\
+	 (((a)->s6_addr32[2]) == 0) &&			\
+	 (((a)->s6_addr32[3]) == 0))
+#define	IN6_IS_ADDR_LOOPBACK(a)				\
+	((((a)->s6_addr32[0]) == 0) &&			\
+	 (((a)->s6_addr32[1]) == 0) &&			\
+	 (((a)->s6_addr32[2]) == 0) && 			\
+	 (((a)->s6_addr32[3]) == __constant_htonl(1)))
+#define IN6_IS_ADDR_V4COMPAT(a)				\
+	((((a)->s6_addr32[0]) == 0) &&			\
+	 (((a)->s6_addr32[1]) == 0) &&			\
+	 (((a)->s6_addr32[2]) == 0) &&			\
+	 (((a)->s6_addr32[3]) != __constant_htonl(1)))
+#define IN6_IS_ADDR_V4MAPPED(a)				\
+	((((a)->s6_addr32[0]) == 0) &&			\
+	 (((a)->s6_addr32[1]) == 0) &&			\
+	 (((a)->s6_addr32[2]) == __constant_htonl(0x0000ffff)))
+#define IN6_IS_ADDR_LINKLOCAL(a)	\
+	(((a)->s6_addr32[0] & __constant_htonl(0xffc00000)) == __constant_htons(0xfe800000))
+#define IN6_IS_ADDR_SITELOCAL(a)	\
+	(((a)->s6_addr32[0] & __constant_htonl(0xffc00000)) == __constant_htons(0xfec00000))
+#define IN6_IS_ADDR_MULTICAST(a)	\
+	((a)->s6_addr[0] == 0xff)
+
+#define IPV6_ADDR_MC_SCOPE(a)		\
+	((a)->s6_addr[1] & 0x0f)	/* XXX nonstandard */
+#define IN6_IS_ADDR_MC_SCOPE(a,b)	\
+	(IPV6_ADDR_MC_SCOPE(a) == (b))	/* XXX nonstandard */
+
+#define IN6_IS_ADDR_MC_NODELOCAL(a)	\
+	(IN6_IS_ADDR_MULTICAST(a) &&	\
+	 IN6_IS_ADDR_MC_SCOPE(a,IPV6_ADDR_SCOPE_NODELOCAL))
+#define IN6_IS_ADDR_MC_LINKLOCAL(a)	\
+	(IN6_IS_ADDR_MULTICAST(a) &&	\
+	 IN6_IS_ADDR_MC_SCOPE(a,IPV6_ADDR_SCOPE_LINKLOCAL))
+#define IN6_IS_ADDR_MC_SITELOCAL(a)	\
+	(IN6_IS_ADDR_MULTICAST(a) &&	\
+	 IN6_IS_ADDR_MC_SCOPE(a,IPV6_ADDR_SCOPE_SITELOCAL))
+#define IN6_IS_ADDR_MC_ORGLOCAL(a)	\
+	(IN6_IS_ADDR_MULTICAST(a) &&	\
+	 IN6_IS_ADDR_MC_SCOPE(a,IPV6_ADDR_SCOPE_ORGLOCAL))
+#define IN6_IS_ADDR_MC_GLOBAL(a)	\
+	(IN6_IS_ADDR_MULTICAST(a) &&	\
+	 IN6_IS_ADDR_MC_SCOPE(a,IPV6_ADDR_SCOPE_GLOBAL))
+#endif
+
+/* device controls */
+#define SIOCGIFZONE	(SIOCPROTOPRIVATE + 0)
+#define SIOCSIFZONE	(SIOCPROTOPRIVATE + 1)
+#define SIOCSDADDRLABEL	(SIOCPROTOPRIVATE + 2)
+#define SIOCDDADDRLABEL	(SIOCPROTOPRIVATE + 3)
 #endif

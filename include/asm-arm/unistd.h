@@ -204,8 +204,8 @@
 #define __NR_rt_sigtimedwait		(__NR_SYSCALL_BASE+177)
 #define __NR_rt_sigqueueinfo		(__NR_SYSCALL_BASE+178)
 #define __NR_rt_sigsuspend		(__NR_SYSCALL_BASE+179)
-#define __NR_pread			(__NR_SYSCALL_BASE+180)
-#define __NR_pwrite			(__NR_SYSCALL_BASE+181)
+#define __NR_pread64			(__NR_SYSCALL_BASE+180)
+#define __NR_pwrite64			(__NR_SYSCALL_BASE+181)
 #define __NR_chown			(__NR_SYSCALL_BASE+182)
 #define __NR_getcwd			(__NR_SYSCALL_BASE+183)
 #define __NR_capget			(__NR_SYSCALL_BASE+184)
@@ -250,7 +250,7 @@
 #define __NR_security			(__NR_SYSCALL_BASE+223)
 #define __NR_gettid			(__NR_SYSCALL_BASE+224)
 #define __NR_readahead			(__NR_SYSCALL_BASE+225)
-#if 0 /* allocated in 2.5 */
+#if 0 /* allocated in 2.4 */
 #define __NR_setxattr			(__NR_SYSCALL_BASE+226)
 #define __NR_lsetxattr			(__NR_SYSCALL_BASE+227)
 #define __NR_fsetxattr			(__NR_SYSCALL_BASE+228)
@@ -263,8 +263,8 @@
 #define __NR_removexattr		(__NR_SYSCALL_BASE+235)
 #define __NR_lremovexattr		(__NR_SYSCALL_BASE+236)
 #define __NR_fremovexattr		(__NR_SYSCALL_BASE+237)
-#endif
 #define __NR_tkill			(__NR_SYSCALL_BASE+238)
+#endif
 #if 0 /* allocated in 2.5 */
 #define __NR_sendfile64                 (__NR_SYSCALL_BASE+239)
 #define __NR_futex                      (__NR_SYSCALL_BASE+240)

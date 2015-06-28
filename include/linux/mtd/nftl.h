@@ -114,7 +114,7 @@ int NFTL_formatblock(struct NFTLrecord *s, int block);
 #endif
 
 #define MAX_NFTLS 16
-#define MAX_SECTORS_PER_UNIT 32
+#define MAX_SECTORS_PER_UNIT 64
 #define NFTL_PARTN_BITS 4
 
 #endif /* __KERNEL__ */

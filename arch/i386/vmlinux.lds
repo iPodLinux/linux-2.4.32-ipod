@@ -40,7 +40,7 @@ SECTIONS
 
   . = ALIGN(4096);		/* Init code and data */
   __init_begin = .;
-  .text.init : { *(.text.init) }
+  .text.init : { *(.text.init) *(.text.exit) }
   .data.init : { *(.data.init) }
   . = ALIGN(16);
   __setup_start = .;
@@ -66,7 +66,6 @@ SECTIONS
 
   /* Sections to be discarded */
   /DISCARD/ : {
-	*(.text.exit)
 	*(.data.exit)
 	*(.exitcall.exit)
 	}

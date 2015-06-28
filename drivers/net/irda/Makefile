@@ -34,5 +34,7 @@ obj-$(CONFIG_AU1000_FIR)	+= au1k_ir.o
 obj-$(CONFIG_MCP2120_DONGLE)	+= mcp2120.o
 obj-$(CONFIG_ACT200L_DONGLE)	+= act200l.o
 obj-$(CONFIG_MA600_DONGLE)	+= ma600.o
+obj-$(CONFIG_EP93XX_SIR)	+= ep93xx_sir.o
+obj-$(CONFIG_EP93XX_IRDA)	+= ep93xx_irda.o
 
 include $(TOPDIR)/Rules.make

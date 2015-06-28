@@ -433,6 +433,10 @@
 #include "orinoco.h"
 #include "ieee802_11.h"
 
+#if defined(CONFIG_LEDMAN)
+#include <linux/ledman.h>
+#endif
+
 /********************************************************************/
 /* Module information                                               */
 /********************************************************************/
@@ -1532,6 +1536,17 @@ static void print_linkstatus(struct net_device *dev, u16 status)
 {
 	char * s;
 
+#if defined(CONFIG_LEDMAN)
+	if ((status == HERMES_LINKSTATUS_NOT_CONNECTED) ||
+	    (status == HERMES_LINKSTATUS_DISCONNECTED) ||
+	    (status == HERMES_LINKSTATUS_AP_OUT_OF_RANGE) ||
+	    (status == HERMES_LINKSTATUS_ASSOC_FAILED))
+		ledman_cmd(LEDMAN_CMD_OFF, LEDMAN_LAN3_LINK);
+	else if ((status == HERMES_LINKSTATUS_CONNECTED) ||
+	    (status == HERMES_LINKSTATUS_AP_IN_RANGE))
+		ledman_cmd(LEDMAN_CMD_ON, LEDMAN_LAN3_LINK);
+#endif
+
 	switch (status) {
 	case HERMES_LINKSTATUS_NOT_CONNECTED:
 		s = "Not Connected";
@@ -1676,6 +1691,10 @@ static void __orinoco_ev_rx(struct net_device *dev, hermes_t *hw)
 	struct header_struct hdr;
 	struct ethhdr *eh;
 	int err;
+
+#if defined(CONFIG_LEDMAN)
+	ledman_cmd(LEDMAN_CMD_SET, LEDMAN_LAN3_RX);
+#endif
 
 	rxfid = hermes_read_regn(hw, RXFID);
 
@@ -1827,6 +1846,10 @@ static void __orinoco_ev_txexc(struct net_device *dev, hermes_t *hw)
 	if (fid == DUMMY_FID)
 		return; /* Nothing's really happened */
 
+#if defined(CONFIG_LEDMAN)
+	ledman_cmd(LEDMAN_CMD_SET, LEDMAN_LAN3_TX);
+#endif
+
 	err = hermes_bap_pread(hw, IRQ_BAP, &desc, sizeof(desc), fid, 0);
 	if (err) {
 		printk(KERN_WARNING "%s: Unable to read descriptor on Tx error "
@@ -1846,6 +1869,10 @@ static void __orinoco_ev_tx(struct net_device *dev, hermes_t *hw)
 {
 	struct orinoco_private *priv = dev->priv;
 	struct net_device_stats *stats = &priv->stats;
+
+#if defined(CONFIG_LEDMAN)
+	ledman_cmd(LEDMAN_CMD_SET, LEDMAN_LAN3_TX);
+#endif
 
 	stats->tx_packets++;
 

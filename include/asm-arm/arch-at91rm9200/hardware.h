@@ -60,6 +60,7 @@ extern AT91PS_SYS AT91_SYS;
 
 
 #define AT91C_BASE_SRAM		0x00200000	/* Internal SRAM base address */
+#define AT91C_SRAM_SIZE		0x00004000	/* Internal SRAM SIZE (16Kb) */
 
 #define AT91C_NR_UART		5		/* 4 USART3's and one DBGU port */
 
@@ -82,5 +83,8 @@ extern AT91PS_SYS AT91_SYS;
 #include <asm/arch/at91rm9200dk.h>
 #endif
 
+#ifdef CONFIG_MACH_CSB337
+#include <asm/arch/csb337.h>
+#endif
 
 #endif

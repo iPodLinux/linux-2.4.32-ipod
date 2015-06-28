@@ -219,3 +219,80 @@ void si_meminfo(struct sysinfo *val)
 	val->mem_unit = PAGE_SIZE;
 	return;
 }
+
+/*
+ * Generic first-level cache init
+ */
+void __init cache_init(void)
+{
+	extern int detect_cpu_and_cache_system(void);
+	unsigned long ccr, flags = 0;
+
+	detect_cpu_and_cache_system();
+
+	if (cpu_data->type == CPU_SH_NONE)
+		panic("Unknown CPU");
+
+	jump_to_P2();
+	ccr = ctrl_inl(CCR);
+
+	/*
+	 * If the cache is already enabled .. flush it.
+	 */
+	if (ccr & CCR_CACHE_ENABLE) {
+		unsigned long entries, i, j;
+
+		entries = cpu_data->dcache.sets;
+
+		/*
+		 * If the OC is already in RAM mode, we only have
+		 * half of the entries to flush..
+		 */
+		if (ccr & CCR_CACHE_ORA)
+			entries >>= 1;
+
+		for (i = 0; i < entries; i++) {
+			for (j = 0; j < cpu_data->dcache.ways; j++) {
+				unsigned long data, addr;
+
+				addr = CACHE_OC_ADDRESS_ARRAY |
+					(j << cpu_data->dcache.way_shift) |
+					(i << cpu_data->dcache.entry_shift);
+
+				data = ctrl_inl(addr);
+
+				if ((data & (SH_CACHE_UPDATED | SH_CACHE_VALID))
+					== (SH_CACHE_UPDATED | SH_CACHE_VALID))
+					ctrl_outl(data & ~SH_CACHE_UPDATED, addr);
+			}
+		}
+	}
+
+	/* 
+	 * Default CCR values .. enable the caches
+	 * and flush them immediately..
+	 */
+	flags |= CCR_CACHE_ENABLE | CCR_CACHE_INVALIDATE |
+#ifdef CCR_CACHE_EMODE
+			(ccr & CCR_CACHE_EMODE) |
+#endif
+			0;
+
+#ifdef CONFIG_SH_WRITETHROUGH
+	/* Turn on Write-through caching */
+	flags |= CCR_CACHE_WT;
+#else
+	/* .. or default to Write-back */
+	flags |= CCR_CACHE_CB;
+#endif
+
+#ifdef CONFIG_SH_OCRAM
+	/* Turn on OCRAM -- halve the OC */
+	flags |= CCR_CACHE_ORA;
+	cpu_data->dcache.sets >>= 1;
+#endif
+
+	ctrl_outl(flags, CCR);
+	back_to_P1();
+}
+

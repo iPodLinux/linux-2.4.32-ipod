@@ -52,6 +52,21 @@ extern asmlinkage void __backtrace(void);
 
 #define prepare_to_switch()    do { } while(0)
 
+#ifdef CONFIG_EP93XX_CRUNCH
+#include <asm/arch/crunch.h>
+#define crunch_switch(prev, next)			\
+	do {						\
+		if (prev->flags & PF_USEDFPU) {		\
+			save_crunch(prev);		\
+			crunch_disable();		\
+		}					\
+		prev->flags &= ~PF_USEDFPU;		\
+		mb();					\
+	} while (0)
+#else
+#define crunch_switch(prev, next)	do { } while (0);
+#endif
+
 /*
  * switch_to(prev, next) should switch from task `prev' to `next'
  * `prev' will never be the same as `next'.

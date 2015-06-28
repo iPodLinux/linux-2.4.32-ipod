@@ -66,6 +66,18 @@ static inline void AT91_CfgPIO_EMAC_MII(void) {
 }
 
 /*
+ * Configure interrupt from Ethernet PHY.
+ */
+static inline void AT91_CfgPIO_EMAC_PHY(void) {
+	AT91_SYS->PMC_PCER = 1 << AT91C_ID_PIOC;	/* enable peripheral clock */
+#ifdef CONFIG_MACH_CSB337
+	AT91_SYS->PIOC_ODR = AT91C_PIO_PC2;
+#else
+	AT91_SYS->PIOC_ODR = AT91C_PIO_PC4;
+#endif
+}
+
+/*
  * Enable the Two-Wire interface.
  */
 static inline void AT91_CfgPIO_TWI(void) {

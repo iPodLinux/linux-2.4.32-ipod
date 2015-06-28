@@ -38,6 +38,10 @@ ifeq ($(CONFIG_ARCH_INTEGRATOR),y)
 OBJS		+= head-integrator.o
 endif
 
+ifeq ($(CONFIG_ARCH_KS8695),y)
+OBJS		+= head-ks8695.o
+endif
+
 ifeq ($(CONFIG_ARCH_AT91RM9200),y)
 OBJS		+= head-at91rm9200.o
 endif
@@ -69,6 +73,21 @@ endif
 
 ifeq ($(CONFIG_ARCH_SA1100),y)
 OBJS		+= head-sa1100.o
+endif
+
+ifeq ($(CONFIG_CPU_XSCALE),y)
+OBJS		+= head-xscale.o
+endif
+
+#
+# Just borrow from SA1* for now
+#
+ifeq ($(CONFIG_ARCH_IXP1200),y)
+OBJS		+= head-sa1100.o
+endif
+
+ifeq ($(CONFIG_CPU_BIG_ENDIAN),y)
+OBJS		+= big-endian.o
 endif
 
 SEDFLAGS	= s/TEXT_START/$(ZTEXTADDR)/;s/LOAD_ADDR/$(ZRELADDR)/;s/BSS_START/$(ZBSSADDR)/

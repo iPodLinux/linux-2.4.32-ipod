@@ -372,6 +372,7 @@ static int clip_start_xmit(struct sk_buff *skb,struct net_device *dev)
 	struct clip_priv *clip_priv = PRIV(dev);
 	struct atmarp_entry *entry;
 	struct atm_vcc *vcc;
+	struct clip_vcc *vccs;
 	int old;
 	unsigned long flags;
 
@@ -397,7 +398,8 @@ static int clip_start_xmit(struct sk_buff *skb,struct net_device *dev)
 		return 0;
 	}
 	entry = NEIGH2ENTRY(skb->dst->neighbour);
-	if (!entry->vccs) {
+	vccs = entry->vccs;
+	if (!vccs) {
 		if (time_after(jiffies, entry->expires)) {
 			/* should be resolved */
 			entry->expires = jiffies+ATMARP_RETRY_DELAY*HZ;
@@ -411,10 +413,10 @@ static int clip_start_xmit(struct sk_buff *skb,struct net_device *dev)
 		}
 		return 0;
 	}
-	DPRINTK("neigh %p, vccs %p\n",entry,entry->vccs);
-	ATM_SKB(skb)->vcc = vcc = entry->vccs->vcc;
+	DPRINTK("neigh %p, vccs %p\n",entry,vccs);
+	ATM_SKB(skb)->vcc = vcc = vccs->vcc;
 	DPRINTK("using neighbour %p, vcc %p\n",skb->dst->neighbour,vcc);
-	if (entry->vccs->encap) {
+	if (vccs->encap) {
 		void *here;
 
 		here = skb_push(skb,RFC1483LLC_LEN);
@@ -423,9 +425,9 @@ static int clip_start_xmit(struct sk_buff *skb,struct net_device *dev)
 	}
 	atomic_add(skb->truesize,&vcc->sk->wmem_alloc);
 	ATM_SKB(skb)->atm_options = vcc->atm_options;
-	entry->vccs->last_use = jiffies;
+	vccs->last_use = jiffies;
 	DPRINTK("atm_skb(%p)->vcc(%p)->dev(%p)\n",skb,vcc,vcc->dev);
-	old = xchg(&entry->vccs->xoff,1); /* assume XOFF ... */
+	old = xchg(&vccs->xoff,1); /* assume XOFF ... */
 	if (old) {
 		printk(KERN_WARNING "clip_start_xmit: XOFF->XOFF transition\n");
 		return 0;
@@ -434,13 +436,13 @@ static int clip_start_xmit(struct sk_buff *skb,struct net_device *dev)
 	clip_priv->stats.tx_bytes += skb->len;
 	(void) vcc->send(vcc,skb);
 	if (atm_may_send(vcc,0)) {
-		entry->vccs->xoff = 0;
+		vccs->xoff = 0;
 		return 0;
 	}
 	spin_lock_irqsave(&clip_priv->xoff_lock,flags);
 	netif_stop_queue(dev); /* XOFF -> throttle immediately */
 	barrier();
-	if (!entry->vccs->xoff)
+	if (!vccs->xoff)
 		netif_start_queue(dev);
 		/* Oh, we just raced with clip_pop. netif_start_queue should be
 		   good enough, because nothing should really be asleep because

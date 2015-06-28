@@ -49,6 +49,8 @@ extern int bigsur_io_debug;
 /* Map a range of ports to a range of kernel virtual memory. */
 extern void bigsur_port_map(u32 baseport, u32 nports, u32 addr, u8 shift);
 extern void bigsur_port_unmap(u32 baseport, u32 nports);
+#define mach_port_map bigsur_port_map
+#define mach_port_unmap bigsur_port_unmap
 
 #endif /* _ASM_SH_IO_BIGSUR_H */
 

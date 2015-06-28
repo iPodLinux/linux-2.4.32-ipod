@@ -5,8 +5,6 @@
  *
  *      (C) Copyright 2000-2001, Greg Ungerer (gerg@snapgear.com)
  *      (C) Copyright 2001-2002, SnapGear (www.snapgear.com)
- *
- *	$Id: nettel.c,v 1.1 2002/08/08 06:30:13 gerg Exp $
  */
 
 /****************************************************************************/
@@ -212,66 +210,15 @@ static struct notifier_block nettel_notifier_block = {
 	nettel_reboot_notifier, NULL, 0
 };
 
-/*
- *	Erase the configuration file system.
- *	Used to support the software reset button.
- */
-static void nettel_erasecallback(struct erase_info *done)
-{
-	wait_queue_head_t *wait_q = (wait_queue_head_t *)done->priv;
-	wake_up(wait_q);
-}
-
-static struct erase_info nettel_erase;
-
-int nettel_eraseconfig(void)
-{
-	struct mtd_info *mtd;
-	DECLARE_WAITQUEUE(wait, current);
-	wait_queue_head_t wait_q;
-	int ret;
-
-	init_waitqueue_head(&wait_q);
-	mtd = get_mtd_device(NULL, 2);
-	if (mtd) {
-		nettel_erase.mtd = mtd;
-		nettel_erase.callback = nettel_erasecallback;
-		nettel_erase.callback = 0;
-		nettel_erase.addr = 0;
-		nettel_erase.len = mtd->size;
-		nettel_erase.priv = (u_long) &wait_q;
-		nettel_erase.priv = 0;
-
-		set_current_state(TASK_INTERRUPTIBLE);
-		add_wait_queue(&wait_q, &wait);
-
-		ret = MTD_ERASE(mtd, &nettel_erase);
-		if (ret) {
-			set_current_state(TASK_RUNNING);
-			remove_wait_queue(&wait_q, &wait);
-			put_mtd_device(mtd);
-			return(ret);
-		}
-
-		schedule();  /* Wait for erase to finish. */
-		remove_wait_queue(&wait_q, &wait);
-		
-		put_mtd_device(mtd);
-	}
-
-	return(0);
-}
-
-#else
-
-int nettel_eraseconfig(void)
-{
-	return(0);
-}
 
 #endif
 
 /****************************************************************************/
+
+#if LINUX_VERSION_CODE < 0x20212 && defined(MODULE)
+#define nettel_init init_module
+#define nettel_cleanup cleanup_module
+#endif
 
 int __init nettel_init(void)
 {

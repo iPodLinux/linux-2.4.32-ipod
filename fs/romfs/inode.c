@@ -433,6 +433,27 @@ err_out:
 	return result;
 }
 
+#ifdef MAGIC_ROM_PTR
+static int
+romfs_romptr(struct file * filp, struct vm_area_struct * vma)
+{
+	struct inode * inode = filp->f_dentry->d_inode;
+	unsigned int pgoff = vma->vm_pgoff;
+	vma->vm_pgoff += (inode->u.romfs_i.i_dataoffset >> PAGE_SHIFT);
+
+	if ((vma->vm_flags & VM_WRITE) || bromptr(inode->i_dev, vma)) {
+		vma->vm_pgoff = pgoff;
+		return -ENOSYS;
+	}
+	vma->vm_pgoff = pgoff;
+
+	vma->vm_start += (inode->u.romfs_i.i_dataoffset & ~PAGE_MASK);
+	vma->vm_end   += (inode->u.romfs_i.i_dataoffset & ~PAGE_MASK);
+
+	return 0;
+}
+#endif
+
 /* Mapping from our types to the kernel */
 
 static struct address_space_operations romfs_aops = {
@@ -442,6 +463,14 @@ static struct address_space_operations romfs_aops = {
 static struct file_operations romfs_dir_operations = {
 	read:		generic_read_dir,
 	readdir:	romfs_readdir,
+};
+
+struct file_operations romfs_file_operations = {
+	read:		generic_file_read,
+	mmap:		generic_file_mmap,
+#ifdef MAGIC_ROM_PTR
+	romptr:		romfs_romptr,
+#endif
 };
 
 static struct inode_operations romfs_dir_inode_operations = {
@@ -462,7 +491,6 @@ romfs_read_inode(struct inode *i)
 
 	ino = i->i_ino & ROMFH_MASK;
 	i->i_mode = 0;
-
 	/* Loop for finding the real hard link */
 	for(;;) {
 		if (romfs_copyfrom(i, &ri, ino, ROMFH_SIZE) <= 0) {
@@ -506,7 +534,7 @@ romfs_read_inode(struct inode *i)
 			i->i_mode = ino;
 			break;
 		case 2:
-			i->i_fop = &generic_ro_fops;
+			i->i_fop = &romfs_file_operations;
 			i->i_data.a_ops = &romfs_aops;
 			if (nextfh & ROMFH_EXEC)
 				ino |= S_IXUGO;

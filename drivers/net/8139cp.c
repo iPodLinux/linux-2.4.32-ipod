@@ -69,18 +69,30 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
+#ifdef CONFIG_LEDMAN
+#include <linux/ledman.h>
+#endif
 #include <linux/cache.h>
 #include <asm/io.h>
 #include <asm/uaccess.h>
 
+static int dev_get_info(char *buffer, char **start, off_t offset, int length);
+
+/* do we want fast poll operation instead of interrupts */
+#ifdef CONFIG_FAST_TIMER
+#define FAST_POLL 1
+#include <linux/fast_timer.h>
+#endif
+
 /* VLAN tagging feature enable/disable */
-#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE) 
 #define CP_VLAN_TAG_USED 1
-#define CP_VLAN_TX_TAG(tx_desc,vlan_tag_value) \
-	do { (tx_desc)->opts2 = (vlan_tag_value); } while (0)
+#define CP_VLAN_TX_TAG(tx_desc,vlan_tag_value, do_vlan) \
+	do { (tx_desc)->opts2 = do_vlan?cpu_to_le16(TxVlanTag):0; \
+		tx_desc->vtag = cpu_to_be16(vlan_tag_value); } while (0)
 #else
 #define CP_VLAN_TAG_USED 0
-#define CP_VLAN_TX_TAG(tx_desc,vlan_tag_value) \
+#define CP_VLAN_TX_TAG(tx_desc,vlan_tag_value, do_vlan) \
 	do { (tx_desc)->opts2 = 0; } while (0)
 #endif
 
@@ -129,7 +141,6 @@ MODULE_PARM_DESC (multicast_filter_limit, "8139cp: maximum number of filtered mu
 	  (CP)->tx_tail + (CP_TX_RING_SIZE - 1) - (CP)->tx_head :	\
 	  (CP)->tx_tail - (CP)->tx_head - 1)
 
-#define PKT_BUF_SZ		1536	/* Size of each temporary Rx buffer.*/
 #define RX_OFFSET		2
 #define CP_INTERNAL_PHY		32
 
@@ -145,6 +156,10 @@ MODULE_PARM_DESC (multicast_filter_limit, "8139cp: maximum number of filtered mu
 /* hardware minimum and maximum for a single frame's data payload */
 #define CP_MIN_MTU		60	/* TODO: allow lower, but pad */
 #define CP_MAX_MTU		4096
+
+/* Used to calculate the size of the temporary rx buffer */
+#define CP_RX_FIFO_SZ		2048
+#define CP_RX_DMA_MARGIN	500
 
 enum {
 	/* NIC register offsets */
@@ -179,6 +194,7 @@ enum {
 	TxThresh	= 0xEC, /* Early Tx threshold */
 	OldRxBufAddr	= 0x30, /* DMA address of Rx ring buffer (C mode) */
 	OldTSD0		= 0x10, /* DMA address of first Tx desc (C mode) */
+	MIIRegister	= 0xFC, /*The mii register */
 
 	/* Tx and Rx status descriptors */
 	DescOwn		= (1 << 31), /* Descriptor is owned by NIC */
@@ -190,8 +206,8 @@ enum {
 	IPCS		= (1 << 18), /* Calculate IP checksum */
 	UDPCS		= (1 << 17), /* Calculate UDP/IP checksum */
 	TCPCS		= (1 << 16), /* Calculate TCP/IP checksum */
-	TxVlanTag	= (1 << 17), /* Add VLAN tag */
-	RxVlanTagged	= (1 << 16), /* Rx VLAN tag available */
+	TxVlanTag	= (1 << 1), /* Add VLAN tag */
+	RxVlanTagged	= (1), /* Rx VLAN tag available */
 	IPFail		= (1 << 15), /* IP checksum failed */
 	UDPFail		= (1 << 14), /* UDP/IP checksum failed */
 	TCPFail		= (1 << 13), /* TCP/IP checksum failed */
@@ -293,6 +309,12 @@ enum {
 	LANWake         = (1 << 1),  /* Enable LANWake signal */
 	PMEStatus	= (1 << 0),  /* PME status can be reset by PCI RST# */
 
+	/* mii register */
+	MDO				= (1 << 26),  /* The mdio pin output */
+	MDI				= (1 << 25),  /* the mdio pin input */
+	MDC				= (1 << 24),  /* the mdio pin clock pin */
+	MDM				= (1 << 27),
+
 	cp_norx_intr_mask = PciErr | LinkChg | TxOK | TxErr | TxEmpty,
 	cp_rx_intr_mask = RxOK | RxErr | RxEmpty | RxFIFOOvr,
 	cp_intr_mask = cp_rx_intr_mask | cp_norx_intr_mask,
@@ -304,7 +326,11 @@ static const unsigned int cp_rx_config =
 
 struct cp_desc {
 	u32		opts1;
-	u32		opts2;
+/*
+ * We break this filed into 2 16 bit fields to get around endiannes issues
+ */
+	u16		vtag;
+	u16		opts2;
 	u64		addr;
 };
 
@@ -398,6 +424,10 @@ static void cp_clean_rings (struct cp_private *cp);
 static struct pci_device_id cp_pci_tbl[] = {
 	{ PCI_VENDOR_ID_REALTEK, PCI_DEVICE_ID_REALTEK_8139,
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, },
+#if defined(CONFIG_MTD_NETtel) || defined(CONFIG_SH_SECUREEDGE5410)
+	{ PCI_VENDOR_ID_REALTEK, PCI_DEVICE_ID_REALTEK_8129,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, },
+#endif
 	{ PCI_VENDOR_ID_TTTECH, PCI_DEVICE_ID_TTTECH_MC322,
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, },
 	{ },
@@ -423,6 +453,14 @@ static struct {
 	{ "rx_frags" },
 };
 
+#ifdef FAST_POLL
+static void
+fast_poll_8139cp(void *arg)
+{
+	static void cp_interrupt (int irq,void *dev_instance,struct pt_regs *regs);
+	cp_interrupt (-1, arg, NULL);
+}
+#endif
 
 #if CP_VLAN_TAG_USED
 static void cp_vlan_rx_register(struct net_device *dev, struct vlan_group *grp)
@@ -454,15 +492,25 @@ static void cp_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
 static inline void cp_set_rxbufsize (struct cp_private *cp)
 {
 	unsigned int mtu = cp->dev->mtu;
-	
-	if (mtu > ETH_DATA_LEN)
+
+	/* 
+	We need to ensure that the DMA buffers are bigger
+	than the rx fifo of the 8139C+, otherwise the DMA engine on
+	the chip can get confused and we cease to be able to receive
+	packets :-(.
+
+	It seems to get confused if the size of the packet we are receiving
+	is the same size of as the DMA buffer.
+	*/
+	if (mtu > (CP_RX_FIFO_SZ + CP_RX_DMA_MARGIN)) {
 		/* MTU + ethernet header + FCS + optional VLAN tag */
 		cp->rx_buf_sz = mtu + ETH_HLEN + 8;
-	else
-		cp->rx_buf_sz = PKT_BUF_SZ;
+	} else {
+		cp->rx_buf_sz = (CP_RX_FIFO_SZ + CP_RX_DMA_MARGIN);
+	}
 }
 
-static inline void cp_rx_skb (struct cp_private *cp, struct sk_buff *skb,
+static inline int cp_rx_skb (struct cp_private *cp, struct sk_buff *skb,
 			      struct cp_desc *desc)
 {
 	skb->protocol = eth_type_trans (skb, cp->dev);
@@ -471,13 +519,26 @@ static inline void cp_rx_skb (struct cp_private *cp, struct sk_buff *skb,
 	cp->net_stats.rx_bytes += skb->len;
 	cp->dev->last_rx = jiffies;
 
+#ifdef FAST_POLL
+
 #if CP_VLAN_TAG_USED
-	if (cp->vlgrp && (desc->opts2 & RxVlanTagged)) {
-		vlan_hwaccel_receive_skb(skb, cp->vlgrp,
-					 be16_to_cpu(desc->opts2 & 0xffff));
+	if (cp->vlgrp && (le16_to_cpu(desc->opts2) & RxVlanTagged)) {
+		return vlan_hwaccel_rx(skb, cp->vlgrp,
+					 be16_to_cpu(desc->vtag));
+
 	} else
 #endif
-		netif_receive_skb(skb);
+		return netif_rx(skb);
+#else
+#if CP_VLAN_TAG_USED
+	if (cp->vlgrp && (le16_to_cpu(desc->opts2) & RxVlanTagged)) {
+		return vlan_hwaccel_receive_skb(skb, cp->vlgrp,
+					 be16_to_cpu(desc->vtag));
+
+	} else
+#endif
+		return netif_receive_skb(skb);
+#endif
 }
 
 static void cp_rx_err_acct (struct cp_private *cp, unsigned rx_tail,
@@ -513,16 +574,32 @@ static inline unsigned int cp_rx_csum_ok (u32 status)
 	return 0;
 }
 
+#ifdef FAST_POLL
+static void cp_rx (struct cp_private *cp)
+#else
 static int cp_rx_poll (struct net_device *dev, int *budget)
+#endif
 {
+#ifdef FAST_POLL
+	unsigned rx_work = 16;
+#else
 	struct cp_private *cp = netdev_priv(dev);
-	unsigned rx_tail = cp->rx_tail;
 	unsigned rx_work = dev->quota;
 	unsigned rx;
+#endif
+	unsigned rx_tail = cp->rx_tail;
+	int cng_level;
 
+#ifdef CONFIG_LEDMAN
+	ledman_cmd(LEDMAN_CMD_SET, (cp->dev->name[3] == '0') ?  LEDMAN_LAN1_RX :
+			((cp->dev->name[3] == '1') ?  LEDMAN_LAN2_RX : LEDMAN_LAN3_RX));
+#endif
+
+#ifndef FAST_POLL
 rx_status_loop:
 	rx = 0;
 	cpw16(IntrStatus, cp_rx_intr_mask);
+#endif
 
 	while (1) {
 		u32 status, len;
@@ -537,8 +614,19 @@ rx_status_loop:
 
 		desc = &cp->rx_ring[rx_tail];
 		status = le32_to_cpu(desc->opts1);
-		if (status & DescOwn)
+		if (status & DescOwn) {
+#if 0
+			/* Sometimes we get an interrupt, but the descriptor
+			 * doesnt have DescOwn cleared yet, so wait a bit and
+			 * try again. */
+			if (rx_work == 99) {
+				cp->net_stats.rx_fifo_errors++;
+				udelay(20);
+				continue;
+			}
+#endif
 			break;
+		}
 
 		len = (status & 0x1fff) - 4;
 		mapping = cp->rx_skb[rx_tail].mapping;
@@ -552,11 +640,13 @@ rx_status_loop:
 			cp_rx_err_acct(cp, rx_tail, status, len);
 			cp->net_stats.rx_dropped++;
 			cp->cp_stats.rx_frags++;
+			cng_level = NET_RX_SUCCESS;
 			goto rx_next;
 		}
 
 		if (status & (RxError | RxErrFIFO)) {
 			cp_rx_err_acct(cp, rx_tail, status, len);
+			cng_level = NET_RX_SUCCESS;
 			goto rx_next;
 		}
 
@@ -568,6 +658,7 @@ rx_status_loop:
 		new_skb = dev_alloc_skb (buflen);
 		if (!new_skb) {
 			cp->net_stats.rx_dropped++;
+			cng_level = NET_RX_DROP;
 			goto rx_next;
 		}
 
@@ -591,11 +682,13 @@ rx_status_loop:
 				       buflen, PCI_DMA_FROMDEVICE);
 		cp->rx_skb[rx_tail].skb = new_skb;
 
-		cp_rx_skb(cp, skb, desc);
+		cng_level = cp_rx_skb(cp, skb, desc);
+#ifndef FAST_POLL
 		rx++;
-
+#endif
 rx_next:
 		cp->rx_ring[rx_tail].opts2 = 0;
+		cp->rx_ring[rx_tail].vtag = 0;
 		cp->rx_ring[rx_tail].addr = cpu_to_le64(mapping);
 		if (rx_tail == (CP_RX_RING_SIZE - 1))
 			desc->opts1 = cpu_to_le32(DescOwn | RingEnd |
@@ -604,19 +697,26 @@ rx_next:
 			desc->opts1 = cpu_to_le32(DescOwn | cp->rx_buf_sz);
 		rx_tail = NEXT_RX(rx_tail);
 
+		if (cng_level == NET_RX_DROP || cng_level == NET_RX_CN_HIGH
+				|| cng_level == NET_RX_CN_MOD) {
+			rx_work = 0;
+			break;
+		}
+
 		if (!rx_work--)
 			break;
 	}
 
 	cp->rx_tail = rx_tail;
 
+#ifndef FAST_POLL
 	dev->quota -= rx;
 	*budget -= rx;
 
 	/* if we did not reach work limit, then we're done with
 	 * this round of polling
 	 */
-	if (rx_work) {
+	if (rx_work > 0) {
 		if (cpr16(IntrStatus) & cp_rx_intr_mask)
 			goto rx_status_loop;
 
@@ -629,6 +729,7 @@ rx_next:
 	}
 
 	return 1;		/* not done */
+#endif
 }
 
 static irqreturn_t
@@ -650,7 +751,11 @@ cp_interrupt (int irq, void *dev_instance, struct pt_regs *regs)
 		printk(KERN_DEBUG "%s: intr, status %04x cmd %02x cpcmd %04x\n",
 		        dev->name, status, cpr8(Cmd), cpr16(CpCmd));
 
+#ifdef FAST_POLL
+	cpw16_f(IntrStatus, status);
+#else
 	cpw16(IntrStatus, status & ~cp_rx_intr_mask);
+#endif
 
 	spin_lock(&cp->lock);
 
@@ -662,10 +767,14 @@ cp_interrupt (int irq, void *dev_instance, struct pt_regs *regs)
 	}
 
 	if (status & (RxOK | RxErr | RxEmpty | RxFIFOOvr))
+#ifdef FAST_POLL
+		cp_rx(cp);
+#else
 		if (netif_rx_schedule_prep(dev)) {
 			cpw16_f(IntrMask, cp_norx_intr_mask);
 			__netif_rx_schedule(dev);
 		}
+#endif
 
 	if (status & (TxOK | TxErr | TxEmpty | SWInt))
 		cp_tx(cp);
@@ -692,6 +801,11 @@ static void cp_tx (struct cp_private *cp)
 {
 	unsigned tx_head = cp->tx_head;
 	unsigned tx_tail = cp->tx_tail;
+
+#ifdef CONFIG_LEDMAN
+	ledman_cmd(LEDMAN_CMD_SET, (cp->dev->name[3] == '0') ?  LEDMAN_LAN1_TX :
+			((cp->dev->name[3] == '1') ?  LEDMAN_LAN2_TX : LEDMAN_LAN3_TX));
+#endif
 
 	while (tx_tail != tx_head) {
 		struct sk_buff *skb;
@@ -751,6 +865,7 @@ static int cp_start_xmit (struct sk_buff *skb, struct net_device *dev)
 	unsigned entry;
 	u32 eor;
 #if CP_VLAN_TAG_USED
+	int do_vlan = 0;
 	u32 vlan_tag = 0;
 #endif
 
@@ -766,8 +881,10 @@ static int cp_start_xmit (struct sk_buff *skb, struct net_device *dev)
 	}
 
 #if CP_VLAN_TAG_USED
-	if (cp->vlgrp && vlan_tx_tag_present(skb))
-		vlan_tag = TxVlanTag | cpu_to_be16(vlan_tx_tag_get(skb));
+	if (cp->vlgrp && vlan_tx_tag_present(skb)) {
+		vlan_tag = vlan_tx_tag_get(skb);
+		do_vlan = 1;
+	}
 #endif
 
 	entry = cp->tx_head;
@@ -779,7 +896,7 @@ static int cp_start_xmit (struct sk_buff *skb, struct net_device *dev)
 
 		len = skb->len;
 		mapping = pci_map_single(cp->pdev, skb->data, len, PCI_DMA_TODEVICE);
-		CP_VLAN_TX_TAG(txd, vlan_tag);
+		CP_VLAN_TX_TAG(txd, vlan_tag, do_vlan);
 		txd->addr = cpu_to_le64(mapping);
 		wmb();
 
@@ -851,7 +968,7 @@ static int cp_start_xmit (struct sk_buff *skb, struct net_device *dev)
 				ctrl |= LastFrag;
 
 			txd = &cp->tx_ring[entry];
-			CP_VLAN_TX_TAG(txd, vlan_tag);
+			CP_VLAN_TX_TAG(txd, vlan_tag, do_vlan);
 			txd->addr = cpu_to_le64(mapping);
 			wmb();
 
@@ -865,7 +982,7 @@ static int cp_start_xmit (struct sk_buff *skb, struct net_device *dev)
 		}
 
 		txd = &cp->tx_ring[first_entry];
-		CP_VLAN_TX_TAG(txd, vlan_tag);
+		CP_VLAN_TX_TAG(txd, vlan_tag, do_vlan);
 		txd->addr = cpu_to_le64(first_mapping);
 		wmb();
 
@@ -1052,7 +1169,9 @@ static void cp_init_hw (struct cp_private *cp)
 
 	cpw16(MultiIntr, 0);
 
+#ifndef FAST_POLL
 	cpw16_f(IntrMask, cp_intr_mask);
+#endif
 
 	cpw8_f(Cfg9346, Cfg9346_Lock);
 }
@@ -1077,6 +1196,7 @@ static int cp_refill_rx (struct cp_private *cp)
 		cp->rx_skb[i].frag = 0;
 
 		cp->rx_ring[i].opts2 = 0;
+		cp->rx_ring[i].vtag = 0;
 		cp->rx_ring[i].addr = cpu_to_le64(cp->rx_skb[i].mapping);
 		if (i == (CP_RX_RING_SIZE - 1))
 			cp->rx_ring[i].opts1 =
@@ -1174,9 +1294,13 @@ static int cp_open (struct net_device *dev)
 
 	cp_init_hw(cp);
 
+#ifndef FAST_POLL
 	rc = request_irq(dev->irq, cp_interrupt, SA_SHIRQ, dev->name, dev);
 	if (rc)
 		goto err_out_hw;
+#else
+	fast_timer_add(fast_poll_8139cp, dev);
+#endif
 
 	netif_carrier_off(dev);
 	mii_check_media(&cp->mii_if, netif_msg_link(cp), TRUE);
@@ -1184,7 +1308,9 @@ static int cp_open (struct net_device *dev)
 
 	return 0;
 
+#ifndef FAST_POLL
 err_out_hw:
+#endif
 	cp_stop_hw(cp);
 	cp_free_rings(cp);
 	return rc;
@@ -1207,8 +1333,12 @@ static int cp_close (struct net_device *dev)
 
 	spin_unlock_irqrestore(&cp->lock, flags);
 
+#ifndef FAST_POLL
 	synchronize_irq();
 	free_irq(dev->irq, dev);
+#else
+	fast_timer_remove(fast_poll_8139cp, dev);
+#endif
 
 	cp_free_rings(cp);
 	return 0;
@@ -1260,12 +1390,73 @@ static char mii_2_8139_map[8] = {
 	0
 };
 
+
+#ifdef CONFIG_8139CP_EXTERNAL_PHY
+
+/* MII serial management: mostly bogus for now. */
+/* Read and write the MII management registers using software-generated
+   serial MDIO protocol.
+   The maximum data clock rate is 25 Mhz.  The minimum timing is usually
+   met by back-to-back PCI I/O cycles, but we insert a delay to avoid
+   "overclocking" issues. */
+#define mdio_delay()	cpr32(MIIRegister)
+
+#define MAX_PHYID (31)
+
+/* Syncronize the MII management interface by shifting 32 one bits out. */
+static void mdio_cp_sync (struct cp_private *cp) {
+	int i;
+
+	for (i = 32; i >= 0; i--) {
+		cpw32 (MIIRegister, MDO|MDM);
+		mdio_delay ();
+		cpw32 (MIIRegister, MDO | MDC | MDM);
+		mdio_delay ();
+	}
+}
+#endif
+
+
 static int mdio_read(struct net_device *dev, int phy_id, int location)
 {
 	struct cp_private *cp = netdev_priv(dev);
 
+#ifdef CONFIG_8139CP_EXTERNAL_PHY
+	int mii_cmd = (0xf6 << 10) | (phy_id << 5) | location;
+	int i;
+	int retval = 0;
+
+	/* The CP can only use 32 external PHYs so try the internal */
+	if (phy_id <= MAX_PHYID) {
+		mdio_cp_sync (cp);
+		/* Shift the read command bits out. */
+		for (i = 15; i >= 0; i--) {
+			int dataval = (mii_cmd & (1 << i)) ? MDO : 0;
+
+			cpw32 (MIIRegister, dataval | MDM);
+			mdio_delay ();
+			cpw32 (MIIRegister, dataval | MDC | MDM);
+			mdio_delay ();
+		}
+
+		/* Read the two transition, 16 data, and wire-idle bits. */
+		for (i = 19; i > 0; i--) {
+			cpw32 (MIIRegister, 0);
+			mdio_delay ();
+			retval = (retval << 1) | ((cpr32 (MIIRegister) & MDI) ? 1 : 0);
+			cpw32 (MIIRegister, MDC);
+			mdio_delay ();
+		}
+		return (retval >> 1) & 0xffff;
+	} else {
+#endif
+
 	return location < 8 && mii_2_8139_map[location] ?
 	       readw(cp->regs + mii_2_8139_map[location]) : 0;
+#ifdef CONFIG_8139CP_EXTERNAL_PHY
+	}
+#endif
+
 }
 
 
@@ -1273,13 +1464,42 @@ static void mdio_write(struct net_device *dev, int phy_id, int location,
 		       int value)
 {
 	struct cp_private *cp = netdev_priv(dev);
+#ifdef CONFIG_8139CP_EXTERNAL_PHY
+	int mii_cmd = (0x5002 << 16) | (phy_id << 23) | (location << 18) | value;
+	int i;
 
+	/* If we select a valid internal phy */
+	if (phy_id <= MAX_PHYID) {
+		mdio_cp_sync (cp);
+
+
+		/* Shift the command bits out. */
+		for (i = 31; i >= 0; i--) {
+			int dataval =
+				(mii_cmd & (1 << i)) ? MDO : 0;
+			cpw32 (MIIRegister, dataval | MDM);
+			mdio_delay ();
+			cpw32 (MIIRegister, dataval | MDC | MDM);
+			mdio_delay ();
+		}
+		/* Clear out extra bits. */
+		for (i = 2; i > 0; i--) {
+			cpw32 (MIIRegister, 0|MDM);
+			mdio_delay ();
+			cpw32 (MIIRegister, MDC|MDM);
+			mdio_delay ();
+		}
+	} else {
+#endif
 	if (location == 0) {
 		cpw8(Cfg9346, Cfg9346_Unlock);
 		cpw16(BasicModeCtrl, value);
 		cpw8(Cfg9346, Cfg9346_Lock);
 	} else if (location < 8 && mii_2_8139_map[location])
 		cpw16(mii_2_8139_map[location], value);
+#ifdef CONFIG_8139CP_EXTERNAL_PHY
+	}
+#endif
 }
 
 /* Set the ethtool Wake-on-LAN settings */
@@ -1648,7 +1868,9 @@ static int cp_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 	pci_read_config_byte(pdev, PCI_REVISION_ID, &pci_rev);
 
 	if (pdev->vendor == PCI_VENDOR_ID_REALTEK &&
-	    pdev->device == PCI_DEVICE_ID_REALTEK_8139 && pci_rev < 0x20) {
+	    	(pdev->device == PCI_DEVICE_ID_REALTEK_8139 ||
+			 	pdev->device == PCI_DEVICE_ID_REALTEK_8129)
+			 && pci_rev < 0x20) {
 		printk(KERN_ERR PFX "pci dev %s (id %04x:%04x rev %02x) is not an 8139C+ compatible chip\n",
 		       pci_name(pdev), pdev->vendor, pdev->device, pci_rev);
 		printk(KERN_ERR PFX "Try the \"8139too\" driver instead.\n");
@@ -1670,7 +1892,7 @@ static int cp_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 	cp->mii_if.mdio_read = mdio_read;
 	cp->mii_if.mdio_write = mdio_write;
 	cp->mii_if.phy_id = CP_INTERNAL_PHY;
-	cp->mii_if.phy_id_mask = 0x1f;
+	cp->mii_if.phy_id_mask = 0x3f;
 	cp->mii_if.reg_num_mask = 0x1f;
 	cp_set_rxbufsize(cp);
 
@@ -1730,11 +1952,17 @@ static int cp_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	cp_stop_hw(cp);
 
+#if defined(CONFIG_MTD_NETtel) || defined(CONFIG_SH_SECUREEDGE5410) || defined(CONFIG_MTD_SNAPGEODE)
+	/* Don't rely on the eeprom, get MAC from chip. */
+	for (i = 0; (i < 6); i++)
+		dev->dev_addr[i] = readb(regs + MAC0 + i);
+#else
 	/* read MAC address from EEPROM */
 	addr_len = read_eeprom (regs, 0, 8) == 0x8129 ? 8 : 6;
 	for (i = 0; i < 3; i++)
 		((u16 *) (dev->dev_addr))[i] =
 		    le16_to_cpu (read_eeprom (regs, i + 7, addr_len));
+#endif
 
 	dev->open = cp_open;
 	dev->stop = cp_close;
@@ -1742,8 +1970,10 @@ static int cp_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 	dev->hard_start_xmit = cp_start_xmit;
 	dev->get_stats = cp_get_stats;
 	dev->do_ioctl = cp_ioctl;
+#ifndef FAST_POLL
 	dev->poll = cp_rx_poll;
 	dev->weight = 16;	/* arbitrary? from NAPI_HOWTO.txt. */
+#endif
 #ifdef BROKEN
 	dev->change_mtu = cp_change_mtu;
 #endif
@@ -1782,6 +2012,15 @@ static int cp_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	/* enable busmastering and memory-write-invalidate */
 	pci_set_master(pdev);
+
+#ifdef CONFIG_8139CP_EXTERNAL_PHY
+	{
+		/* Check if external phy exists. */
+		int mii_status = mdio_read(dev, CONFIG_8139CP_PHY_NUM, 1);
+		if (mii_status != 0xffff  &&  mii_status != 0x0000)
+			cp->mii_if.phy_id = CONFIG_8139CP_PHY_NUM;
+	}
+#endif
 
 	if (cp->wol_enabled) cp_set_d3_state (cp);
 
@@ -1886,6 +2125,8 @@ static int __init cp_init (void)
 #ifdef MODULE
 	printk("%s", version);
 #endif
+	printk("%s", version);
+	proc_net_create("8139cp", 0, dev_get_info);
 	return pci_module_init (&cp_driver);
 }
 
@@ -1893,6 +2134,155 @@ static void __exit cp_exit (void)
 {
 	pci_unregister_driver (&cp_driver);
 }
+
+
+#ifdef CONFIG_PROC_FS
+
+/*
+ * Called from the PROCfs module
+ *
+ */
+static int dev_get_info(char *buffer, char **start, off_t offset, int length)
+{
+	int len = 0;
+	struct net_device *dev;
+
+	/*
+	 * Lock the interface
+	 */
+	read_lock(&dev_base_lock);
+
+	len = sprintf(buffer, "%s\n", version);
+
+	for (dev = dev_base; dev != NULL; dev = dev->next) {
+		struct cp_private *cp;
+		int i;
+		if (dev->stop != cp_close) {
+			continue;
+		}
+		if (!(dev->flags & IFF_UP))
+			continue;
+
+
+		/* It's one of ours - check it out */
+		cp = dev->priv;
+		len += sprintf(buffer+len, "%s %s\n", dev->name,
+			dev->flags & IFF_UP?"UP":"DOWN");
+
+		len += sprintf(buffer + len, "Some interesting registers:\n");
+
+		len += sprintf(buffer + len, "IMR -       %04x\n",
+			cpr16(IntrMask)
+			);
+		len += sprintf(buffer + len, "ISR -       %04x\n",
+			cpr16(IntrStatus)
+			);
+
+		len += sprintf(buffer + len, "TCR -       %08x\n",
+			cpr32(TxConfig)
+			);
+
+		len += sprintf(buffer + len, "RCR -       %08x\n",
+			cpr32(RxConfig)
+			);
+
+		len += sprintf(buffer + len, "RxMissed -  %06x\n",
+			cpr32(RxMissed)&0xffffff
+			);
+
+		len += sprintf(buffer + len, "ANLPAR -    %04x\n",
+			cpr16(NWayLPAR)
+			);
+
+		len += sprintf(buffer + len, "FCSC -      %04x\n",
+			cpr16(0x6E)
+			);
+
+		len += sprintf(buffer + len, "DIS -       %04x\n",
+			cpr16(0x6C)
+			);
+
+		len += sprintf(buffer + len, "RXErr -     %04x\n",
+			cpr16(0x72)
+			);
+
+		len += sprintf(buffer + len, "RX Descriptor ring:\n");
+		len += sprintf(buffer + len, "opts1    vtag  opts2 addr[0]   addr[1]\n");
+
+		/* Output all of the rx descriptors */
+		for (i = 0;cp && cp->rx_ring && i < CP_RX_RING_SIZE;i++) {
+			len += sprintf(buffer + len, "%8x %4x %4x %8x %8x\n",
+				cp->rx_ring[i].opts1,
+				cp->rx_ring[i].vtag,
+				cp->rx_ring[i].opts2,
+				cp->rx_ring[i].addr & (0xffffffff),
+				cp->rx_ring[i].addr >> 32
+			);
+		}
+
+		len += sprintf(buffer + len, "RX Errors:\n");
+
+		len += sprintf(buffer + len, "Dropped - %d\n",
+			cp->net_stats.rx_dropped
+			);
+
+		len += sprintf(buffer + len, "Error -   %d\n",
+			cp->net_stats.rx_errors
+			);
+		
+		len += sprintf(buffer + len, "length -  %d\n",
+			cp->net_stats.rx_length_errors
+			);
+
+		len += sprintf(buffer + len, "over -    %d\n",
+			cp->net_stats.rx_over_errors
+			);
+
+		len += sprintf(buffer + len, "crc -     %d\n",
+			cp->net_stats.rx_crc_errors
+			);
+
+		len += sprintf(buffer + len, "frame -   %d\n",
+			cp->net_stats.rx_frame_errors
+			);
+
+		len += sprintf(buffer + len, "fifo -    %d\n",
+			cp->net_stats.rx_fifo_errors
+			);
+
+		len += sprintf(buffer + len, "missed -  %d\n",
+			cp->net_stats.rx_missed_errors
+			);
+
+		len += sprintf(buffer + len, "Frags -   %d\n",
+			cp->cp_stats.rx_frags
+			);
+
+		len += sprintf(buffer + len, "\n");
+	}
+
+	goto leave;
+
+leave:
+	/*
+	 * free the lock
+	 */
+	read_unlock(&dev_base_lock);
+
+	if (offset >= len) {
+		*start = buffer;
+		return 0;
+	}
+	*start = buffer + offset;
+	len -= offset;
+
+	if (len > length)
+		len = length;
+	if (len < 0)
+		len = 0;
+	return len;
+}
+#endif
 
 module_init(cp_init);
 module_exit(cp_exit);

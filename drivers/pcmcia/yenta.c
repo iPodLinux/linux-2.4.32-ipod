@@ -683,6 +683,13 @@ static void yenta_config_init(pci_socket_t *socket)
 			CB_3VCARD | CB_XVCARD | CB_YVCARD)))
 		
 	cb_writel(socket, CB_SOCKET_FORCE, CB_CVSTEST);
+
+#ifdef CONFIG_SH_SECUREEDGE5410
+	/* for some reason we have to force the IRQ onto the bridge PCI irq */
+	bridge = config_readw(socket, 0x8c);
+	bridge = (bridge & ~0xf) | 0x2;
+	config_writew(socket, 0x8c, bridge);
+#endif
 }
 
 /* Called at resume and initialization events */

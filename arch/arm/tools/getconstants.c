@@ -25,6 +25,8 @@
 #endif
 
 #define OFF_TSK(n) (unsigned long)&(((struct task_struct *)0)->n)
+#define BOFF_TSK(n) ((unsigned long)&(((struct task_struct *)0)->n))+1
+#define OFF_MM(n) (unsigned long)&(((struct mm_struct *)0)->n)
 
 #define DEFN(name,off) asm("\n#define "name" %0" :: "I" (off))
 
@@ -34,13 +36,18 @@ DEFN("TSK_SIGPENDING",		OFF_TSK(sigpending));
 DEFN("TSK_ADDR_LIMIT",		OFF_TSK(addr_limit));
 DEFN("TSK_NEED_RESCHED",	OFF_TSK(need_resched));
 DEFN("TSK_PTRACE",		OFF_TSK(ptrace));
+
 DEFN("TSK_USED_MATH",		OFF_TSK(used_math));
 
 DEFN("TSS_SAVE",		OFF_TSK(thread.save));
 DEFN("TSS_FPESAVE",		OFF_TSK(thread.fpstate.soft.save));
 
 #ifdef CONFIG_CPU_32
+#ifdef CONFIG_ARM_FASS
+DEFN("TSS_DACR",		OFF_TSK(thread.dacr));
+#else
 DEFN("TSS_DOMAIN",		OFF_TSK(thread.domain));
+#endif
 
 DEFN("HPTE_TYPE_SMALL",		PTE_TYPE_SMALL);
 DEFN("HPTE_AP_READ",		PTE_AP_READ);
@@ -54,6 +61,12 @@ DEFN("LPTE_USER",		L_PTE_USER);
 DEFN("LPTE_WRITE",		L_PTE_WRITE);
 DEFN("LPTE_EXEC",		L_PTE_EXEC);
 DEFN("LPTE_DIRTY",		L_PTE_DIRTY);
+
+DEFN("TSK_MM",			OFF_TSK(mm));
+#ifdef CONFIG_ARM_FASS
+DEFN("MM_CONTEXT_DACR",		OFF_MM(context.dacr));
+DEFN("MM_CONTEXT_PID",		OFF_MM(context.pid));
+#endif
 #endif
 
 #ifdef CONFIG_CPU_26

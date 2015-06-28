@@ -193,7 +193,7 @@ __down_interruptible_failed:			\n\
 	bl	__down_interruptible		\n\
 	mov	ip, r0				\n\
 	ldmfd	sp!, {r0 - r3, pc}^		\n\
-
+						\n\
 	.align	5				\n\
 	.globl	__down_trylock_failed		\n\
 __down_trylock_failed:				\n\

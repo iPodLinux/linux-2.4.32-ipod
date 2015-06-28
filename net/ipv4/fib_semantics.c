@@ -102,6 +102,9 @@ static struct
 	{ -EINVAL, RT_SCOPE_NOWHERE}	/* RTN_XRESOLVE */
 };
 
+#ifdef CONFIG_IP_ROUTE_MULTIPATH_SEQUENTIAL
+unsigned int mp_counter=0;
+#endif
 
 /* Release a nexthop info record */
 
@@ -977,7 +980,11 @@ void fib_select_multipath(const struct rt_key *key, struct fib_result *res)
 	   it is pretty bad approximation.
 	 */
 
+#ifdef CONFIG_IP_ROUTE_MULTIPATH_SEQUENTIAL
+	w = mp_counter++ % fi->fib_power;
+#else
 	w = jiffies % fi->fib_power;
+#endif
 
 	change_nexthops(fi) {
 		if (!(nh->nh_flags&RTNH_F_DEAD) && nh->nh_power) {

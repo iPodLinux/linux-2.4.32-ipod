@@ -26,6 +26,9 @@ extern unsigned long event;
 #include <linux/signal.h>
 #include <linux/securebits.h>
 #include <linux/fs_struct.h>
+#ifdef NO_MM
+#include <linux/wait.h>
+#endif
 
 struct exec_domain;
 
@@ -199,6 +202,9 @@ struct files_struct {
 }
 
 /* Maximum number of active map areas.. This is a random (large) number */
+
+#ifndef NO_MM
+
 #define DEFAULT_MAX_MAP_COUNT	(65536)
 
 extern int max_map_count;
@@ -226,6 +232,9 @@ struct mm_struct {
 	unsigned long def_flags;
 	unsigned long cpu_vm_mask;
 	unsigned long swap_address;
+#ifdef CONFIG_BINFMT_ELF_FDPIC
+	unsigned long exec_fdpic_loadmap, interp_fdpic_loadmap;
+#endif
 
 	unsigned dumpable:1;
 
@@ -245,6 +254,55 @@ extern int mmlist_nr;
 	page_table_lock: SPIN_LOCK_UNLOCKED, 		\
 	mmlist:		LIST_HEAD_INIT(name.mmlist),	\
 }
+
+#else /* NO_MM */
+
+/*
+ * This struct defines the per-mm list of VMAs for uClinux. If NO_MM is
+ * set, then there's a single shared list of VMAs maintained by the
+ * system, and mm's subscribe to these individually
+ */
+struct vm_list_struct {
+	struct vm_list_struct	*next;
+	struct vm_area_struct	*vma;
+};
+
+struct mm_struct {
+	/* How many users with user space? */
+	atomic_t mm_users;
+	/* How many references to "struct mm_struct" (users count as 1) */
+	atomic_t mm_count;
+
+	unsigned dumpable:1;
+
+	struct list_head mmlist;		/* List of all active mm's */
+
+	struct rw_semaphore mmap_sem;
+	spinlock_t page_table_lock;
+	unsigned long start_code, end_code, start_data, end_data;
+	unsigned long start_brk, brk, end_brk, start_stack;
+	unsigned long arg_start, arg_end, env_start, env_end;
+	unsigned long rss, total_vm, locked_vm;
+	unsigned long def_flags;
+	unsigned long cpu_vm_mask;
+#ifdef CONFIG_BINFMT_ELF_FDPIC
+	unsigned long exec_fdpic_loadmap, interp_fdpic_loadmap;
+#endif
+	struct vm_list_struct *vmlist;
+};
+
+extern int mmlist_nr;
+
+#define INIT_MM(name) {							\
+	mm_users:		ATOMIC_INIT(2),				\
+	mm_count:		ATOMIC_INIT(1),				\
+	mmlist:			LIST_HEAD_INIT(name.mmlist),		\
+	mmap_sem:		__RWSEM_INITIALIZER(name.mmap_sem),	\
+	page_table_lock:	SPIN_LOCK_UNLOCKED,			\
+	vmlist:			NULL,					\
+}
+
+#endif /* NO_MM */
 
 struct signal_struct {
 	atomic_t		count;
@@ -415,7 +473,17 @@ struct task_struct {
 
 /* journalling filesystem info */
 	void *journal_info;
+
+#ifdef CONFIG_SYSCALLTIMER
+	int curr_syscall;
+#endif
 };
+
+#ifdef CONFIG_SYSCALLTIMER
+#define CURR_SYSCALL curr_syscall:	0,
+#else
+#define CURR_SYSCALL
+#endif
 
 /*
  * Per process flags
@@ -435,6 +503,10 @@ struct task_struct {
 #define PF_FSTRANS	0x00008000	/* inside a filesystem transaction */
 
 #define PF_USEDFPU	0x00100000	/* task used FPU this quantum (SMP) */
+
+#ifdef CONFIG_EP93XX_CRUNCH
+#define PF_USEDCRUNCH	0x00200000
+#endif
 
 /*
  * Ptrace flags
@@ -510,6 +582,7 @@ extern struct exec_domain	default_exec_domain;
     blocked:		{{0}},						\
     alloc_lock:		SPIN_LOCK_UNLOCKED,				\
     journal_info:	NULL,						\
+    CURR_SYSCALL							\
 }
 
 
@@ -580,7 +653,16 @@ extern void switch_uid(struct user_struct *);
 
 #include <asm/current.h>
 
-extern unsigned long volatile jiffies;
+ /* some arch's have a small-data section that can be accessed register-relative
+  * but that can only take up to, say, 4-byte variables. jiffies being part of
+  * an 8-byte variable may not be correctly accessed unless we force the issue
+  */
+#ifdef CONFIG_FRV
+#define __jiffy_data  __attribute__((section(".sdata")))
+#else
+#define __jiffy_data
+#endif
+extern unsigned long volatile __jiffy_data jiffies;
 extern unsigned long itimer_ticks;
 extern unsigned long itimer_next;
 extern struct timeval xtime;

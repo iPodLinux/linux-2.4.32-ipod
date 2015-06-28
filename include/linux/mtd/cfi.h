@@ -307,7 +307,7 @@ struct cfi_private {
 	struct mtd_info *(*cmdset_setup)(struct map_info *);
 	struct cfi_ident *cfiq; /* For now only one. We insist that all devs
 				  must be of the same type. */
-	int mfr, id;
+	int mfr, id, extra;
 	int numchips;
 	unsigned long chipshift; /* Because they're of the same type */
 	const char *im_name;	 /* inter_module name for cmdset_setup */

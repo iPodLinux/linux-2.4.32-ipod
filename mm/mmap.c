@@ -1,6 +1,8 @@
 /*
  *	linux/mm/mmap.c
  *
+ *      Modifications for TLB sharing in Linux (ARM/IA-64) (c) 2001 Adam Wiggins
+ *
  * Written by obz.
  */
 #include <linux/slab.h>
@@ -94,6 +96,19 @@ int vm_enough_memory(long pages)
 	return free > pages;
 }
 
+
+#ifndef HAVE_ARCH_VM_SHARING_DATA
+
+/* Dummy function for default */
+static inline void
+arch_remove_shared_vm_struct(struct vm_area_struct* vma_p){}
+
+#else
+
+extern void arch_remove_shared_vm_struct(struct vm_area_struct* vma_p);
+
+#endif
+
 /* Remove one vm structure from the inode's i_mapping address space. */
 static inline void __remove_shared_vm_struct(struct vm_area_struct *vma)
 {
@@ -107,6 +122,9 @@ static inline void __remove_shared_vm_struct(struct vm_area_struct *vma)
 			vma->vm_next_share->vm_pprev_share = vma->vm_pprev_share;
 		*vma->vm_pprev_share = vma->vm_next_share;
 	}
+
+	/* Deal with vm_sharing_data */
+	arch_remove_shared_vm_struct(vma);
 }
 
 static inline void remove_shared_vm_struct(struct vm_area_struct *vma)
@@ -528,6 +546,7 @@ munmap_back:
 	vma->vm_pgoff = pgoff;
 	vma->vm_file = NULL;
 	vma->vm_private_data = NULL;
+	vma->vm_sharing_data = NULL;
 	vma->vm_raend = 0;
 
 	if (file) {
@@ -618,23 +637,27 @@ free_vma:
  * This function "knows" that -ENOMEM has the bits set.
  */
 #ifndef HAVE_ARCH_UNMAPPED_AREA
-static inline unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr, unsigned long len, unsigned long pgoff, unsigned long flags)
+static inline unsigned long
+arch_get_unmapped_area(struct file *filp, unsigned long addr,
+		unsigned long len, unsigned long pgoff, unsigned long flags)
 {
+	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
+	int found_hole = 0;
 
 	if (len > TASK_SIZE)
 		return -ENOMEM;
 
 	if (addr) {
 		addr = PAGE_ALIGN(addr);
-		vma = find_vma(current->mm, addr);
+		vma = find_vma(mm, addr);
 		if (TASK_SIZE - len >= addr &&
 		    (!vma || addr + len <= vma->vm_start))
 			return addr;
 	}
 	addr = PAGE_ALIGN(TASK_UNMAPPED_BASE);
 
-	for (vma = find_vma(current->mm, addr); ; vma = vma->vm_next) {
+	for (vma = find_vma(mm, addr); ; vma = vma->vm_next) {
 		/* At this point:  (!vma || addr < vma->vm_end). */
 		if (TASK_SIZE - len < addr)
 			return -ENOMEM;
@@ -649,6 +672,8 @@ extern unsigned long arch_get_unmapped_area(struct file *, unsigned long, unsign
 
 unsigned long get_unmapped_area(struct file *file, unsigned long addr, unsigned long len, unsigned long pgoff, unsigned long flags)
 {
+  	unsigned long retval;
+
 	if (flags & MAP_FIXED) {
 		if (addr > TASK_SIZE - len || addr >= TASK_SIZE)
 			return -ENOMEM;
@@ -657,8 +682,15 @@ unsigned long get_unmapped_area(struct file *file, unsigned long addr, unsigned 
 		return addr;
 	}
 
-	if (file && file->f_op && file->f_op->get_unmapped_area)
-		return file->f_op->get_unmapped_area(file, addr, len, pgoff, flags);
+	if (file && file->f_op && file->f_op->get_unmapped_area) {
+	  	retval = file->f_op->get_unmapped_area(file, addr, len,
+						       pgoff, flags);
+		/* -ENOSYS will be returned if the device-specific driver
+		 * does not implement this function. e.g. framebuffer drivers
+		 */
+		if (retval != -ENOSYS)
+		  	return retval;
+	}
 
 	return arch_get_unmapped_area(file, addr, len, pgoff, flags);
 }
@@ -842,6 +874,7 @@ static struct vm_area_struct * unmap_fixup(struct mm_struct *mm,
 		mpnt->vm_pgoff = area->vm_pgoff + ((end - area->vm_start) >> PAGE_SHIFT);
 		mpnt->vm_file = area->vm_file;
 		mpnt->vm_private_data = area->vm_private_data;
+		mpnt->vm_sharing_data = NULL;
 		if (mpnt->vm_file)
 			get_file(mpnt->vm_file);
 		if (mpnt->vm_ops && mpnt->vm_ops->open)
@@ -1119,6 +1152,7 @@ unsigned long do_brk(unsigned long addr, unsigned long len)
 	vma->vm_pgoff = 0;
 	vma->vm_file = NULL;
 	vma->vm_private_data = NULL;
+	vma->vm_sharing_data = NULL;
 
 	vma_link(mm, vma, prev, rb_link, rb_parent);
 

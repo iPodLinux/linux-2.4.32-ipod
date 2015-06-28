@@ -40,6 +40,11 @@
 
 #include "hcd.h"
 
+#ifdef CONFIG_LEDMAN
+#include <linux/ledman.h>
+static int ledcnt = 0;
+#endif
+
 static const int usb_bandwidth_option =
 #ifdef CONFIG_USB_BANDWIDTH
 				1;
@@ -1063,9 +1068,13 @@ void usb_free_urb(struct urb* urb)
 /*-------------------------------------------------------------------*/
 int usb_submit_urb(struct urb *urb)
 {
-	if (urb && urb->dev && urb->dev->bus && urb->dev->bus->op)
+	if (urb && urb->dev && urb->dev->bus && urb->dev->bus->op) {
+#ifdef CONFIG_LEDMAN
+		if (ledcnt++ % 10 == 0)
+			ledman_cmd(LEDMAN_CMD_SET, LEDMAN_USB1_TX);
+#endif
 		return urb->dev->bus->op->submit_urb(urb);
-	else
+	} else
 		return -ENODEV;
 }
 

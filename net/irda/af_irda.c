@@ -2574,7 +2574,6 @@ int __init irda_proto_init(void)
         dev_add_pack(&irda_packet_type);
 
 	register_netdevice_notifier(&irda_dev_notifier);
-
 	irda_init();
 #ifdef MODULE
  	irda_device_init();  /* Called by init/main.c when non-modular */
@@ -2592,7 +2591,7 @@ module_init(irda_proto_init);	/* If non-module, called from init/main.c */
  *
  */
 #ifdef MODULE
-void irda_proto_cleanup(void)
+void __exit irda_proto_cleanup(void)
 {
 	irda_packet_type.type = htons(ETH_P_IRDA);
         dev_remove_pack(&irda_packet_type);
@@ -2600,9 +2599,8 @@ void irda_proto_cleanup(void)
         unregister_netdevice_notifier(&irda_dev_notifier);
 	
 	sock_unregister(PF_IRDA);
-	irda_cleanup();
 	
-        return;
+	irda_cleanup();
 }
 module_exit(irda_proto_cleanup);
  

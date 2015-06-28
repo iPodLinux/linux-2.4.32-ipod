@@ -25,6 +25,7 @@
  *     http://www.uwsg.iu.edu/hypermail/linux/kernel/0008.3/0379.html
  * Replace xxx_module_symbol with inter_module_xxx.  Keith Owens <kaos@ocs.com.au> Oct 2000
  * Add a module list lock for kernel fault race fixing. Alan Cox <alan@redhat.com>
+ * Fix to respect mod->can_unload(). YOSHIFUJI Hideaki <yoshfuji@linux-ipv6.org>
  *
  * This source is covered by the GNU GPL, the same as all kernel sources.
  */
@@ -880,7 +881,8 @@ qm_info(struct module *mod, char *buf, size_t bufsize, size_t *ret)
 		/* usecount is one too high here - report appropriately to
 		   compensate for locking */
 		info.usecount = (mod_member_present(mod, can_unload)
-				 && mod->can_unload ? -1 : atomic_read(&mod->uc.usecount)-1);
+				 && mod->can_unload && mod->can_unload() 
+				 ? -1 : atomic_read(&mod->uc.usecount)-1);
 
 		if (copy_to_user(buf, &info, sizeof(struct module_info)))
 			return -EFAULT;
@@ -1124,7 +1126,7 @@ int get_module_list(char *p)
 		if (mod->flags & MOD_RUNNING) {
 			len = sprintf(tmpstr, "%4ld",
 				      (mod_member_present(mod, can_unload)
-				       && mod->can_unload
+				       && mod->can_unload && mod->can_unload()
 				       ? -1L : (long)atomic_read(&mod->uc.usecount)));
 			safe_copy_str(tmpstr, len);
 		}

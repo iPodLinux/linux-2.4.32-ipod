@@ -2,6 +2,9 @@
 #define _M68K_PARAM_H
 
 #ifndef HZ
+#if defined(CONFIG_HW_FEITH)
+#define HZ 1000
+#else
 #define HZ 100
 #endif
 

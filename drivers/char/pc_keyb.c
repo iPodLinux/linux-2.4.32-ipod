@@ -740,7 +740,7 @@ static void kbd_write_output_w(int data)
 	spin_unlock_irqrestore(&kbd_controller_lock, flags);
 }
 
-#if defined(__alpha__)
+#if defined(__alpha__) || defined(CONFIG_ARCH_EDB7312)
 /*
  * Some Alphas cannot mask some/all interrupts, so we have to
  * make sure not to allow interrupts AT ALL when polling for

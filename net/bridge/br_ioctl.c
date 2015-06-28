@@ -196,17 +196,7 @@ static int br_ioctl_deviceless(unsigned int cmd,
 
 	case BRCTL_GET_BRIDGES:
 	{
-		int i;
-		int indices[64];
-
-		for (i=0;i<64;i++)
-			indices[i] = 0;
-
-		if (arg1 > 64)
-			arg1 = 64;
-		arg1 = br_get_bridge_ifindices(indices, arg1);
-		if (copy_to_user((void *)arg0, indices, arg1*sizeof(int)))
-			return -EFAULT;
+		arg1 = br_get_bridge_ifindices((void *)arg0, arg1, 1);
 
 		return arg1;
 	}

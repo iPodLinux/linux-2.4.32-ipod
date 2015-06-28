@@ -1,7 +1,12 @@
 /*
  * uncompress.c
  *
- * (C) Copyright 1999 Linus Torvalds
+ * Copyright (C) 1999 Linus Torvalds
+ * Copyright (C) 2000-2002 Transmeta Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License (Version 2) as
+ * published by the Free Software Foundation.
  *
  * cramfs interfaces to the uncompression library. There's really just
  * three entrypoints:

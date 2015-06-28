@@ -32,6 +32,13 @@ extern void paging_init(void);
  *
  *  Caches are indexed (effectively) by physical address on SH-3, so
  *  we don't need them.
+ *
+ *  DAVIDM: we do,  specifically bus mastering PCI controllers !
+ *          so that we don't cripple the SH3 with cache flushing,
+ *          we implment a special flush for sh3 to use in the pci
+ *          mapping functions.  Even though you can fic pci_alloc_consistent,
+ *          you cannot (and don't want to) have all skbuffs allocated from
+ *          uncached memory !
  */
 #define flush_cache_all()			do { } while (0)
 #define flush_cache_mm(mm)			do { } while (0)
@@ -43,35 +50,14 @@ extern void paging_init(void);
 #define flush_icache_page(vma,pg)		do { } while (0)
 #define flush_icache_user_range(vma,pg,adr,len)	do { } while (0)
 #define flush_cache_sigtramp(vaddr)		do { } while (0)
-#define __flush_icache_all()			do { } while (0)
+#define flush_icache_all()			do { } while (0)
 
 #define p3_cache_init()				do { } while (0)
 
 #elif defined(__SH4__)
-/*
- *  Caches are broken on SH-4, so we need them.
- */
 
-/* Page is 4K, OC size is 16K, there are four lines. */
-#define CACHE_ALIAS 0x00003000
-
-extern void flush_cache_all(void);
-extern void flush_cache_mm(struct mm_struct *mm);
-extern void flush_cache_range(struct mm_struct *mm, unsigned long start,
-			      unsigned long end);
-extern void flush_cache_page(struct vm_area_struct *vma, unsigned long addr);
-extern void flush_dcache_page(struct page *pg);
-extern void flush_icache_range(unsigned long start, unsigned long end);
-extern void flush_cache_sigtramp(unsigned long addr);
-
-#define flush_page_to_ram(page)			do { } while (0)
-#define flush_icache_page(vma,pg)		do { } while (0)
-#define flush_icache_user_range(vma,pg,adr,len)	do { } while (0)
-
-/* Initialization of P3 area for copy_user_page */
-extern void p3_cache_init(void);
-
-#define PG_mapped	PG_arch_1
+#include <asm/cache.h>
+#include <asm/cacheflush.h>
 
 /* We provide our own get_unmapped_area to avoid cache alias issue */
 #define HAVE_ARCH_UNMAPPED_AREA

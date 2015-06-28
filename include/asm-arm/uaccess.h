@@ -86,7 +86,7 @@ extern int __get_user_bad(void);
 			__get_user_x(__r1, __p, __e, 1, "lr");		\
 	       		break;						\
 		case 2:							\
-			__get_user_x(__r1, __p, __e, 2, "r2", "lr");	\
+			__get_user_x(__r1, __p, __e, 2, "ip", "lr");	\
 			break;						\
 		case 4:							\
 	       		__get_user_x(__r1, __p, __e, 4, "lr");		\
@@ -122,13 +122,13 @@ extern int __put_user_bad(void);
 		register int __e asm("r0");				\
 		switch (sizeof(*(p))) {					\
 		case 1:							\
-			__put_user_x(__r1, __p, __e, 1, "r2", "lr");	\
+			__put_user_x(__r1, __p, __e, 1, "ip", "lr");	\
 			break;						\
 		case 2:							\
-			__put_user_x(__r1, __p, __e, 2, "r2", "lr");	\
+			__put_user_x(__r1, __p, __e, 2, "ip", "lr");	\
 			break;						\
 		case 4:							\
-			__put_user_x(__r1, __p, __e, 4, "r2", "lr");	\
+			__put_user_x(__r1, __p, __e, 4, "ip", "lr");	\
 			break;						\
 		case 8:							\
 			__put_user_x(__r1, __p, __e, 8, "ip", "lr");	\
