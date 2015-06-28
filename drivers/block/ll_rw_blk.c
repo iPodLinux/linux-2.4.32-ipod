@@ -466,8 +466,6 @@ int blk_grow_request_list(request_queue_t *q, int nr_requests, int max_queue_sec
 
 static void blk_init_free_list(request_queue_t *q)
 {
-	struct sysinfo si;
-	int megs;		/* Total memory, in megabytes */
 	int nr_requests, max_queue_sectors = MAX_QUEUE_SECTORS;
 
 	INIT_LIST_HEAD(&q->rq.free);
@@ -475,15 +473,8 @@ static void blk_init_free_list(request_queue_t *q)
 	q->rq.pending[READ] = q->rq.pending[WRITE] = 0;
 	q->nr_requests = 0;
 
-	si_meminfo(&si);
-	megs = si.totalram >> (20 - PAGE_SHIFT);
-	nr_requests = (megs * 2) & ~15;	/* One per half-megabyte */
-	if (megs < 30)
-		nr_requests /= 2;
-	if (nr_requests < 32)
-		nr_requests = 32;
-	if (nr_requests > 1024)
-		nr_requests = 1024;
+	nr_requests = 32;
+
 	/* notice early if anybody screwed the defaults */
 	BUG_ON(!nr_requests);
 	BUG_ON(!max_queue_sectors);

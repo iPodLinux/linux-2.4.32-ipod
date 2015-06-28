@@ -76,8 +76,8 @@ static inline int elevator_request_latency(elevator_t * elevator, int rw)
 #define ELEVATOR_LINUS							\
 ((elevator_t) {								\
 	128,				/* read passovers */		\
-	512,				/* write passovers */		\
-	6,				/* max_bomb_segments */		\
+	256,				/* write passovers */		\
+	4,				/* max_bomb_segments */		\
 	elevator_linus_merge,		/* elevator_merge_fn */		\
 	elevator_linus_merge_req,	/* elevator_merge_req_fn */	\
 	})
