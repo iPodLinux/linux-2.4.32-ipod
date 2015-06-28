@@ -77,12 +77,12 @@ extern void fpundefinstr(void);
 extern void fp_enter(void);
 
 #define EXPORT_SYMBOL_ALIAS(sym,orig)		\
- const char __kstrtab_##sym##[]			\
+ const char __kstrtab_##sym[]			\
   __attribute__((section(".kstrtab"))) =	\
     __MODULE_STRING(sym);			\
  const struct module_symbol __ksymtab_##sym	\
   __attribute__((section("__ksymtab"))) =	\
-    { (unsigned long)&##orig, __kstrtab_##sym };
+    { (unsigned long)&orig, __kstrtab_##sym };
 
 /*
  * floating point math emulator support.
