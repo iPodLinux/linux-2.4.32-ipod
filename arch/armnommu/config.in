@@ -636,7 +636,7 @@ if [ "$CONFIG_ARCH_IPOD" = "y" ]; then
    define_bool CONFIG_CPU_ARM7TDMI y
    define_bool CONFIG_CPU_32 y
    define_bool CONFIG_CPU_26 n
-   define_hex DRAM_BASE 0x28000000
+   define_hex DRAM_BASE 0x00000000
    define_hex DRAM_SIZE 0x02000000
    define_hex FLASH_MEM_BASE 0x10000000
    define_hex FLASH_SIZE 0x00100000
@@ -838,6 +838,7 @@ tristate 'ATA/IDE/MFM/RLL support' CONFIG_IDE
 if [ "$CONFIG_IDE" != "n" ]; then
   source drivers/ide/Config.in
 else
+  define_bool CONFIG_BLK_DEV_IDE_MODES n
   define_bool CONFIG_BLK_DEV_HD n
 fi
 endmenu
@@ -906,6 +907,7 @@ if [ "$CONFIG_ARCH_IPOD" = "y" ]; then
    tristate "iPod Audio" CONFIG_AUDIO_IPOD
    tristate "iPod Keypad support" CONFIG_KB_IPOD
    dep_tristate "iPod Remote support" CONFIG_REMOTE_IPOD $CONFIG_INPUT_KEYBDEV
+   dep_tristate "iPod IDE support" CONFIG_IDE_IPOD $CONFIG_BLK_DEV_IDE
    endmenu
 fi
 

@@ -1,28 +1,35 @@
 /*
  * time.c - timer support for iPod
  *
- * Copyright (c) 2003, Bernard Leach (leachbj@bouncycastle.org)
+ * Copyright (c) 2003-2005, Bernard Leach (leachbj@bouncycastle.org)
  */
 
 #include <linux/config.h>
 #include <linux/version.h>
+#include <asm/timex.h>
 #include <asm/io.h>
 
 
-#define IPOD_TIMER_STATUS 0xcf001110
-
 /*
- * Set the RTC
+ * Set the RTC to the current kernel time
  */
 extern int ipod_set_rtc(void)
 {
-	return (0);
+	/* TODO: not yet implemented */
+	return 0;
 }
 
-
-extern unsigned long ipod_gettimeoffset(void)
+/*
+ * Get the number of useconds since the last interrupt
+ */
+extern unsigned long pp5002_gettimeoffset(void)
 {
-	return inl(IPOD_TIMER_STATUS);
+	return USECS_PER_INT - (inl(PP5002_TIMER1) & 0xffff);
+}
+
+extern unsigned long pp5020_gettimeoffset(void)
+{
+	return USECS_PER_INT - (inl(PP5020_TIMER1) & 0xffff);
 }
 
 extern void ipod_timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)

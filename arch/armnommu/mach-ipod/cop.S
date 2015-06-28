@@ -1,63 +1,83 @@
 /*
  * cop.S - coprocessor code
  *
- * Copyright (c) 2003, Bernard Leach (leachbj@bouncycastle.org)
+ * Copyright (c) 2003-2005, Bernard Leach (leachbj@bouncycastle.org)
  */
 
+#include <asm/arch/hardware.h>
+
 	.global cop_fiq
-	.global cop_end
 	.global cop_idle
 
-	.equ C_PROCESSOR_ID, 0xc4000000
-	.equ C_CPU_ID, 0x55
-
-	.equ C_CFG_COPROC, 0xcf004058
-	.equ C_CPU_SLEEP, 0xca
-
 cop_fiq:
-	stmdb   sp!, {r0, lr}
+	mov	r8, #PP_CPU_TYPE
+	ldr	r8, [r8]
+	cmp	r8, #0
 
-.ifdef NOTDEF
-	ldr	r0, L_lcd_base
-	ldr	r1, [r0]
-	orr	r1, r1, #0x2
-	str	r1, [r0]
-.endif
-	ldr	r0, L_C_PROCESSOR_ID
-	ldr	r0, [r0]
-	and	r0, r0, #0xff
-	cmp	r0, #C_CPU_ID
+	ldreq	r8, =PP5002_PROC_ID
+	ldrne	r8, =PP5020_PROC_ID
+	ldr	r8, [r8]
+	and	r8, r8, #0xff
+	cmp	r8, #0x55
 	beq	1f
 
-	mov	lr, pc
-	ldr	pc, L_ipod_handle_dma
+	stmdb   sp!, {r0-r7, lr}
 
-	nop
-	nop
-	nop
+	bl	ipod_handle_dma
 
+	ldmia   sp!, {r0-r7, lr}
 1:
-	ldmia   sp!, {r0, lr}
 	subs	pc, lr, #4
 
-L_C_PROCESSOR_ID:	.word C_PROCESSOR_ID
-
-cop_fiq_end:
 
 cop_idle:
+	mov	r0, #0x0
+	bl	ipod_set_process_dma
+
+	mov	r0, #0x0
+	bl	ipod_set_handle_cop
+
 	/* enable FIQ */
 	mrs     r0, cpsr
 	bic     r0, r0, #0x40
 	msr     cpsr_c, r0
 
 cop_sleep:
-	/* put us (co-processor) to sleep */
-	ldr	r4, L_CFG_COPROC
-	mov	r3, #C_CPU_SLEEP
-	strh	r3, [r4]
+	mov	r0, #PP_CPU_TYPE
+	ldr	r0, [r0]
+	cmp	r0, #0
+	bne	pp5020
 
+	/* PP5002 */
+	/* put us (co-processor) to sleep */
+	ldr	r1, =PP5002_COP_CTRL
+	mov	r0, #0xca	
+	strh	r0, [r1]
+	b	1f
+
+pp5020:
+	/* PP5020 */
+	/* put us (co-processor) to sleep */
+	ldr	r1, =PP5020_COP_CTRL
+	mov	r0, #0x80000000	
+	str	r0, [r1]
+
+1:
 	nop
 	nop
+
+
+	ldr	r1, =COP_STATE
+	mov	r0, #0x1
+	str	r0, [r1]
+	
+	bl	ipod_handle_cop
+
+
+	ldr	r1, =COP_STATE
+	mov 	r0, #0x0
+	str 	r0, [r1]
+
 
 	b	cop_sleep
 
@@ -66,18 +86,4 @@ cop_sleep:
 
 	.lcomm cop_fiq_stack, 1024
 	.lcomm cop_svc_stack, 1024
-
-L_CFG_COPROC:	.word C_CFG_COPROC
-
-L_ipod_handle_dma:.word ipod_handle_dma
-
-L_lcd_base:	.word 0xc0001000
-
-/* these must match those in audio.c */
-L_DMA_READ_OFF:	.word 0x40000000
-L_DMA_WRITE_OFF:.word 0x40000004
-L_DMA_ACTIVE:	.word 0x40000008
-L_DMA_BASE:	.word 0x4000000c
-
-cop_end:
 

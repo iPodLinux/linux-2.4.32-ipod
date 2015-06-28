@@ -1,11 +1,11 @@
 VERSION = 2
 PATCHLEVEL = 4
 SUBLEVEL = 32
-EXTRAVERSION = -uc0
+EXTRAVERSION = -ipod2
 
 KERNELRELEASE=$(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION)
 
-# ARCH := armnommu
+ARCH := armnommu
 # ARCH := m68knommu
 # ARCH := h8300
 # ARCH := niosnommu
@@ -28,7 +28,7 @@ HOSTCC  	= unset GCC_EXEC_PREFIX; gcc
 HOSTCFLAGS	= -Wall -Wstrict-prototypes -O2 -fomit-frame-pointer
 
 # CROSS_COMPILE 	= m68k-elf-
-# CROSS_COMPILE 	= arm-elf-
+CROSS_COMPILE 	= arm-elf-
 # CROSS_COMPILE 	= h8300-elf-
 # CROSS_COMPILE 	= nios-elf-
 # CROSS_COMPILE		= e1-coff-

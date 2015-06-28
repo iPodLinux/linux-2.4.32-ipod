@@ -215,7 +215,7 @@ static struct serio_dev ipod_remote_dev = {
 
 static int __init ipod_remote_init(void)
 {
-	printk("ipod_remote: $Id: ipodremote.c,v 1.2 2004/03/02 22:41:44 leachbj Exp $\n");
+	printk("ipod_remote: $Id: ipodremote.c,v 1.1 2003/03/21 10:37:18 leachbj Exp $\n");
 
 	serio_register_device(&ipod_remote_dev);
 

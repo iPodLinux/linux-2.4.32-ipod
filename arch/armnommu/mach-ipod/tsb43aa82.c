@@ -1,7 +1,7 @@
 /*
  * tsb43aa82.c - ieee1394 driver for iPod
  *
- * Copyright (c) 2003,2004 Bernard Leach (leachbj@bouncycastle.org)
+ * Copyright (c) 2003,2004 Bernard Leach <leachbj@bouncycastle.org>
  *
  * IEEE1394 controller is the TSB43AA82 (iSphyx II) from Texas Instruments.
  *
@@ -919,12 +919,8 @@ static void ipod_1394_interrupt(int irq, void *dev_id, struct pt_regs *regs_are_
 	}
 }
 
-static __devinit void ipod_1394_hw_init(void)
+static __devinit void ipod_1394_hw_init(int ipod_hw_ver)
 {
-	unsigned ipod_hw_ver;
-
-	ipod_hw_ver = ipod_get_hw_version() >> 16;
-
 	/* MIO setup? */
 	outl((inl(0xcf004040) & ~(1<<6)) | (1<<7), 0xcf004040);
 	outl(0x00001f1f, 0xcf00401c);
@@ -995,7 +991,7 @@ static __devinit void ipod_1394_hw_init(void)
 		/* Port E Bit 2 output high */
 		outl(inl(0xcf004048) | (1<<2), 0xcf004048);
 		udelay(0x1);
-		/* Port E Bit 2 output high */
+		/* Port E Bit 4 output high */
 		outl(inl(0xcf004048) | (1<<4), 0xcf004048);
 
 		udelay(0x14);
@@ -1007,10 +1003,9 @@ static __devinit void ipod_1394_hw_init(void)
 	if (ipod_hw_ver == 0x3)
 	{
 		/* reset device i2c */
-		outl(inl(0xcf005030) | (1<<8), 0xcf005030);
-		outl(inl(0xcf005030) & ~(1<<8), 0xcf005030);
+		ipod_i2c_init();
 
-		/* some i2c magic */
+		/* some i2c magic - this is the PCF address */
 		ipod_i2c_send(0x8, 0x39, 0);
 		ipod_i2c_send(0x8, 0x3a, 0);
 		ipod_i2c_send(0x8, 0x3b, 0);
@@ -1041,8 +1036,14 @@ static __devinit void ipod_1394_hw_init(void)
 static int __devinit ipod_1394_init(void)
 {
 	struct ti_ipod *ipod;
+	unsigned int ipod_hw_ver;
 
-	printk("ipod_1394: $Id: tsb43aa82.c,v 1.4 2004/03/02 23:18:38 leachbj Exp $\n");
+	ipod_hw_ver = ipod_get_hw_version() >> 16;
+	if (ipod_hw_ver > 0x3) {
+		return 0;
+	}
+
+	printk("ipod_1394: $Id: tsb43aa82.c,v 1.8 2005/02/05 20:31:08 leachbj Exp $\n");
 
 	ipod_host = hpsb_alloc_host(&ipod_1394_driver, sizeof(struct ti_ipod));
 	if (!ipod_host) {
@@ -1064,11 +1065,11 @@ static int __devinit ipod_1394_init(void)
 
 	tasklet_init(&ipod->tx_tasklet, tx_tasklet, (unsigned long)ipod);
 
-	if (request_irq(GPIO_IRQ, ipod_1394_interrupt, SA_SHIRQ, IPOD_1394_DRIVER_NAME, ipod)) {
-		printk(KERN_ERR "ipod_1394: IRQ %d failed\n", GPIO_IRQ);
+	if (request_irq(PP5002_GPIO_IRQ, ipod_1394_interrupt, SA_SHIRQ, IPOD_1394_DRIVER_NAME, ipod)) {
+		printk(KERN_ERR "ipod_1394: IRQ %d failed\n", PP5002_GPIO_IRQ);
 	}
 
-	ipod_1394_hw_init();
+	ipod_1394_hw_init(ipod_hw_ver);
 
 
 	/* Busy off until ready */
@@ -1180,7 +1181,7 @@ static void __exit ipod_1394_exit(void)
 	hpsb_remove_host(ipod->host);
 
 	/* free the IRQ */
-	free_irq(GPIO_IRQ, ipod);
+	free_irq(PP5002_GPIO_IRQ, ipod);
 
         /* Wait and kill tasklet */
         tasklet_kill(&ipod->tx_tasklet);
