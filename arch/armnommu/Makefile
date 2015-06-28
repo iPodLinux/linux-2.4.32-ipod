@@ -57,8 +57,8 @@ LINKFLAGS	+= -EB
 LDFLAGS		+= -EB
 endif
 
-CFLAGS		+= $(apcs-y) $(arch-y) $(tune-y) -mshort-load-bytes -msoft-float
-AFLAGS		+= $(apcs-y) $(proc-y) -msoft-float -mno-fpu
+CFLAGS		+= $(apcs-y) $(arch-y) $(tune-y) -malignment-traps -msoft-float
+AFLAGS		+= $(apcs-y) $(proc-y) -msoft-float
 
 LIBGCC		:= $(shell $(CC) $(CFLAGS) --print-libgcc-file-name)
 

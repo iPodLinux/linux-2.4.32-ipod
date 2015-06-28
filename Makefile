@@ -28,7 +28,7 @@ HOSTCC  	= unset GCC_EXEC_PREFIX; gcc
 HOSTCFLAGS	= -Wall -Wstrict-prototypes -O2 -fomit-frame-pointer
 
 # CROSS_COMPILE 	= m68k-elf-
-CROSS_COMPILE 	= arm-elf-
+CROSS_COMPILE 	= arm-uclinux-elf-
 # CROSS_COMPILE 	= h8300-elf-
 # CROSS_COMPILE 	= nios-elf-
 # CROSS_COMPILE		= e1-coff-
