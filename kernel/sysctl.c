@@ -287,6 +287,10 @@ static ctl_table kern_table[] = {
 	{KERN_EXCEPTION_TRACE,"exception-trace",
 	 &exception_trace,sizeof(int),0644,NULL,&proc_dointvec},
 #endif	
+#ifdef CONFIG_LOLAT_SYSCTL
+	{KERN_LOWLATENCY, "lowlatency", &enable_lowlatency, sizeof (int),
+	 0644, NULL, &proc_dointvec},
+#endif
 	{0}
 };
 

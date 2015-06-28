@@ -1189,6 +1189,11 @@ static void *s_start(struct seq_file *m, loff_t *pos)
 		return ERR_PTR(-ENOMEM);
 	lock_kernel();
 	for (v = module_list, n = *pos; v; n -= v->nsyms, v = v->next) {
+#if 0
+		/* We can't actually do this, because we'd create a
+		 * race against module unload.  Need a semaphore. */
+		conditional_schedule();
+#endif
 		if (n < v->nsyms) {
 			p->mod = v;
 			p->index = n;

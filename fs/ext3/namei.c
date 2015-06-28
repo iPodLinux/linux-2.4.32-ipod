@@ -157,6 +157,7 @@ restart:
 		if ((bh = bh_use[ra_ptr++]) == NULL)
 			goto next;
 		wait_on_buffer(bh);
+		conditional_schedule();
 		if (!buffer_uptodate(bh)) {
 			/* read error, skip block & hope for the best */
 			brelse(bh);

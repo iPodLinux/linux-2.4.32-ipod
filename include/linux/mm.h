@@ -518,7 +518,7 @@ struct file *shmem_file_setup(char * name, loff_t size);
 extern void shmem_lock(struct file * file, int lock);
 extern int shmem_zero_setup(struct vm_area_struct *);
 
-extern void zap_page_range(struct mm_struct *mm, unsigned long address, unsigned long size);
+extern void zap_page_range(struct mm_struct *mm, unsigned long address, unsigned long size, int actions);
 extern int copy_page_range(struct mm_struct *dst, struct mm_struct *src, struct vm_area_struct *vma);
 extern int remap_page_range(unsigned long from, unsigned long to, unsigned long size, pgprot_t prot);
 extern int zeromap_page_range(unsigned long from, unsigned long size, pgprot_t prot);
@@ -718,6 +718,8 @@ static inline int expand_stack(struct vm_area_struct * vma, unsigned long addres
 		return -ENOMEM;
 	}
 
+/* Actions for zap_page_range() */
+#define ZPR_COND_RESCHED	1	/* Do a conditional_schedule() occasionally */
 
 	vma->vm_start = address;
 	vma->vm_pgoff -= grow;

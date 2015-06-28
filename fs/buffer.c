@@ -261,8 +261,10 @@ static int write_some_buffers(kdev_t dev)
 
 		if (dev != NODEV && bh->b_dev != dev)
 			continue;
-		if (test_and_set_bit(BH_Lock, &bh->b_state))
+		if (test_and_set_bit(BH_Lock, &bh->b_state)) {
+			__refile_buffer(bh);
 			continue;
+		}
 		if (buffer_delay(bh)) {
 			if (write_buffer_delay(bh)) {
 				if (count)
@@ -278,6 +280,7 @@ static int write_some_buffers(kdev_t dev)
 
 			spin_unlock(&lru_list_lock);
 			write_locked_buffers(array, count);
+			conditional_schedule();
 			return -EAGAIN;
 		}
 		unlock_buffer(bh);
@@ -311,12 +314,19 @@ static int wait_for_buffers(kdev_t dev, int index, int refile)
 	struct buffer_head * next;
 	int nr;
 
-	next = lru_list[index];
 	nr = nr_buffers_type[index];
+repeat:
+	next = lru_list[index];
 	while (next && --nr >= 0) {
 		struct buffer_head *bh = next;
 		next = bh->b_next_free;
 
+		if (conditional_schedule_needed()) {
+			spin_unlock(&lru_list_lock);
+			unconditional_schedule();
+			spin_lock(&lru_list_lock);
+			goto repeat;
+		}
 		if (!buffer_locked(bh)) {
 			if (refile)
 				__refile_buffer(bh);
@@ -324,7 +334,6 @@ static int wait_for_buffers(kdev_t dev, int index, int refile)
 		}
 		if (dev != NODEV && bh->b_dev != dev)
 			continue;
-
 		get_bh(bh);
 		spin_unlock(&lru_list_lock);
 		wait_on_buffer (bh);
@@ -356,6 +365,15 @@ static int wait_for_locked_buffers(kdev_t dev, int index, int refile)
 int sync_buffers(kdev_t dev, int wait)
 {
 	int err = 0;
+
+#if LOWLATENCY_NEEDED
+	/*
+	 * syncing devA when there are lots of buffers dirty against
+	 * devB is expensive.
+	 */
+	if (enable_lowlatency)
+		dev = NODEV;
+#endif
 
 	/* One pass for no-wait, three for wait:
 	 * 0) write out all dirty, unlocked buffers;
@@ -724,6 +742,7 @@ void invalidate_bdev(struct block_device *bdev, int destroy_dirty_buffers)
 	int i, nlist, slept;
 	struct buffer_head * bh, * bh_next;
 	kdev_t dev = to_kdev_t(bdev->bd_dev);	/* will become bdev */
+	int lolat_retry = 0;
 
  retry:
 	slept = 0;
@@ -741,6 +760,17 @@ void invalidate_bdev(struct block_device *bdev, int destroy_dirty_buffers)
 			/* Not hashed? */
 			if (!bh->b_pprev)
 				continue;
+
+			if (lolat_retry < 10 && conditional_schedule_needed()) {
+				get_bh(bh);
+				spin_unlock(&lru_list_lock);
+				unconditional_schedule();
+				spin_lock(&lru_list_lock);
+				put_bh(bh);
+				slept = 1;
+				lolat_retry++;
+			}
+
 			if (buffer_locked(bh)) {
 				get_bh(bh);
 				spin_unlock(&lru_list_lock);
@@ -892,12 +922,18 @@ int fsync_buffers_list(struct list_head *list)
 	struct buffer_head *bh;
 	struct list_head tmp;
 	int err = 0, err2;
-	
+	DEFINE_RESCHED_COUNT;
+
 	INIT_LIST_HEAD(&tmp);
-	
+repeat:
 	spin_lock(&lru_list_lock);
 
 	while (!list_empty(list)) {
+		if (conditional_schedule_needed()) {
+			spin_unlock(&lru_list_lock);
+			unconditional_schedule();
+			goto repeat;
+		}
 		bh = BH_ENTRY(list->next);
 		list_del(&bh->b_inode_buffers);
 		if (!buffer_dirty(bh) && !buffer_locked(bh))
@@ -922,7 +958,17 @@ int fsync_buffers_list(struct list_head *list)
 				spin_lock(&lru_list_lock);
 			}
 		}
+		if (TEST_RESCHED_COUNT(32)) {
+			RESET_RESCHED_COUNT();
+			if (conditional_schedule_needed()) {
+				spin_unlock(&lru_list_lock);
+				unconditional_schedule();
+				spin_lock(&lru_list_lock);
+			}
+		}
 	}
+
+	RESET_RESCHED_COUNT();
 
 	while (!list_empty(&tmp)) {
 		bh = BH_ENTRY(tmp.prev);
@@ -933,6 +979,7 @@ int fsync_buffers_list(struct list_head *list)
 		if (!buffer_uptodate(bh))
 			err = -EIO;
 		brelse(bh);
+		conditional_schedule();
 		spin_lock(&lru_list_lock);
 	}
 	
@@ -960,11 +1007,20 @@ static int osync_buffers_list(struct list_head *list)
 	struct buffer_head *bh;
 	struct list_head *p;
 	int err = 0;
+	DEFINE_RESCHED_COUNT;
 
+repeat:
+	conditional_schedule();
 	spin_lock(&lru_list_lock);
 	
- repeat:
 	list_for_each_prev(p, list) {
+		if (TEST_RESCHED_COUNT(32)) {
+			RESET_RESCHED_COUNT();
+			if (conditional_schedule_needed()) {
+				spin_unlock(&lru_list_lock);
+				goto repeat;
+			}
+		}
 		bh = BH_ENTRY(p);
 		if (buffer_locked(bh)) {
 			get_bh(bh);
@@ -973,7 +1029,6 @@ static int osync_buffers_list(struct list_head *list)
 			if (!buffer_uptodate(bh))
 				err = -EIO;
 			brelse(bh);
-			spin_lock(&lru_list_lock);
 			goto repeat;
 		}
 	}
@@ -990,12 +1045,24 @@ static int osync_buffers_list(struct list_head *list)
 void invalidate_inode_buffers(struct inode *inode)
 {
 	struct list_head * entry;
-	
+
+repeat:
+	conditional_schedule();
 	spin_lock(&lru_list_lock);
-	while ((entry = inode->i_dirty_buffers.next) != &inode->i_dirty_buffers)
+	while ((entry = inode->i_dirty_buffers.next) != &inode->i_dirty_buffers) {
+		if (conditional_schedule_needed()) {
+			spin_unlock(&lru_list_lock);
+			goto repeat;
+		}
 		remove_inode_queue(BH_ENTRY(entry));
-	while ((entry = inode->i_dirty_data_buffers.next) != &inode->i_dirty_data_buffers)
+	}
+	while ((entry = inode->i_dirty_data_buffers.next) != &inode->i_dirty_data_buffers) {
+		if (conditional_schedule_needed()) {
+			spin_unlock(&lru_list_lock);
+			goto repeat;
+		}
 		remove_inode_queue(BH_ENTRY(entry));
+	}
 	spin_unlock(&lru_list_lock);
 }
 
@@ -1018,6 +1085,7 @@ struct buffer_head * getblk(kdev_t dev, int block, int size)
 		bh = get_hash_table(dev, block, size);
 		if (bh) {
 			touch_buffer(bh);
+			conditional_schedule();
 			return bh;
 		}
 

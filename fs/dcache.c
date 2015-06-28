@@ -324,10 +324,22 @@ static inline void prune_one_dentry(struct dentry * dentry)
  
 void prune_dcache(int count)
 {
+	DEFINE_RESCHED_COUNT;
+
+redo:
 	spin_lock(&dcache_lock);
 	for (;;) {
 		struct dentry *dentry;
 		struct list_head *tmp;
+
+		if (TEST_RESCHED_COUNT(100)) {
+			RESET_RESCHED_COUNT();
+			if (conditional_schedule_needed()) {
+				spin_unlock(&dcache_lock);
+				unconditional_schedule();
+				goto redo;
+			}
+		}
 
 		tmp = dentry_unused.prev;
 
@@ -483,6 +495,7 @@ static int select_parent(struct dentry * parent)
 	struct dentry *this_parent = parent;
 	struct list_head *next;
 	int found = 0;
+	DEFINE_RESCHED_COUNT;
 
 	spin_lock(&dcache_lock);
 repeat:
@@ -497,6 +510,13 @@ resume:
 			list_add(&dentry->d_lru, dentry_unused.prev);
 			found++;
 		}
+
+		if (TEST_RESCHED_COUNT(500) && found > 10) {
+			if (conditional_schedule_needed())	/* Typically sys_rmdir() */
+				goto out;
+			RESET_RESCHED_COUNT();
+		}
+
 		/*
 		 * Descend a level if the d_subdirs list is non-empty.
 		 */
@@ -521,6 +541,7 @@ this_parent->d_parent->d_name.name, this_parent->d_name.name, found);
 #endif
 		goto resume;
 	}
+out:
 	spin_unlock(&dcache_lock);
 	return found;
 }
@@ -536,8 +557,10 @@ void shrink_dcache_parent(struct dentry * parent)
 {
 	int found;
 
-	while ((found = select_parent(parent)) != 0)
+	while ((found = select_parent(parent)) != 0) {
 		prune_dcache(found);
+		conditional_schedule();		/* Typically sys_rmdir() */
+	}
 }
 
 /*

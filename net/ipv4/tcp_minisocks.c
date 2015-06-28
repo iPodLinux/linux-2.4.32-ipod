@@ -440,6 +440,9 @@ static void SMP_TIMER_NAME(tcp_twkill)(unsigned long dummy)
 {
 	struct tcp_tw_bucket *tw;
 	int killed = 0;
+#if LOWLATENCY_NEEDED
+	int max_killed = 0;
+#endif
 
 	/* NOTE: compare this to previous version where lock
 	 * was released after detaching chain. It was racy,
@@ -453,6 +456,13 @@ static void SMP_TIMER_NAME(tcp_twkill)(unsigned long dummy)
 		goto out;
 
 	while((tw = tcp_tw_death_row[tcp_tw_death_row_slot]) != NULL) {
+#if LOWLATENCY_NEEDED
+		/* This loop takes ~6 usecs per iteration. */
+		if (killed > 100) {
+			max_killed = 1;
+			break;
+		}
+#endif
 		tcp_tw_death_row[tcp_tw_death_row_slot] = tw->next_death;
 		if (tw->next_death)
 			tw->next_death->pprev_death = tw->pprev_death;
@@ -465,12 +475,24 @@ static void SMP_TIMER_NAME(tcp_twkill)(unsigned long dummy)
 		killed++;
 
 		spin_lock(&tw_death_lock);
-	}
-	tcp_tw_death_row_slot =
-		((tcp_tw_death_row_slot + 1) & (TCP_TWKILL_SLOTS - 1));
 
-	if ((tcp_tw_count -= killed) != 0)
-		mod_timer(&tcp_tw_timer, jiffies+TCP_TWKILL_PERIOD);
+	}
+
+#if LOWLATENCY_NEEDED
+	if (max_killed) {	/* More to do: do it soon */
+		mod_timer(&tcp_tw_timer, jiffies+2);
+		tcp_tw_count -= killed;
+	}
+	else
+#endif
+	{
+		tcp_tw_death_row_slot =
+			((tcp_tw_death_row_slot + 1) & (TCP_TWKILL_SLOTS - 1));
+
+		if ((tcp_tw_count -= killed) != 0)
+			mod_timer(&tcp_tw_timer, jiffies+TCP_TWKILL_PERIOD);
+	}
+
 	net_statistics[smp_processor_id()*2].TimeWaited += killed;
 out:
 	spin_unlock(&tw_death_lock);

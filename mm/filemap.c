@@ -185,7 +185,9 @@ void invalidate_inode_pages(struct inode * inode)
 {
 	struct list_head *head, *curr;
 	struct page * page;
+	int ll_count = 100;
 
+restart:
 	head = &inode->i_mapping->clean_pages;
 
 	spin_lock(&pagemap_lru_lock);
@@ -195,6 +197,14 @@ void invalidate_inode_pages(struct inode * inode)
 	while (curr != head) {
 		page = list_entry(curr, struct page, list);
 		curr = curr->next;
+
+		if (conditional_schedule_needed() && ll_count) {
+			spin_unlock(&pagecache_lock);
+			spin_unlock(&pagemap_lru_lock);
+			unconditional_schedule();
+			ll_count--;
+			goto restart;
+		}
 
 		/* We cannot invalidate something in dirty.. */
 		if (PageDirty(page))
@@ -259,8 +269,8 @@ static void truncate_complete_page(struct page *page)
 	page_cache_release(page);
 }
 
-static int FASTCALL(truncate_list_pages(struct list_head *, unsigned long, unsigned *));
-static int fastcall truncate_list_pages(struct list_head *head, unsigned long start, unsigned *partial)
+static int truncate_list_pages(struct list_head *head, unsigned long start,
+				unsigned *partial, int *restart_count)
 {
 	struct list_head *curr;
 	struct page * page;
@@ -270,6 +280,17 @@ static int fastcall truncate_list_pages(struct list_head *head, unsigned long st
 	curr = head->prev;
 	while (curr != head) {
 		unsigned long offset;
+
+		if (conditional_schedule_needed() && *restart_count) {
+			(*restart_count)--;
+			list_del(head);
+			list_add(head, curr);		/* Restart on this page */
+			spin_unlock(&pagecache_lock);
+			unconditional_schedule();
+			spin_lock(&pagecache_lock);
+			unlocked = 1;
+			goto restart;
+		}
 
 		page = list_entry(curr, struct page, list);
 		offset = page->index;
@@ -303,13 +324,11 @@ static int fastcall truncate_list_pages(struct list_head *head, unsigned long st
 			} else
  				wait_on_page(page);
 
-			page_cache_release(page);
-
-			if (current->need_resched) {
-				__set_current_state(TASK_RUNNING);
-				schedule();
+			if (LOWLATENCY_NEEDED) {
+				*restart_count = 4;	/* We made progress */
 			}
 
+			page_cache_release(page);
 			spin_lock(&pagecache_lock);
 			goto restart;
 		}
@@ -332,13 +351,14 @@ void truncate_inode_pages(struct address_space * mapping, loff_t lstart)
 {
 	unsigned long start = (lstart + PAGE_CACHE_SIZE - 1) >> PAGE_CACHE_SHIFT;
 	unsigned partial = lstart & (PAGE_CACHE_SIZE - 1);
+	int restart_count = 4;
 	int unlocked;
 
 	spin_lock(&pagecache_lock);
 	do {
-		unlocked = truncate_list_pages(&mapping->clean_pages, start, &partial);
-		unlocked |= truncate_list_pages(&mapping->dirty_pages, start, &partial);
-		unlocked |= truncate_list_pages(&mapping->locked_pages, start, &partial);
+		unlocked = truncate_list_pages(&mapping->clean_pages, start, &partial, &restart_count);
+		unlocked |= truncate_list_pages(&mapping->dirty_pages, start, &partial, &restart_count);
+		unlocked |= truncate_list_pages(&mapping->locked_pages, start, &partial, &restart_count);
 	} while (unlocked);
 	/* Traversed all three lists without dropping the lock */
 	spin_unlock(&pagecache_lock);
@@ -483,6 +503,7 @@ static int do_buffer_fdatasync(struct list_head *head, unsigned long start, unsi
 
 		page_cache_get(page);
 		spin_unlock(&pagecache_lock);
+		conditional_schedule();		/* sys_msync() (only used by minixfs, udf) */
 		lock_page(page);
 
 		/* The buffers could have been free'd while we waited for the page lock */
@@ -612,11 +633,13 @@ int filemap_fdatasync(struct address_space * mapping)
 		list_del(&page->list);
 		list_add(&page->list, &mapping->locked_pages);
 
-		if (!PageDirty(page))
-			continue;
-
 		page_cache_get(page);
 		spin_unlock(&pagecache_lock);
+
+		conditional_schedule();		/* sys_msync() */
+
+		if (!PageDirty(page))
+			goto clean;
 
 		lock_page(page);
 
@@ -628,7 +651,7 @@ int filemap_fdatasync(struct address_space * mapping)
 				ret = err;
 		} else
 			UnlockPage(page);
-
+clean:
 		page_cache_release(page);
 		spin_lock(&pagecache_lock);
 	}
@@ -646,7 +669,8 @@ int filemap_fdatasync(struct address_space * mapping)
 int filemap_fdatawait(struct address_space * mapping)
 {
 	int ret = 0;
-
+	DEFINE_RESCHED_COUNT;
+restart:
 	spin_lock(&pagecache_lock);
 
         while (!list_empty(&mapping->locked_pages)) {
@@ -654,6 +678,17 @@ int filemap_fdatawait(struct address_space * mapping)
 
 		list_del(&page->list);
 		list_add(&page->list, &mapping->clean_pages);
+
+		if (TEST_RESCHED_COUNT(32)) {
+			RESET_RESCHED_COUNT();
+			if (conditional_schedule_needed()) {
+				page_cache_get(page);
+				spin_unlock(&pagecache_lock);
+				unconditional_schedule();
+				page_cache_release(page);
+				goto restart;
+			}
+		}
 
 		if (!PageLocked(page))
 			continue;
@@ -764,8 +799,10 @@ static int fastcall page_cache_read(struct file * file, unsigned long offset)
 	spin_lock(&pagecache_lock);
 	page = __find_page_nolock(mapping, offset, *hash);
 	spin_unlock(&pagecache_lock);
-	if (page)
+	if (page) {
+		conditional_schedule();
 		return 0;
+	}
 
 	page = page_cache_alloc(mapping);
 	if (!page)
@@ -1035,6 +1072,11 @@ static struct page * fastcall __find_lock_page_helper(struct address_space *mapp
 	 * the hash-list needs a held write-lock.
 	 */
 repeat:
+	if (conditional_schedule_needed()) {
+		spin_unlock(&pagecache_lock);
+		unconditional_schedule();
+		spin_lock(&pagecache_lock);
+	}
 	page = __find_page_nolock(mapping, offset, hash);
 	if (page) {
 		page_cache_get(page);
@@ -1487,6 +1529,8 @@ void do_generic_file_read(struct file * filp, loff_t *ppos, read_descriptor_t * 
 found_page:
 		page_cache_get(page);
 		spin_unlock(&pagecache_lock);
+
+		conditional_schedule();		/* sys_read() */
 
 		if (!Page_Uptodate(page))
 			goto page_not_up_to_date;
@@ -2247,6 +2291,12 @@ static inline int filemap_sync_pte_range(pmd_t * pmd,
 		address += PAGE_SIZE;
 		pte++;
 	} while (address && (address < end));
+
+	if (conditional_schedule_needed()) {
+		spin_unlock(&vma->vm_mm->page_table_lock);
+		unconditional_schedule();		/* syncing large mapped files */
+		spin_lock(&vma->vm_mm->page_table_lock);
+	}
 	return error;
 }
 
@@ -2658,7 +2708,9 @@ static long madvise_dontneed(struct vm_area_struct * vma,
 	if (vma->vm_flags & VM_LOCKED)
 		return -EINVAL;
 
-	zap_page_range(vma->vm_mm, start, end - start);
+        zap_page_range(vma->vm_mm, start, end - start,
+		ZPR_COND_RESCHED);        /* sys_madvise(MADV_DONTNEED) */
+
 	return 0;
 }
 
@@ -3228,6 +3280,9 @@ do_generic_file_write(struct file *file,const char *buf,size_t count, loff_t *pp
 			goto sync_failure;
 		page_fault = __copy_from_user(kaddr+offset, buf, bytes);
 		flush_dcache_page(page);
+
+                conditional_schedule();
+
 		status = mapping->a_ops->commit_write(file, page, offset, offset+bytes);
 		if (page_fault)
 			goto fail_write;

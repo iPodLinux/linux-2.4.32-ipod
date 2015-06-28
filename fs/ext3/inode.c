@@ -930,6 +930,8 @@ struct buffer_head *ext3_bread(handle_t *handle, struct inode * inode,
 
 	prev_blocks = inode->i_blocks;
 
+	conditional_schedule();		/* Reading large directories */
+
 	bh = ext3_getblk (handle, inode, block, create, err);
 	if (!bh)
 		return bh;
@@ -1633,6 +1635,7 @@ ext3_clear_blocks(handle_t *handle, struct inode *inode, struct buffer_head *bh,
 	 */
 	for (p = first; p < last; p++) {
 		u32 nr = le32_to_cpu(*p);
+		conditional_schedule();
 		if (nr) {
 			struct buffer_head *bh;
 
@@ -1687,6 +1690,7 @@ static void ext3_free_data(handle_t *handle, struct inode *inode,
 	}
 
 	for (p = first; p < last; p++) {
+		conditional_schedule();
 		nr = le32_to_cpu(*p);
 		if (nr) {
 			/* accumulate blocks to free if they're contiguous */

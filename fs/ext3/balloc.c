@@ -363,6 +363,9 @@ do_more:
 			}
 		}
 #endif
+		/* superblock lock is held, so this is safe */
+		conditional_schedule();
+
 		BUFFER_TRACE(bitmap_bh, "clear bit");
 		if (!ext3_clear_bit (bit + i, bitmap_bh->b_data)) {
 			ext3_error(sb, __FUNCTION__,

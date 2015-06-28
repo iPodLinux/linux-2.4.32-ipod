@@ -494,9 +494,11 @@ static inline void statm_pte_range(pmd_t * pmd, unsigned long address, unsigned 
 	if (end > PMD_SIZE)
 		end = PMD_SIZE;
 	do {
-		pte_t page = *pte;
+		pte_t page;
 		struct page *ptpage;
 
+		conditional_schedule();		/* For `top' and `ps' */
+		page = *pte;
 		address += PAGE_SIZE;
 		pte++;
 		if (pte_none(page))

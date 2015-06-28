@@ -431,7 +431,11 @@ int __journal_clean_checkpoint_list(journal_t *journal)
 {
 	transaction_t *transaction, *last_transaction, *next_transaction;
 	int ret = 0;
+	int ll_retries = 4;		/* lowlatency addition */
 
+restart:
+	if (ll_retries-- == 0)
+		goto out;
 	transaction = journal->j_checkpoint_transactions;
 	if (transaction == 0)
 		goto out;
@@ -451,6 +455,12 @@ int __journal_clean_checkpoint_list(journal_t *journal)
 				jh = next_jh;
 				next_jh = jh->b_cpnext;
 				ret += __try_to_free_cp_buf(jh);
+				if (conditional_schedule_needed()) {
+					spin_unlock(&journal_datalist_lock);
+					unconditional_schedule();
+					spin_lock(&journal_datalist_lock);
+					goto restart;
+				}
 			} while (jh != last_jh);
 		}
 	} while (transaction != last_transaction);

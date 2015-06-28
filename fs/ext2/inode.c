@@ -727,8 +727,13 @@ static inline void ext2_free_data(struct inode *inode, u32 *p, u32 *q)
 {
 	unsigned long block_to_free = 0, count = 0;
 	unsigned long nr;
+	DEFINE_RESCHED_COUNT;
 
 	for ( ; p < q ; p++) {
+		if (TEST_RESCHED_COUNT(32)) {
+			RESET_RESCHED_COUNT();
+			conditional_schedule();
+		}
 		nr = le32_to_cpu(*p);
 		if (nr) {
 			*p = 0;
@@ -771,6 +776,7 @@ static void ext2_free_branches(struct inode *inode, u32 *p, u32 *q, int depth)
 	if (depth--) {
 		int addr_per_block = EXT2_ADDR_PER_BLOCK(inode->i_sb);
 		for ( ; p < q ; p++) {
+			conditional_schedule();		/* Deleting large files */
 			nr = le32_to_cpu(*p);
 			if (!nr)
 				continue;

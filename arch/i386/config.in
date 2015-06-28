@@ -25,6 +25,9 @@ endmenu
 
 mainmenu_option next_comment
 comment 'Processor type and features'
+bool 'Low latency scheduling' CONFIG_LOLAT
+dep_bool 'Control low latency with sysctl' CONFIG_LOLAT_SYSCTL $CONFIG_LOLAT
+
 choice 'Processor family' \
 	"386					CONFIG_M386 \
 	 486					CONFIG_M486 \

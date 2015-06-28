@@ -68,6 +68,9 @@ choice 'ARM system type' \
 	  iPod			CONFIG_ARCH_IPOD \
 	  Winbond		CONFIG_ARCH_WINBOND" TI-DSC21
 
+bool 'Low latency scheduling' CONFIG_LOLAT
+dep_bool 'Control low latency with sysctl' CONFIG_LOLAT_SYSCTL $CONFIG_LOLAT
+
 if [ "$CONFIG_ARCH_TA7V" = "y" ]; then
    choice ' Triscend A7V Derivative' \
    	" A7VL		CONFIG_ARCH_TA7VL \

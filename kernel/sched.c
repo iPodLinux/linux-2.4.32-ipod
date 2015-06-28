@@ -302,6 +302,17 @@ send_now_idle:
 		if (tsk->processor != this_cpu)
 			smp_send_reschedule(tsk->processor);
 	}
+#if LOWLATENCY_NEEDED
+	if (enable_lowlatency && (p->policy != SCHED_OTHER)) {
+		struct task_struct *t;
+		for (i = 0; i < smp_num_cpus; i++) {
+			cpu = cpu_logical_map(i);
+			t = cpu_curr(cpu);
+			if (t != tsk)
+				t->need_resched = 1;
+		}
+	}
+#endif
 	return;
 		
 
@@ -627,6 +638,11 @@ repeat_schedule:
 			p->counter = (p->counter >> 1) + NICE_TO_TICKS(p->nice);
 		read_unlock(&tasklist_lock);
 		spin_lock_irq(&runqueue_lock);
+		goto repeat_schedule;
+	}
+
+	if (unlikely(prev->need_resched)) {
+		prev->need_resched = 0;
 		goto repeat_schedule;
 	}
 
@@ -1407,3 +1423,93 @@ void __init sched_init(void)
 	atomic_inc(&init_mm.mm_count);
 	enter_lazy_tlb(&init_mm, current, cpu);
 }
+
+#if LOWLATENCY_NEEDED
+#if LOWLATENCY_DEBUG
+
+static struct lolat_stats_t *lolat_stats_head;
+static spinlock_t lolat_stats_lock = SPIN_LOCK_UNLOCKED;
+
+void set_running_and_schedule(struct lolat_stats_t *stats)
+{
+	spin_lock(&lolat_stats_lock);
+	if (stats->visited == 0) {
+		stats->visited = 1;
+		stats->next = lolat_stats_head;
+		lolat_stats_head = stats;
+	}
+	stats->count++;
+	spin_unlock(&lolat_stats_lock);
+
+	if (current->state != TASK_RUNNING)
+		set_current_state(TASK_RUNNING);
+	schedule();
+}
+
+void show_lolat_stats(void)
+{
+	struct lolat_stats_t *stats = lolat_stats_head;
+
+	printk("Low latency scheduling stats:\n");
+	while (stats) {
+		printk("%s:%d: %lu\n", stats->file, stats->line, stats->count);
+		stats->count = 0;
+		stats = stats->next;
+	}
+}
+
+#else	/* LOWLATENCY_DEBUG */
+
+void set_running_and_schedule()
+{
+	if (current->state != TASK_RUNNING)
+		__set_current_state(TASK_RUNNING);
+	schedule();
+}
+
+#endif	/* LOWLATENCY_DEBUG */
+
+int ll_copy_to_user(void *to_user, const void *from, unsigned long len)
+{
+	while (len) {
+		unsigned long n_to_copy = len;
+		unsigned long remainder;
+
+		if (n_to_copy > 4096)
+			n_to_copy = 4096;
+		len -= n_to_copy;
+		remainder = copy_to_user(to_user, from, n_to_copy);
+		if (remainder)
+			return remainder + len;
+		to_user = ((char *)to_user) + n_to_copy;
+		from = ((char *)from) + n_to_copy;
+		conditional_schedule();
+	}
+	return 0;
+}
+
+int ll_copy_from_user(void *to, const void *from_user, unsigned long len)
+{
+	while (len) {
+		unsigned long n_to_copy = len;
+		unsigned long remainder;
+
+		if (n_to_copy > 4096)
+			n_to_copy = 4096;
+		len -= n_to_copy;
+		remainder = copy_from_user(to, from_user, n_to_copy);
+		if (remainder)
+			return remainder + len;
+		to = ((char *)to) + n_to_copy;
+		from_user = ((char *)from_user) + n_to_copy;
+		conditional_schedule();
+	}
+	return 0;
+}
+
+#ifdef CONFIG_LOLAT_SYSCTL
+struct low_latency_enable_struct __enable_lowlatency = { 0, };
+#endif
+
+#endif	/* LOWLATENCY_NEEDED */
+

@@ -834,7 +834,7 @@ int get_swaparea_info(char *buf)
 				len += sprintf(buf + len, "partition\t");
 
 			usedswap = 0;
-			for (j = 0; j < ptr->max; ++j)
+			for (j = 0; j < ptr->max; ++j) {
 				switch (ptr->swap_map[j]) {
 					case SWAP_MAP_BAD:
 					case 0:
@@ -842,6 +842,8 @@ int get_swaparea_info(char *buf)
 					default:
 						usedswap++;
 				}
+				conditional_schedule();
+			}
 			len += sprintf(buf + len, "%d\t%d\t%d\n", ptr->pages << (PAGE_SHIFT - 10), 
 				usedswap << (PAGE_SHIFT - 10), ptr->prio);
 		}
@@ -1140,6 +1142,11 @@ void si_swapinfo(struct sysinfo *val)
 		if (swap_info[i].flags != SWP_USED)
 			continue;
 		for (j = 0; j < swap_info[i].max; ++j) {
+			if (conditional_schedule_needed()) {
+				swap_list_unlock();
+				conditional_schedule();
+				swap_list_lock();
+			}
 			switch (swap_info[i].swap_map[j]) {
 				case 0:
 				case SWAP_MAP_BAD:

@@ -101,6 +101,8 @@ proc_file_read(struct file * file, char * buf, size_t nbytes, loff_t *ppos)
 				retval = n;
 			break;
 		}
+
+		conditional_schedule();		/* Some /proc files are large */
 		
 		/* This is a hack to allow mangling of file pos independent
  		 * of actual bytes read.  Simply place the data at page,

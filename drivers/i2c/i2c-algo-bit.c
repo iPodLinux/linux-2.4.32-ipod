@@ -367,6 +367,7 @@ static int sendbytes(struct i2c_adapter *i2c_adap,const char *buf, int count)
 			return (retval<0)? retval : -EFAULT;
 			        /* got a better one ?? */
 		}
+		conditional_schedule();
 #if 0
 		/* from asm/delay.h */
 		__delay(adap->mdelay * (loops_per_sec / 1000) );

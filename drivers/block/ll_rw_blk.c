@@ -1328,6 +1328,7 @@ void submit_bh(int rw, struct buffer_head * bh)
 			kstat.pgpgin += count;
 			break;
 	}
+	conditional_schedule();
 }
 
 /**

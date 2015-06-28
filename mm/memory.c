@@ -357,7 +357,7 @@ static inline int zap_pmd_range(mmu_gather_t *tlb, pgd_t * dir, unsigned long ad
 /*
  * remove user pages in a given range.
  */
-void zap_page_range(struct mm_struct *mm, unsigned long address, unsigned long size)
+static void do_zap_page_range(struct mm_struct *mm, unsigned long address, unsigned long size)
 {
 	mmu_gather_t *tlb;
 	pgd_t * dir;
@@ -478,6 +478,10 @@ int get_user_pages(struct task_struct *tsk, struct mm_struct *mm, unsigned long 
 			struct page *map;
 			while (!(map = follow_page(mm, start, write))) {
 				spin_unlock(&mm->page_table_lock);
+
+				/* Pinning down many physical pages (kiobufs, mlockall) */
+				conditional_schedule();
+
 				switch (handle_mm_fault(mm, vma, start, write)) {
 				case 1:
 					tsk->min_flt++;
@@ -641,6 +645,21 @@ void unmap_kiobuf (struct kiobuf *iobuf)
 	iobuf->locked = 0;
 }
 
+#define MAX_ZAP_BYTES 256*PAGE_SIZE
+
+void zap_page_range(struct mm_struct *mm, unsigned long address, unsigned long size, int actions)
+{
+	while (size) {
+		unsigned long chunk = size;
+		if (actions & ZPR_COND_RESCHED && chunk > MAX_ZAP_BYTES)
+			chunk = MAX_ZAP_BYTES;
+		do_zap_page_range(mm, address, chunk);
+		if (actions & ZPR_COND_RESCHED)
+			conditional_schedule();
+		address += chunk;
+		size -= chunk;
+	}
+}
 
 /*
  * Lock down all of the pages of a kiovec for IO.
@@ -750,10 +769,17 @@ int unlock_kiovec(int nr, struct kiobuf *iovec[])
 	return 0;
 }
 
-static inline void zeromap_pte_range(pte_t * pte, unsigned long address,
-                                     unsigned long size, pgprot_t prot)
+static inline void zeromap_pte_range(struct mm_struct *mm, pte_t * pte,
+				unsigned long address, unsigned long size,
+				pgprot_t prot)
 {
 	unsigned long end;
+
+	if (conditional_schedule_needed()) {
+		spin_unlock(&mm->page_table_lock);
+		unconditional_schedule();		/* mmap(/dev/zero) */
+		spin_lock(&mm->page_table_lock);
+	}
 
 	address &= ~PMD_MASK;
 	end = address + size;
@@ -782,7 +808,7 @@ static inline int zeromap_pmd_range(struct mm_struct *mm, pmd_t * pmd, unsigned 
 		pte_t * pte = pte_alloc(mm, pmd, address);
 		if (!pte)
 			return -ENOMEM;
-		zeromap_pte_range(pte, address, end - address, prot);
+		zeromap_pte_range(mm, pte, address, end - address, prot);
 		address = (address + PMD_SIZE) & PMD_MASK;
 		pmd++;
 	} while (address && (address < end));
@@ -1017,7 +1043,7 @@ static void vmtruncate_list(struct vm_area_struct *mpnt, unsigned long pgoff)
 
 		/* mapping wholly truncated? */
 		if (mpnt->vm_pgoff >= pgoff) {
-			zap_page_range(mm, start, len);
+                        zap_page_range(mm, start, len, 0);
 			continue;
 		}
 
@@ -1030,7 +1056,7 @@ static void vmtruncate_list(struct vm_area_struct *mpnt, unsigned long pgoff)
 		/* Ok, partially affected.. */
 		start += diff << PAGE_SHIFT;
 		len = (len - diff) << PAGE_SHIFT;
-		zap_page_range(mm, start, len);
+                zap_page_range(mm, start, len, 0);
 	} while ((mpnt = mpnt->vm_next_share) != NULL);
 }
 

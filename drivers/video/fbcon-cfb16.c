@@ -15,6 +15,7 @@
 #include <linux/string.h>
 #include <linux/fb.h>
 #include <asm/io.h>
+#include <linux/sched.h>
 
 #include <video/fbcon.h>
 #include <video/fbcon-cfb16.h>
@@ -199,6 +200,7 @@ void fbcon_cfb16_putcs(struct vc_data *conp, struct display *p,
     case 6:
     case 8:
 	while (count--) {
+	    conditional_schedule();
 	    c = scr_readw(s++) & p->charmask;
 	    cdat = p->fontdata + c * fontheight(p);
 	    for (rows = fontheight(p), dest = dest0; rows--; dest += bytes) {
@@ -217,6 +219,7 @@ void fbcon_cfb16_putcs(struct vc_data *conp, struct display *p,
     case 12:
     case 16:
 	while (count--) {
+	    conditional_schedule();
 	    c = scr_readw(s++) & p->charmask;
 	    cdat = p->fontdata + (c * fontheight(p) << 1);
 	    for (rows = fontheight(p), dest = dest0; rows--; dest += bytes) {

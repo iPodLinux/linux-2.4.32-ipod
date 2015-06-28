@@ -500,6 +500,13 @@ EXPORT_SYMBOL(xtime);
 EXPORT_SYMBOL(do_gettimeofday);
 EXPORT_SYMBOL(do_settimeofday);
 
+#if LOWLATENCY_NEEDED
+EXPORT_SYMBOL(set_running_and_schedule);
+#ifdef CONFIG_LOLAT_SYSCTL
+EXPORT_SYMBOL(__enable_lowlatency);
+#endif
+#endif
+
 #if !defined(__ia64__)
 EXPORT_SYMBOL(loops_per_jiffy);
 #endif

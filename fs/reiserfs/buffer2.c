@@ -54,6 +54,7 @@ struct buffer_head  * reiserfs_bread (struct super_block *super, int n_block, in
     PROC_EXP( unsigned int ctx_switches = kstat.context_swtch );
 
     result = bread (super -> s_dev, n_block, n_size);
+    conditional_schedule();
     PROC_INFO_INC( super, breads );
     PROC_EXP( if( kstat.context_swtch != ctx_switches ) 
 	      PROC_INFO_INC( super, bread_miss ) );

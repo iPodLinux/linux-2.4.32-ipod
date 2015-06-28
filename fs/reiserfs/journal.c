@@ -577,6 +577,7 @@ inline void insert_journal_hash(struct reiserfs_journal_cnode **table, struct re
 /* lock the current transaction */
 inline static void lock_journal(struct super_block *p_s_sb) {
   PROC_INFO_INC( p_s_sb, journal.lock_journal );
+  conditional_schedule();
   while(atomic_read(&(SB_JOURNAL(p_s_sb)->j_wlock)) > 0) {
     PROC_INFO_INC( p_s_sb, journal.lock_journal_wait );
     sleep_on(&(SB_JOURNAL(p_s_sb)->j_wait)) ;
@@ -707,6 +708,7 @@ reiserfs_panic(s, "journal-539: flush_commit_list: BAD count(%d) > orig_commit_l
 	mark_buffer_dirty(tbh) ;
       }
       ll_rw_block(WRITE, 1, &tbh) ;
+      conditional_schedule();
       count++ ;
       put_bh(tbh) ; /* once for our get_hash */
     } 
@@ -836,6 +838,7 @@ static int _update_journal_header_block(struct super_block *p_s_sb, unsigned lon
     set_bit(BH_Dirty, &(SB_JOURNAL(p_s_sb)->j_header_bh->b_state)) ;
     ll_rw_block(WRITE, 1, &(SB_JOURNAL(p_s_sb)->j_header_bh)) ;
     wait_on_buffer((SB_JOURNAL(p_s_sb)->j_header_bh)) ; 
+    conditional_schedule();
     if (!buffer_uptodate(SB_JOURNAL(p_s_sb)->j_header_bh)) {
       reiserfs_warning( p_s_sb, "reiserfs: journal-837: IO error during journal replay\n" );
       return -EIO ;
@@ -2363,6 +2366,7 @@ static int journal_join(struct reiserfs_transaction_handle *th, struct super_blo
 }
 
 int journal_begin(struct reiserfs_transaction_handle *th, struct super_block  * p_s_sb, unsigned long nblocks) {
+  conditional_schedule();
   return do_journal_begin_r(th, p_s_sb, nblocks, 0) ;
 }
 
@@ -2503,6 +2507,7 @@ int journal_mark_dirty_nolog(struct reiserfs_transaction_handle *th, struct supe
 }
 
 int journal_end(struct reiserfs_transaction_handle *th, struct super_block *p_s_sb, unsigned long nblocks) {
+  conditional_schedule();
   return do_journal_end(th, p_s_sb, nblocks, 0) ;
 }
 
@@ -2974,6 +2979,7 @@ void reiserfs_prepare_for_journal(struct super_block *p_s_sb,
       RFALSE( buffer_locked(bh) && cur_tb != NULL,
 	      "waiting while do_balance was running\n") ;
       wait_on_buffer(bh) ;
+      conditional_schedule();
     }
     PROC_INFO_INC( p_s_sb, journal.prepare_retry );
     retry_count++ ;
@@ -3148,6 +3154,7 @@ reiserfs_warning(p_s_sb, "journal-2020: do_journal_end: BAD desc->j_len is ZERO\
     /* copy all the real blocks into log area.  dirty log blocks */
     if (test_bit(BH_JDirty, &cn->bh->b_state)) {
       struct buffer_head *tmp_bh ;
+      conditional_schedule();
       tmp_bh =  journal_getblk(p_s_sb, SB_ONDISK_JOURNAL_1st_BLOCK(p_s_sb) + 
 		       ((cur_write_start + jindex) % SB_ONDISK_JOURNAL_SIZE(p_s_sb))) ;
       mark_buffer_uptodate(tmp_bh, 1) ;

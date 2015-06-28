@@ -256,7 +256,7 @@ int copy_strings(int argc,char ** argv, struct linux_binprm *bprm)
 					memset(kaddr+offset+len, 0,
 						PAGE_SIZE-offset-len);
 			}
-			err = copy_from_user(kaddr+offset, str, bytes_to_copy);
+			err = ll_copy_from_user(kaddr+offset, str, bytes_to_copy);
 			if (err) {
 				ret = -EFAULT;
 				goto out;

@@ -935,6 +935,7 @@ static int __kmem_cache_shrink_locked(kmem_cache_t *cachep)
 		list_del(&slabp->list);
 
 		spin_unlock_irq(&cachep->spinlock);
+		conditional_schedule();
 		kmem_slab_destroy(cachep, slabp);
 		ret++;
 		spin_lock_irq(&cachep->spinlock);
@@ -1851,6 +1852,7 @@ perfect:
 		 */
 		spin_unlock_irq(&best_cachep->spinlock);
 		kmem_slab_destroy(best_cachep, slabp);
+		conditional_schedule();		/* try_to_free_pages() */
 		spin_lock_irq(&best_cachep->spinlock);
 	}
 	spin_unlock_irq(&best_cachep->spinlock);

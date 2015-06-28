@@ -13,7 +13,7 @@ extern unsigned long event;
 #include <linux/times.h>
 #include <linux/timex.h>
 #include <linux/rbtree.h>
-
+#include <linux/low-latency.h>
 #include <asm/system.h>
 #include <asm/semaphore.h>
 #include <asm/page.h>

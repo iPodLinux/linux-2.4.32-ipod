@@ -348,6 +348,8 @@ static inline void __sync_one(struct inode *inode, int sync)
 
 	filemap_fdatawait(inode->i_mapping);
 
+	conditional_schedule();
+
 	spin_lock(&inode_lock);
 	inode->i_state &= ~I_LOCK;
 	__refile_inode(inode);
@@ -650,6 +652,7 @@ static void dispose_list(struct list_head *head)
 	while (!list_empty(head)) {
 		struct inode *inode;
 
+		conditional_schedule();
 		inode = list_entry(head->next, struct inode, i_list);
 		list_del(&inode->i_list);
 
@@ -686,9 +689,22 @@ static int invalidate_list(struct list_head *head, struct super_block * sb, stru
 		if (tmp == head)
 			break;
 		inode = list_entry(tmp, struct inode, i_list);
+
+		if (conditional_schedule_needed()) {
+			atomic_inc(&inode->i_count);
+			spin_unlock(&inode_lock);
+			unconditional_schedule();
+			spin_lock(&inode_lock);
+			atomic_dec(&inode->i_count);
+		}
+
 		if (inode->i_sb != sb)
 			continue;
+		atomic_inc(&inode->i_count);
+		spin_unlock(&inode_lock);
 		invalidate_inode_buffers(inode);
+		spin_lock(&inode_lock);
+		atomic_dec(&inode->i_count);
 		if (!atomic_read(&inode->i_count)) {
 			list_del_init(&inode->i_hash);
 			list_del(&inode->i_list);
@@ -798,15 +814,28 @@ void prune_icache(int goal)
 	int avg_pages;
 #endif
 	struct inode * inode;
+	int nr_to_scan = inodes_stat.nr_unused;
 
+resume:
 	spin_lock(&inode_lock);
-
 	count = 0;
 	entry = inode_unused.prev;
-	while (entry != &inode_unused)
-	{
+	while (entry != &inode_unused && nr_to_scan--) {
 		struct list_head *tmp = entry;
 
+		if (conditional_schedule_needed()) {
+			/*
+			 * Need to drop the lock.  Reposition
+			 * the list head so we start here next time.
+			 * This can corrupt the LRU nature of the
+			 * unused list, but this isn't very important.
+			 */
+			list_del(&inode_unused);
+			list_add(&inode_unused, entry);
+			spin_unlock(&inode_lock);
+			unconditional_schedule();
+			goto resume;
+		}
 		entry = entry->prev;
 		inode = INODE(tmp);
 		if (inode->i_state & (I_FREEING|I_CLEAR|I_LOCK))
@@ -1007,6 +1036,8 @@ static struct inode * get_new_inode(struct super_block *sb, unsigned long ino, s
 	inode = alloc_inode(sb);
 	if (inode) {
 		struct inode * old;
+
+		conditional_schedule();			/* sync_old_buffers */
 
 		spin_lock(&inode_lock);
 		/* We released the lock, so.. */

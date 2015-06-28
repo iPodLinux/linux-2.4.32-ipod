@@ -1329,8 +1329,8 @@ static inline loff_t max_reiserfs_offset (const struct inode * inode)
 #define fs_generation(s) ((s)->u.reiserfs_sb.s_generation_counter)
 #define get_generation(s) atomic_read (&fs_generation(s))
 #define FILESYSTEM_CHANGED_TB(tb)  (get_generation((tb)->tb_sb) != (tb)->fs_gen)
-#define fs_changed(gen,s) (gen != get_generation (s))
-
+#define __fs_changed(gen,s) (gen != get_generation (s))
+#define fs_changed(gen,s) ({conditional_schedule(); __fs_changed(gen,s);})
 
 /***************************************************************************/
 /*                  FIXATE NODES                                           */

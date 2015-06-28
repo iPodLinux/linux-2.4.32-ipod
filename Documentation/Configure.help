@@ -110,6 +110,23 @@ CONFIG_ADVANCED_OPTIONS
 
   Unless you know what you are doing you *should not* enable this option.
 
+Low latency scheduling
+CONFIG_LOLAT
+  This enables low latency scheduling, with reduces the scheduling
+  latency of the kernel.  This makes the kernel more responsive, and
+  potentially increases its bandwidth; since threads waste less time
+  waiting for execution.
+
+  If you don't know what to do here, say Y.
+
+Control low latency with sysctl
+CONFIG_LOLAT_SYSCTL
+  If you say Y here, you will be able to control low latency
+  scheduling using /proc/sys/kernel/lowlatency.  It will default
+  to '0': low latency disabled.
+
+  If you say N here, then low latency scheduling is always enabled.
+
 Symmetric Multi-Processing support
 CONFIG_SMP
   This enables support for systems with more than one CPU. If you have

@@ -88,7 +88,7 @@ int memcpy_toiovec(struct iovec *iov, unsigned char *kdata, int len)
 		if(iov->iov_len)
 		{
 			int copy = min_t(unsigned int, iov->iov_len, len);
-			if (copy_to_user(iov->iov_base, kdata, copy))
+                        if (ll_copy_to_user(iov->iov_base, kdata, copy))
 				goto out;
 			kdata+=copy;
 			len-=copy;

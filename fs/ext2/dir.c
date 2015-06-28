@@ -153,6 +153,7 @@ static struct page * ext2_get_page(struct inode *dir, unsigned long n)
 	struct address_space *mapping = dir->i_mapping;
 	struct page *page = read_cache_page(mapping, n,
 				(filler_t*)mapping->a_ops->readpage, NULL);
+	conditional_schedule();		/* Scanning large directories */
 	if (!IS_ERR(page)) {
 		wait_on_page(page);
 		kmap(page);

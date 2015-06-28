@@ -210,6 +210,7 @@ static inline int swap_out_pmd(struct mm_struct * mm, struct vm_area_struct * vm
 {
 	pte_t * pte;
 	unsigned long pmd_end;
+	DEFINE_RESCHED_COUNT;
 
 	if (pmd_none(*dir))
 		return count;
@@ -235,11 +236,17 @@ static inline int swap_out_pmd(struct mm_struct * mm, struct vm_area_struct * vm
 					address += PAGE_SIZE;
 					break;
 				}
+                                if (TEST_RESCHED_COUNT(4)) {
+                                        if (conditional_schedule_needed())
+						goto out;
+                                        RESET_RESCHED_COUNT();
+                                }
 			}
 		}
 		address += PAGE_SIZE;
 		pte++;
 	} while (address && (address < end));
+out:
 	mm->swap_address = address;
 	return count;
 }
@@ -268,6 +275,8 @@ static inline int swap_out_pgd(struct mm_struct * mm, struct vm_area_struct * vm
 		count = swap_out_pmd(mm, vma, pmd, address, end, count, classzone);
 		if (!count)
 			break;
+		if (conditional_schedule_needed())
+			return count;
 		address = (address + PMD_SIZE) & PMD_MASK;
 		pmd++;
 	} while (address && (address < end));
@@ -292,6 +301,8 @@ static inline int swap_out_vma(struct mm_struct * mm, struct vm_area_struct * vm
 		count = swap_out_pgd(mm, vma, pgdir, address, end, count, classzone);
 		if (!count)
 			break;
+		if (conditional_schedule_needed())
+			return count;
 		address = (address + PGDIR_SIZE) & PGDIR_MASK;
 		pgdir++;
 	} while (address && (address < end));
@@ -313,6 +324,7 @@ static inline int swap_out_mm(struct mm_struct * mm, int count, int * mmcounter,
 	 * Find the proper vm-area after freezing the vma chain 
 	 * and ptes.
 	 */
+continue_scan:
 	spin_lock(&mm->page_table_lock);
 	address = mm->swap_address;
 	if (address == TASK_SIZE || swap_mm != mm) {
@@ -330,6 +342,12 @@ static inline int swap_out_mm(struct mm_struct * mm, int count, int * mmcounter,
 			vma = vma->vm_next;
 			if (!vma)
 				break;
+                        if (conditional_schedule_needed()) {    /* Scanning a large vma */
+                                spin_unlock(&mm->page_table_lock);
+                                unconditional_schedule();
+                                /* Continue from where we left off */
+                                goto continue_scan;
+                        }
 			if (!count)
 				goto out_unlock;
 			address = vma->vm_start;

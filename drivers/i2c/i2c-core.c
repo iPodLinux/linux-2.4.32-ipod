@@ -724,6 +724,8 @@ int i2c_transfer(struct i2c_adapter * adap, struct i2c_msg msgs[],int num)
 {
 	int ret;
 
+	conditional_schedule();
+
 	if (adap->algo->master_xfer) {
  	 	DEB2(printk(KERN_DEBUG "i2c-core.o: master_xfer: %s with %d msgs.\n",
 		            adap->name,num));
@@ -745,6 +747,8 @@ int i2c_master_send(struct i2c_client *client,const char *buf ,int count)
 	int ret;
 	struct i2c_adapter *adap=client->adapter;
 	struct i2c_msg msg;
+
+	conditional_schedule();
 
 	if (client->adapter->algo->master_xfer) {
 		msg.addr   = client->addr;
@@ -775,6 +779,9 @@ int i2c_master_recv(struct i2c_client *client, char *buf ,int count)
 	struct i2c_adapter *adap=client->adapter;
 	struct i2c_msg msg;
 	int ret;
+
+	conditional_schedule();
+
 	if (client->adapter->algo->master_xfer) {
 		msg.addr   = client->addr;
 		msg.flags = client->flags & I2C_M_TEN;

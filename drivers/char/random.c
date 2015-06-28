@@ -1379,6 +1379,11 @@ static ssize_t extract_entropy(struct entropy_store *r, void * buf,
 		buf += i;
 		ret += i;
 		add_timer_randomness(&extract_timer_state, nbytes);
+#if LOWLATENCY_NEEDED
+		/* This can happen in softirq's, but that's what we want */
+		if (conditional_schedule_needed())
+			break;
+#endif
 	}
 
 	/* Wipe data just returned from memory */

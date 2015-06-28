@@ -280,8 +280,7 @@ write_out_data_locked:
 		journal_brelse_array(wbuf, bufs);
 		lock_journal(journal);
 		spin_lock(&journal_datalist_lock);
-		if (bufs)
-			goto write_out_data_locked;
+		goto write_out_data_locked;
 	}
 
 	/*
@@ -317,6 +316,15 @@ sync_datalist_empty:
 	 */
 	while ((jh = commit_transaction->t_async_datalist)) {
 		struct buffer_head *bh = jh2bh(jh);
+
+		if (conditional_schedule_needed()) {
+			spin_unlock(&journal_datalist_lock);
+			unlock_journal(journal);
+			unconditional_schedule();
+			lock_journal(journal);
+			spin_lock(&journal_datalist_lock);
+			continue;	/* List may have changed */
+		}
 		if (__buffer_state(bh, Freed)) {
 			BUFFER_TRACE(bh, "Cleaning freed buffer");
 			clear_bit(BH_Freed, &bh->b_state);
@@ -347,6 +355,16 @@ sync_datalist_empty:
 			if (bh->b_list != BUF_CLEAN)
 				refile_buffer(bh);
 			__brelse(bh);
+				if (conditional_schedule_needed()) {
+					if (commit_transaction->t_sync_datalist)
+						commit_transaction->t_sync_datalist =
+							next_jh;
+					if (bufs)
+						break;
+					spin_unlock(&journal_datalist_lock);
+					unconditional_schedule();
+					goto write_out_data;
+				}
 		}
 	}
 	spin_unlock(&journal_datalist_lock);
@@ -536,6 +554,8 @@ start_journal_io:
  wait_for_iobuf:
 	while (commit_transaction->t_iobuf_list != NULL) {
 		struct buffer_head *bh;
+
+		conditional_schedule();
 		jh = commit_transaction->t_iobuf_list->b_tprev;
 		bh = jh2bh(jh);
 		if (buffer_locked(bh)) {
@@ -695,6 +715,8 @@ skip_commit: /* The journal should be unlocked by now. */
 		struct buffer_head *bh;
 		int was_freed = 0;
 		
+		conditional_schedule();		/* journal is locked */
+
 		jh = commit_transaction->t_forget;
 		J_ASSERT_JH(jh,	jh->b_transaction == commit_transaction ||
 			jh->b_transaction == journal->j_running_transaction);
